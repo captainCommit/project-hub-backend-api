@@ -3,5 +3,13 @@ from app.routers.health import router as health_router
 from app.routers.hierarchy import router as hierarchy_router
 from app.routers.me import router as me_router
 from app.routers.options import router as options_router
+from app.routers.tasks import router as tasks_router
 
-__all__ = ["accounts_router", "health_router", "hierarchy_router", "me_router", "options_router"]
+__all__ = [
+    "accounts_router",
+    "health_router",
+    "hierarchy_router",
+    "me_router",
+    "options_router",
+    "tasks_router",
+]

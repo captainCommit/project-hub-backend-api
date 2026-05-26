@@ -9,6 +9,7 @@ from app.routers.health import router as health_router
 from app.routers.hierarchy import router as hierarchy_router
 from app.routers.me import router as me_router
 from app.routers.options import router as options_router
+from app.routers.tasks import router as tasks_router
 
 
 settings = get_settings()
@@ -36,5 +37,6 @@ app.include_router(me_router)
 app.include_router(accounts_router)
 app.include_router(options_router)
 app.include_router(hierarchy_router)
+app.include_router(tasks_router)
 
 handler = Mangum(app)
