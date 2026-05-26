@@ -12,3 +12,4 @@ app/routers/__pycache__
 app/schemas/__pycache__
 app/core/__pycache__
 app/migrations/__pycache__
+app/migrations/versions/__pycache__
