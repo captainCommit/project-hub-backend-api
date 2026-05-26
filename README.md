@@ -124,7 +124,7 @@ ENVIRONMENT=local
 AUTH_MODE=local
 ```
 
-The local bypass is only allowed when `ENVIRONMENT=local`. Non-local environments should use `AUTH_MODE=cognito`.
+The local bypass is only allowed when `ENVIRONMENT=local`. Non-local environments should use `AUTH_MODE=cognito`
 
 In local mode, the API bypasses Cognito and uses a development user:
 
