@@ -62,11 +62,11 @@ package:
 custom:
   pythonRequirements:
     fileName: requirements.txt
-    dockerizePip: ${env:SLS_DOCKERIZE_PIP, false}
+    dockerizePip: true
     slim: true
     strip: false
-    useDownloadCache: true
-    useStaticCache: true
+    useDownloadCache: false
+    useStaticCache: false
     noDeploy:
       - pytest
       - httpx
