@@ -162,7 +162,7 @@ def test_viewer_cannot_add_comment(client: TestClient, db_session: Session) -> N
     response = client.post(f"/api/v1/entities/TASK/{task['id']}/comments", json={"body": "Blocked"})
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Insufficient account role."}
+    assert response.json()["message"] == "Insufficient account role."
 
 
 def test_viewer_can_read_comments(client: TestClient, db_session: Session) -> None:
@@ -228,7 +228,7 @@ def test_non_member_cannot_read_comments(client: TestClient, db_session: Session
     response = client.get(f"/api/v1/entities/TASK/{task.id}/comments")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account access denied."}
+    assert response.json()["message"] == "Account access denied."
 
 
 def test_user_can_edit_own_comment(client: TestClient, db_session: Session) -> None:
@@ -269,7 +269,7 @@ def test_user_cannot_edit_another_users_comment_unless_owner_or_admin(
     allowed_response = client.patch(f"/api/v1/comments/{comment.id}", json={"body": "Admin update"})
 
     assert blocked_response.status_code == 403
-    assert blocked_response.json() == {"detail": "Cannot modify another user's comment."}
+    assert blocked_response.json()["message"] == "Cannot modify another user's comment."
     assert allowed_response.status_code == 200
     assert allowed_response.json()["body"] == "Admin update"
 
@@ -292,11 +292,11 @@ def test_invalid_entity_type_is_rejected(client: TestClient) -> None:
     response = client.get(f"/api/v1/entities/UNKNOWN/{uuid4()}/comments")
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Unsupported comment entity type."}
+    assert response.json()["message"] == "Unsupported comment entity type."
 
 
 def test_nonexistent_entity_id_is_rejected(client: TestClient) -> None:
     response = client.get(f"/api/v1/entities/TASK/{uuid4()}/comments")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Comment target not found."}
+    assert response.json()["message"] == "Comment target not found."

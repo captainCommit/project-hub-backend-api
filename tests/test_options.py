@@ -156,7 +156,7 @@ def test_viewer_cannot_create_option_values(client: TestClient, db_session: Sess
     )
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Insufficient account role."}
+    assert response.json()["message"] == "Insufficient account role."
 
 
 def test_owner_can_create_option_values(client: TestClient, db_session: Session) -> None:
@@ -285,7 +285,7 @@ def test_non_member_cannot_read_options(client: TestClient, db_session: Session)
     response = client.get(f"/api/v1/accounts/{other_account.id}/options")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account access denied."}
+    assert response.json()["message"] == "Account access denied."
 
     # Sanity check that the current user's own account remains readable.
     own_response = client.get(f"/api/v1/accounts/{account['id']}/options")

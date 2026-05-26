@@ -234,7 +234,7 @@ def test_viewer_cannot_create_raid_item(client: TestClient, db_session: Session,
     )
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Insufficient account role."}
+    assert response.json()["message"] == "Insufficient account role."
 
 
 @pytest.mark.parametrize("case", RAID_CASES, ids=[str(case["entity"]) for case in RAID_CASES])
@@ -280,7 +280,7 @@ def test_non_member_cannot_read_raid_items(client: TestClient, db_session: Sessi
     response = client.get(f"/api/v1/projects/{project.id}/{case['collection']}")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account access denied."}
+    assert response.json()["message"] == "Account access denied."
 
 
 @pytest.mark.parametrize("case", RAID_CASES, ids=[str(case["entity"]) for case in RAID_CASES])
@@ -316,7 +316,7 @@ def test_wrong_raid_option_set_is_rejected(
     response = client.post(f"/api/v1/projects/{hierarchy['project']['id']}/{case['collection']}", json=payload)
 
     assert response.status_code == 400
-    assert response.json() == {"detail": case["wrong_option_detail"]}
+    assert response.json()["message"] == case["wrong_option_detail"]
 
 
 @pytest.mark.parametrize("case", RAID_CASES, ids=[str(case["entity"]) for case in RAID_CASES])
@@ -339,6 +339,67 @@ def test_raid_default_status_is_applied(
     assert item["status_id"] == str(default_status_id)
     assert item["status"] is not None
     assert item["status"]["id"] == str(default_status_id)
+
+
+def test_risk_filtering_and_pagination(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    open_status_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="RISK",
+        option_name="STATUS",
+        value="OPEN",
+    )
+    closed_status_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="RISK",
+        option_name="STATUS",
+        value="CLOSED",
+    )
+    high_priority_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="RISK",
+        option_name="PRIORITY",
+        value="HIGH",
+    )
+    low_priority_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="RISK",
+        option_name="PRIORITY",
+        value="LOW",
+    )
+    create_raid_item(
+        client,
+        project_id,
+        RAID_CASES[0],
+        title="Open high",
+        status_id=str(open_status_id),
+        priority_id=str(high_priority_id),
+    )
+    create_raid_item(
+        client,
+        project_id,
+        RAID_CASES[0],
+        title="Closed low",
+        status_id=str(closed_status_id),
+        priority_id=str(low_priority_id),
+    )
+
+    filter_response = client.get(
+        f"/api/v1/projects/{project_id}/risks?status_id={open_status_id}&priority_id={high_priority_id}"
+    )
+    page_response = client.get(f"/api/v1/projects/{project_id}/risks?paginated=true&page=1&page_size=1")
+
+    assert filter_response.status_code == 200
+    assert [item["title"] for item in filter_response.json()] == ["Open high"]
+    assert page_response.status_code == 200
+    assert page_response.json()["total"] == 2
+    assert len(page_response.json()["items"]) == 1
 
 
 @pytest.mark.parametrize("case", RAID_CASES, ids=[str(case["entity"]) for case in RAID_CASES])
@@ -365,7 +426,7 @@ def test_raid_delete_returns_501(client: TestClient, case: dict[str, object]) ->
     response = client.delete(f"/api/v1/{case['collection']}/{item['id']}")
 
     assert response.status_code == 501
-    assert response.json() == {"detail": f"{str(case['entity']).capitalize()} deletion is not implemented in Phase 4A."}
+    assert response.json()["detail"] == f"{str(case['entity']).capitalize()} deletion is not implemented in Phase 4A."
 
 
 def test_member_can_create_decision_option(client: TestClient, db_session: Session) -> None:
@@ -400,7 +461,7 @@ def test_viewer_cannot_create_decision_option(client: TestClient, db_session: Se
     )
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Insufficient account role."}
+    assert response.json()["message"] == "Insufficient account role."
 
 
 def test_non_member_cannot_read_decision_options(client: TestClient, db_session: Session) -> None:
@@ -455,7 +516,7 @@ def test_non_member_cannot_read_decision_options(client: TestClient, db_session:
     response = client.get(f"/api/v1/decisions/{decision.id}/options")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account access denied."}
+    assert response.json()["message"] == "Account access denied."
 
 
 def test_decision_options_list_ordered_by_sort_order(client: TestClient) -> None:
@@ -500,4 +561,4 @@ def test_decision_option_delete_works(client: TestClient, db_session: Session) -
 
     assert delete_response.status_code == 204
     assert get_response.status_code == 404
-    assert get_response.json() == {"detail": "Decision option not found."}
+    assert get_response.json()["message"] == "Decision option not found."

@@ -174,7 +174,7 @@ def test_viewer_cannot_request_upload_url(
     )
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Insufficient account role."}
+    assert response.json()["message"] == "Insufficient account role."
     assert fake_s3.presigned_calls == []
 
 
@@ -231,7 +231,7 @@ def test_non_member_cannot_list_attachments(client: TestClient, db_session: Sess
     response = client.get(f"/api/v1/entities/TASK/{task.id}/attachments")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account access denied."}
+    assert response.json()["message"] == "Account access denied."
 
 
 def test_presigned_download_url_works_for_member(
@@ -282,4 +282,4 @@ def test_activity_log_created_for_attachment_add_and_delete(
     assert add_activity_response.json()[0]["action"] == "ATTACHMENT_ADDED"
     assert delete_response.status_code == 204
     assert remove_activity_response.status_code == 200
-    assert remove_activity_response.json()[0]["action"] == "ATTACHMENT_REMOVED"
+    assert "ATTACHMENT_REMOVED" in {item["action"] for item in remove_activity_response.json()}

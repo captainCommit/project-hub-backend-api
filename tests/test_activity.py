@@ -214,7 +214,7 @@ def test_non_member_cannot_read_activity(client: TestClient, db_session: Session
     response = client.get(f"/api/v1/entities/TASK/{task.id}/activity")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account access denied."}
+    assert response.json()["message"] == "Account access denied."
 
 
 def test_account_member_can_read_activity(client: TestClient, db_session: Session) -> None:

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401
+from app.core.request_context import REQUEST_ID_HEADER
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.main import app
@@ -20,6 +21,7 @@ from app.models.program import Program
 from app.models.project import Project
 from app.models.task import Task
 from app.models.user import User
+from tests.helpers import assert_error_response
 
 
 @pytest.fixture()
@@ -151,7 +153,91 @@ def test_viewer_cannot_create_task(client: TestClient, db_session: Session) -> N
     )
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Insufficient account role."}
+    assert response.json()["message"] == "Insufficient account role."
+
+
+def test_request_id_header_is_returned(client: TestClient) -> None:
+    response = client.get("/", headers={REQUEST_ID_HEADER: "phase8-request-id"})
+
+    assert response.status_code == 200
+    assert response.headers[REQUEST_ID_HEADER] == "phase8-request-id"
+
+
+def test_404_uses_consistent_error_shape(client: TestClient) -> None:
+    assert_error_response(
+        client.get(f"/api/v1/tasks/{uuid4()}"),
+        status_code=404,
+        error_code="NOT_FOUND",
+        message="Task not found.",
+    )
+
+
+def test_validation_error_uses_consistent_error_shape(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+
+    response = client.post(f"/api/v1/projects/{hierarchy['project']['id']}/tasks", json={"name": ""})
+
+    body = assert_error_response(
+        response,
+        status_code=422,
+        error_code="VALIDATION_ERROR",
+        message="Validation error.",
+    )
+    assert "details" in body
+
+
+def test_tasks_pagination_filtering_and_sort_validation(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    not_started_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="STATUS",
+        value="NOT_STARTED",
+    )
+    complete_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="STATUS",
+        value="COMPLETE",
+    )
+    type_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="TYPE",
+        value="WORK_PACKAGE",
+    )
+    create_task(client, project_id, "Second", sort_order=20, status_id=str(not_started_id), task_type_id=str(type_id))
+    create_task(client, project_id, "First", sort_order=10, status_id=str(complete_id), task_type_id=str(type_id))
+
+    page_response = client.get(f"/api/v1/projects/{project_id}/tasks?paginated=true&page=1&page_size=1")
+    filter_response = client.get(f"/api/v1/projects/{project_id}/tasks?status_id={complete_id}")
+    invalid_page_size_response = client.get(f"/api/v1/projects/{project_id}/tasks?page_size=101")
+    invalid_sort_response = client.get(f"/api/v1/projects/{project_id}/tasks?sort=drop_table")
+
+    assert page_response.status_code == 200
+    page = page_response.json()
+    assert page["page"] == 1
+    assert page["page_size"] == 1
+    assert page["total"] == 2
+    assert [item["name"] for item in page["items"]] == ["First"]
+
+    assert filter_response.status_code == 200
+    assert [item["name"] for item in filter_response.json()] == ["First"]
+
+    assert_error_response(
+        invalid_page_size_response,
+        status_code=422,
+        error_code="VALIDATION_ERROR",
+        message="Validation error.",
+    )
+    assert_error_response(
+        invalid_sort_response,
+        status_code=400,
+        error_code="BAD_REQUEST",
+        message="Invalid sort field: drop_table.",
+    )
 
 
 def test_task_gets_default_status_and_type_when_omitted(
@@ -199,7 +285,7 @@ def test_invalid_status_from_wrong_option_set_is_rejected(
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Invalid task status."}
+    assert response.json()["message"] == "Invalid task status."
 
 
 def test_parent_task_must_belong_to_same_project(client: TestClient, db_session: Session) -> None:
@@ -213,7 +299,7 @@ def test_parent_task_must_belong_to_same_project(client: TestClient, db_session:
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Parent task must belong to the same project."}
+    assert response.json()["message"] == "Parent task must belong to the same project."
 
 
 def test_percent_complete_outside_range_is_rejected(client: TestClient) -> None:
@@ -272,7 +358,7 @@ def test_predecessor_must_belong_to_same_project(client: TestClient) -> None:
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Predecessor task must belong to the same project."}
+    assert response.json()["message"] == "Predecessor task must belong to the same project."
 
 
 def test_task_cannot_be_own_predecessor(client: TestClient) -> None:
@@ -285,7 +371,7 @@ def test_task_cannot_be_own_predecessor(client: TestClient) -> None:
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Task cannot be its own predecessor."}
+    assert response.json()["message"] == "Task cannot be its own predecessor."
 
 
 def test_duplicate_predecessor_is_blocked(client: TestClient) -> None:
@@ -304,7 +390,7 @@ def test_duplicate_predecessor_is_blocked(client: TestClient) -> None:
 
     assert first.status_code == 201
     assert second.status_code == 409
-    assert second.json() == {"detail": "Task predecessor already exists."}
+    assert second.json()["message"] == "Task predecessor already exists."
 
 
 def test_non_member_cannot_read_tasks(client: TestClient, db_session: Session) -> None:
@@ -345,7 +431,7 @@ def test_non_member_cannot_read_tasks(client: TestClient, db_session: Session) -
     response = client.get(f"/api/v1/projects/{project.id}/tasks")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account access denied."}
+    assert response.json()["message"] == "Account access denied."
 
 
 def test_task_list_includes_assignments_and_predecessors(client: TestClient) -> None:

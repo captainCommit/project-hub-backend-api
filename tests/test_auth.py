@@ -13,6 +13,7 @@ from app.main import app
 from app.models.user import User
 from app.services import auth as auth_service
 from app.services.auth import DEV_USER_EMAIL, DEV_USER_FULL_NAME
+from tests.helpers import assert_error_response
 
 
 @pytest.fixture()
@@ -67,8 +68,12 @@ def test_missing_token_returns_401_in_cognito_mode(db_session: Session) -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 401
-    assert response.json() == {"detail": "Missing bearer token."}
+    assert_error_response(
+        response,
+        status_code=401,
+        error_code="UNAUTHORIZED",
+        message="Missing bearer token.",
+    )
 
 
 def test_local_mode_still_creates_and_returns_dev_user(db_session: Session) -> None:
@@ -96,10 +101,12 @@ def test_local_mode_is_blocked_outside_local_environment(db_session: Session) ->
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 401
-    assert response.json() == {
-        "detail": "Local auth mode is only allowed when ENVIRONMENT=local."
-    }
+    assert_error_response(
+        response,
+        status_code=401,
+        error_code="UNAUTHORIZED",
+        message="Local auth mode is only allowed when ENVIRONMENT=local.",
+    )
 
 
 def test_cognito_mode_syncs_user_from_mocked_valid_token(

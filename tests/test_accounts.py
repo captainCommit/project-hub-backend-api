@@ -147,7 +147,7 @@ def test_get_account_blocks_non_members(client: TestClient, db_session: Session)
     response = client.get(f"/api/v1/accounts/{other_account.id}")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account access denied."}
+    assert response.json()["message"] == "Account access denied."
 
 
 def test_patch_account_allows_owner(client: TestClient) -> None:
@@ -191,11 +191,11 @@ def test_patch_account_blocks_insufficient_role(
     )
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Insufficient account role."}
+    assert response.json()["message"] == "Insufficient account role."
 
 
 def test_get_missing_account_returns_404(client: TestClient) -> None:
     response = client.get(f"/api/v1/accounts/{uuid4()}")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Account not found."}
+    assert response.json()["message"] == "Account not found."

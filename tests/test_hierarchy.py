@@ -141,7 +141,7 @@ def test_viewer_cannot_create_portfolio(client: TestClient, db_session: Session)
     )
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Insufficient account role."}
+    assert response.json()["message"] == "Insufficient account role."
 
 
 def test_portfolio_creation_uses_default_portfolio_status(
@@ -174,7 +174,7 @@ def test_invalid_status_id_from_wrong_entity_is_rejected(
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Invalid portfolio status."}
+    assert response.json()["message"] == "Invalid portfolio status."
 
 
 def test_program_creation_requires_valid_portfolio(client: TestClient) -> None:
@@ -184,7 +184,7 @@ def test_program_creation_requires_valid_portfolio(client: TestClient) -> None:
     )
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Portfolio not found."}
+    assert response.json()["message"] == "Portfolio not found."
 
 
 def test_project_creation_requires_valid_program_and_portfolio_consistency(
@@ -201,7 +201,7 @@ def test_project_creation_requires_valid_program_and_portfolio_consistency(
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Program does not belong to the supplied portfolio."}
+    assert response.json()["message"] == "Program does not belong to the supplied portfolio."
 
 
 def test_account_member_can_read_portfolio_program_project(
@@ -247,7 +247,7 @@ def test_non_member_is_blocked_from_reading_portfolio(
     response = client.get(f"/api/v1/portfolios/{portfolio.id}")
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account access denied."}
+    assert response.json()["message"] == "Account access denied."
 
 
 def test_sidebar_returns_nested_hierarchy(client: TestClient) -> None:
