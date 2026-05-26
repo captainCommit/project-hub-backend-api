@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.pagination import PaginationParams, paginated_response, validate_sort
 from app.models.account_member import AccountMemberRole
 from app.models.option_value import OptionValue
 from app.models.project import Project
@@ -35,10 +36,39 @@ class TaskService:
         self.hierarchy = HierarchyRepository(db)
         self.tasks = TaskRepository(db)
 
-    def list_tasks(self, *, project_id: UUID, current_user: User) -> list[dict[str, object]]:
+    def list_tasks(
+        self,
+        *,
+        project_id: UUID,
+        current_user: User,
+        status_id: UUID | None = None,
+        task_type_id: UUID | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
         project = self.get_project_or_404(project_id)
         self.require_account_member(account_id=project.account_id, user_id=current_user.id)
-        tasks = self.tasks.list_tasks_for_project(project_id)
+        sort_value = validate_sort(
+            sort,
+            allowed_fields={"sort_order", "created_at", "updated_at", "name"},
+            default="sort_order",
+        )
+        if pagination and pagination.paginated:
+            tasks, total = self.tasks.list_tasks_for_project_paginated(
+                project_id,
+                status_id=status_id,
+                task_type_id=task_type_id,
+                sort=sort_value,
+                pagination=pagination,
+            )
+            return paginated_response(items=self.enrich_tasks(tasks), total=total, pagination=pagination)
+
+        tasks = self.tasks.list_tasks_for_project(
+            project_id,
+            status_id=status_id,
+            task_type_id=task_type_id,
+            sort=sort_value,
+        )
         return self.enrich_tasks(tasks)
 
     def get_task(self, *, task_id: UUID, current_user: User) -> dict[str, object]:
@@ -225,6 +255,8 @@ class TaskService:
 
     def build_task_tree(self, *, project_id: UUID, current_user: User) -> list[dict[str, object]]:
         flat_tasks = self.list_tasks(project_id=project_id, current_user=current_user)
+        if isinstance(flat_tasks, dict):
+            flat_tasks = flat_tasks["items"]  # Defensive; tree endpoint does not request pagination.
         tasks_by_id = {task["id"]: {**task, "children": []} for task in flat_tasks}
         roots: list[dict[str, object]] = []
         for task in tasks_by_id.values():

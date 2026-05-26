@@ -1,9 +1,10 @@
 from collections.abc import Iterable
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
+from app.core.pagination import PaginationParams, paginate_statement, sort_descending
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
 from app.models.task import Task
@@ -25,9 +26,64 @@ class TaskRepository:
     def get_task(self, task_id: UUID) -> Task | None:
         return self.db.get(Task, task_id)
 
-    def list_tasks_for_project(self, project_id: UUID) -> list[Task]:
-        statement = select(Task).where(Task.project_id == project_id).order_by(Task.sort_order, Task.name)
+    def list_tasks_statement(
+        self,
+        project_id: UUID,
+        *,
+        status_id: UUID | None = None,
+        task_type_id: UUID | None = None,
+        sort: str = "sort_order",
+    ) -> Select[tuple[Task]]:
+        statement = select(Task).where(Task.project_id == project_id)
+        if status_id is not None:
+            statement = statement.where(Task.status_id == status_id)
+        if task_type_id is not None:
+            statement = statement.where(Task.task_type_id == task_type_id)
+
+        sort_field = sort.removeprefix("-")
+        sort_column = {
+            "sort_order": Task.sort_order,
+            "created_at": Task.created_at,
+            "updated_at": Task.updated_at,
+            "name": Task.name,
+        }[sort_field]
+        if sort_descending(sort):
+            sort_column = sort_column.desc()
+        return statement.order_by(sort_column, Task.name, Task.id)
+
+    def list_tasks_for_project(
+        self,
+        project_id: UUID,
+        *,
+        status_id: UUID | None = None,
+        task_type_id: UUID | None = None,
+        sort: str = "sort_order",
+    ) -> list[Task]:
+        statement = self.list_tasks_statement(
+            project_id,
+            status_id=status_id,
+            task_type_id=task_type_id,
+            sort=sort,
+        )
         return list(self.db.scalars(statement).all())
+
+    def list_tasks_for_project_paginated(
+        self,
+        project_id: UUID,
+        *,
+        status_id: UUID | None = None,
+        task_type_id: UUID | None = None,
+        sort: str = "sort_order",
+        pagination: PaginationParams,
+    ) -> tuple[list[Task], int]:
+        statement = self.list_tasks_statement(
+            project_id,
+            status_id=status_id,
+            task_type_id=task_type_id,
+            sort=sort,
+        )
+        items, total = paginate_statement(self.db, statement, pagination)
+        return items, total
 
     def update_task(self, task: Task, changes: dict[str, object]) -> Task:
         for field, value in changes.items():

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.pagination import PaginationParams, paginated_response, validate_sort
 from app.models.account_member import AccountMemberRole
 from app.models.assumption import Assumption
 from app.models.decision import Decision
@@ -99,8 +100,25 @@ class RaidService:
         self.hierarchy = HierarchyRepository(db)
         self.raid = RaidRepository(db)
 
-    def list_risks(self, *, project_id: UUID, current_user: User) -> list[dict[str, object]]:
-        return self.list_items(kind="risk", project_id=project_id, current_user=current_user)
+    def list_risks(
+        self,
+        *,
+        project_id: UUID,
+        current_user: User,
+        status_id: UUID | None = None,
+        priority_id: UUID | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
+        return self.list_items(
+            kind="risk",
+            project_id=project_id,
+            current_user=current_user,
+            status_id=status_id,
+            priority_id=priority_id,
+            sort=sort,
+            pagination=pagination,
+        )
 
     def get_risk(self, *, risk_id: UUID, current_user: User) -> dict[str, object]:
         return self.get_item(kind="risk", item_id=risk_id, current_user=current_user)
@@ -111,8 +129,25 @@ class RaidService:
     def update_risk(self, *, risk_id: UUID, risk_in: RiskUpdate, current_user: User) -> dict[str, object]:
         return self.update_item(kind="risk", item_id=risk_id, item_in=risk_in, current_user=current_user)
 
-    def list_issues(self, *, project_id: UUID, current_user: User) -> list[dict[str, object]]:
-        return self.list_items(kind="issue", project_id=project_id, current_user=current_user)
+    def list_issues(
+        self,
+        *,
+        project_id: UUID,
+        current_user: User,
+        status_id: UUID | None = None,
+        priority_id: UUID | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
+        return self.list_items(
+            kind="issue",
+            project_id=project_id,
+            current_user=current_user,
+            status_id=status_id,
+            priority_id=priority_id,
+            sort=sort,
+            pagination=pagination,
+        )
 
     def get_issue(self, *, issue_id: UUID, current_user: User) -> dict[str, object]:
         return self.get_item(kind="issue", item_id=issue_id, current_user=current_user)
@@ -123,8 +158,23 @@ class RaidService:
     def update_issue(self, *, issue_id: UUID, issue_in: IssueUpdate, current_user: User) -> dict[str, object]:
         return self.update_item(kind="issue", item_id=issue_id, item_in=issue_in, current_user=current_user)
 
-    def list_assumptions(self, *, project_id: UUID, current_user: User) -> list[dict[str, object]]:
-        return self.list_items(kind="assumption", project_id=project_id, current_user=current_user)
+    def list_assumptions(
+        self,
+        *,
+        project_id: UUID,
+        current_user: User,
+        status_id: UUID | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
+        return self.list_items(
+            kind="assumption",
+            project_id=project_id,
+            current_user=current_user,
+            status_id=status_id,
+            sort=sort,
+            pagination=pagination,
+        )
 
     def get_assumption(self, *, assumption_id: UUID, current_user: User) -> dict[str, object]:
         return self.get_item(kind="assumption", item_id=assumption_id, current_user=current_user)
@@ -157,8 +207,23 @@ class RaidService:
             current_user=current_user,
         )
 
-    def list_decisions(self, *, project_id: UUID, current_user: User) -> list[dict[str, object]]:
-        return self.list_items(kind="decision", project_id=project_id, current_user=current_user)
+    def list_decisions(
+        self,
+        *,
+        project_id: UUID,
+        current_user: User,
+        status_id: UUID | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
+        return self.list_items(
+            kind="decision",
+            project_id=project_id,
+            current_user=current_user,
+            status_id=status_id,
+            sort=sort,
+            pagination=pagination,
+        )
 
     def get_decision(self, *, decision_id: UUID, current_user: User) -> dict[str, object]:
         return self.get_item(kind="decision", item_id=decision_id, current_user=current_user)
@@ -247,14 +312,50 @@ class RaidService:
         self.raid.delete_decision_option(option)
         self.db.commit()
 
-    def list_items(self, *, kind: str, project_id: UUID, current_user: User) -> list[dict[str, object]]:
+    def list_items(
+        self,
+        *,
+        kind: str,
+        project_id: UUID,
+        current_user: User,
+        status_id: UUID | None = None,
+        priority_id: UUID | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
         config = RAID_CONFIGS[kind]
         project = self.get_project_or_404(project_id)
         self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        number_field = str(config["number_field"])
+        allowed_sort_fields = {number_field, "created_at", "updated_at", "status_id"}
+        if hasattr(config["model"], "title"):
+            allowed_sort_fields.add("title")
+        if hasattr(config["model"], "priority_id"):
+            allowed_sort_fields.add("priority_id")
+        sort_value = validate_sort(
+            sort,
+            allowed_fields=allowed_sort_fields,
+            default=number_field,
+        )
+        if pagination and pagination.paginated:
+            items, total = self.raid.list_items_for_project_paginated(
+                config["model"],
+                project_id=project.id,
+                number_field=number_field,
+                status_id=status_id,
+                priority_id=priority_id,
+                sort=sort_value,
+                pagination=pagination,
+            )
+            return paginated_response(items=self.enrich_items(items, config), total=total, pagination=pagination)
+
         items = self.raid.list_items_for_project(
             config["model"],
             project_id=project.id,
-            number_field=config["number_field"],
+            number_field=number_field,
+            status_id=status_id,
+            priority_id=priority_id,
+            sort=sort_value,
         )
         return self.enrich_items(items, config)
 

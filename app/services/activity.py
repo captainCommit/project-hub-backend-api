@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.pagination import PaginationParams, paginated_response, validate_sort
 from app.models.account import Account
 from app.models.account_member import AccountMemberRole
 from app.models.activity_log import ActivityLog
@@ -96,17 +97,49 @@ class ActivityLogService:
             created_by=created_by,
         )
 
-    def list_entity_activity(self, *, entity_type: str, entity_id: UUID, current_user: User) -> list[ActivityLog]:
+    def list_entity_activity(
+        self,
+        *,
+        entity_type: str,
+        entity_id: UUID,
+        current_user: User,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[ActivityLog] | dict[str, object]:
         target = self.resolve_activity_entity(entity_type=entity_type, entity_id=entity_id)
         self.require_account_member(account_id=target.account_id, user_id=current_user.id)
-        return self.activity.list_for_entity(entity_type=target.entity_type, entity_id=target.entity_id)
+        sort_value = validate_sort(sort, allowed_fields={"created_at"}, default="-created_at")
+        if pagination and pagination.paginated:
+            activity, total = self.activity.list_for_entity_paginated(
+                entity_type=target.entity_type,
+                entity_id=target.entity_id,
+                sort=sort_value,
+                pagination=pagination,
+            )
+            return paginated_response(items=activity, total=total, pagination=pagination)
+        return self.activity.list_for_entity(entity_type=target.entity_type, entity_id=target.entity_id, sort=sort_value)
 
-    def list_project_activity(self, *, project_id: UUID, current_user: User) -> list[ActivityLog]:
+    def list_project_activity(
+        self,
+        *,
+        project_id: UUID,
+        current_user: User,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[ActivityLog] | dict[str, object]:
         project = self.db.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
         self.require_account_member(account_id=project.account_id, user_id=current_user.id)
-        return self.activity.list_for_project(project.id)
+        sort_value = validate_sort(sort, allowed_fields={"created_at"}, default="-created_at")
+        if pagination and pagination.paginated:
+            activity, total = self.activity.list_for_project_paginated(
+                project.id,
+                sort=sort_value,
+                pagination=pagination,
+            )
+            return paginated_response(items=activity, total=total, pagination=pagination)
+        return self.activity.list_for_project(project.id, sort=sort_value)
 
     def resolve_activity_entity(self, *, entity_type: str, entity_id: UUID) -> ResolvedActivityEntity:
         normalized_entity_type = entity_type.strip().upper()

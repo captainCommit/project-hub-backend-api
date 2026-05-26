@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.pagination import PaginatedResponse, PaginationParams, get_pagination_params
 from app.models.user import User
 from app.schemas.tasks import (
     TaskAssignmentCreate,
@@ -22,13 +23,24 @@ from app.services.tasks import TaskService
 router = APIRouter(prefix="/api/v1", tags=["tasks"])
 
 
-@router.get("/projects/{project_id}/tasks", response_model=list[TaskRead])
+@router.get("/projects/{project_id}/tasks", response_model=list[TaskRead] | PaginatedResponse[TaskRead])
 def list_tasks(
     project_id: UUID,
+    status_id: UUID | None = None,
+    task_type_id: UUID | None = None,
+    sort: str | None = Query(default=None),
+    pagination: PaginationParams = Depends(get_pagination_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[TaskRead]:
-    return TaskService(db).list_tasks(project_id=project_id, current_user=current_user)
+) -> list[TaskRead] | dict[str, object]:
+    return TaskService(db).list_tasks(
+        project_id=project_id,
+        current_user=current_user,
+        status_id=status_id,
+        task_type_id=task_type_id,
+        sort=sort,
+        pagination=pagination,
+    )
 
 
 @router.get("/projects/{project_id}/tasks/tree", response_model=list[TaskTreeRead])

@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.pagination import PaginationParams, paginated_response, validate_sort
 from app.models.account_member import AccountMemberRole
 from app.models.assumption import Assumption
 from app.models.comment import Comment
@@ -60,10 +61,27 @@ class CommentService:
         self.account_members = AccountMemberRepository(db)
         self.comments = CommentRepository(db)
 
-    def list_comments(self, *, entity_type: str, entity_id: UUID, current_user: User) -> list[Comment]:
+    def list_comments(
+        self,
+        *,
+        entity_type: str,
+        entity_id: UUID,
+        current_user: User,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[Comment] | dict[str, object]:
         target = self.resolve_comment_entity(entity_type=entity_type, entity_id=entity_id)
         self.require_account_member(account_id=target.account_id, user_id=current_user.id)
-        return self.comments.list_for_entity(entity_type=target.entity_type, entity_id=target.entity_id)
+        sort_value = validate_sort(sort, allowed_fields={"created_at"}, default="created_at")
+        if pagination and pagination.paginated:
+            comments, total = self.comments.list_for_entity_paginated(
+                entity_type=target.entity_type,
+                entity_id=target.entity_id,
+                sort=sort_value,
+                pagination=pagination,
+            )
+            return paginated_response(items=comments, total=total, pagination=pagination)
+        return self.comments.list_for_entity(entity_type=target.entity_type, entity_id=target.entity_id, sort=sort_value)
 
     def create_comment(
         self,

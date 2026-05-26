@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.core.pagination import PaginationParams, paginated_response, validate_sort
 from app.models.account_member import AccountMemberRole
 from app.models.assumption import Assumption
 from app.models.attachment import Attachment
@@ -135,10 +136,31 @@ class AttachmentService:
             "headers": headers,
         }
 
-    def list_attachments(self, *, entity_type: str, entity_id: UUID, current_user: User) -> list[Attachment]:
+    def list_attachments(
+        self,
+        *,
+        entity_type: str,
+        entity_id: UUID,
+        current_user: User,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[Attachment] | dict[str, object]:
         target = self.resolve_attachment_entity(entity_type=entity_type, entity_id=entity_id)
         self.require_account_member(account_id=target.account_id, user_id=current_user.id)
-        return self.attachments.list_for_entity(entity_type=target.entity_type, entity_id=target.entity_id)
+        sort_value = validate_sort(sort, allowed_fields={"created_at"}, default="-created_at")
+        if pagination and pagination.paginated:
+            attachments, total = self.attachments.list_for_entity_paginated(
+                entity_type=target.entity_type,
+                entity_id=target.entity_id,
+                sort=sort_value,
+                pagination=pagination,
+            )
+            return paginated_response(items=attachments, total=total, pagination=pagination)
+        return self.attachments.list_for_entity(
+            entity_type=target.entity_type,
+            entity_id=target.entity_id,
+            sort=sort_value,
+        )
 
     def create_presigned_download(self, *, attachment_id: UUID, current_user: User) -> dict[str, str]:
         attachment = self.get_attachment_or_404(attachment_id)

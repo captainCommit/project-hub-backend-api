@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.pagination import PaginatedResponse, PaginationParams, get_pagination_params
 from app.models.user import User
 from app.schemas.raid import (
     AssumptionCreate,
@@ -29,13 +30,24 @@ from app.services.raid import RaidService
 router = APIRouter(prefix="/api/v1", tags=["raid"])
 
 
-@router.get("/projects/{project_id}/risks", response_model=list[RiskRead])
+@router.get("/projects/{project_id}/risks", response_model=list[RiskRead] | PaginatedResponse[RiskRead])
 def list_risks(
     project_id: UUID,
+    status_id: UUID | None = None,
+    priority_id: UUID | None = None,
+    sort: str | None = Query(default=None),
+    pagination: PaginationParams = Depends(get_pagination_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[RiskRead]:
-    return RaidService(db).list_risks(project_id=project_id, current_user=current_user)
+) -> list[RiskRead] | dict[str, object]:
+    return RaidService(db).list_risks(
+        project_id=project_id,
+        current_user=current_user,
+        status_id=status_id,
+        priority_id=priority_id,
+        sort=sort,
+        pagination=pagination,
+    )
 
 
 @router.post("/projects/{project_id}/risks", response_model=RiskRead, status_code=status.HTTP_201_CREATED)
@@ -72,13 +84,24 @@ def delete_risk(risk_id: UUID) -> dict[str, str]:
     return {"detail": "Risk deletion is not implemented in Phase 4A."}
 
 
-@router.get("/projects/{project_id}/issues", response_model=list[IssueRead])
+@router.get("/projects/{project_id}/issues", response_model=list[IssueRead] | PaginatedResponse[IssueRead])
 def list_issues(
     project_id: UUID,
+    status_id: UUID | None = None,
+    priority_id: UUID | None = None,
+    sort: str | None = Query(default=None),
+    pagination: PaginationParams = Depends(get_pagination_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[IssueRead]:
-    return RaidService(db).list_issues(project_id=project_id, current_user=current_user)
+) -> list[IssueRead] | dict[str, object]:
+    return RaidService(db).list_issues(
+        project_id=project_id,
+        current_user=current_user,
+        status_id=status_id,
+        priority_id=priority_id,
+        sort=sort,
+        pagination=pagination,
+    )
 
 
 @router.post("/projects/{project_id}/issues", response_model=IssueRead, status_code=status.HTTP_201_CREATED)
@@ -115,13 +138,22 @@ def delete_issue(issue_id: UUID) -> dict[str, str]:
     return {"detail": "Issue deletion is not implemented in Phase 4A."}
 
 
-@router.get("/projects/{project_id}/assumptions", response_model=list[AssumptionRead])
+@router.get("/projects/{project_id}/assumptions", response_model=list[AssumptionRead] | PaginatedResponse[AssumptionRead])
 def list_assumptions(
     project_id: UUID,
+    status_id: UUID | None = None,
+    sort: str | None = Query(default=None),
+    pagination: PaginationParams = Depends(get_pagination_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[AssumptionRead]:
-    return RaidService(db).list_assumptions(project_id=project_id, current_user=current_user)
+) -> list[AssumptionRead] | dict[str, object]:
+    return RaidService(db).list_assumptions(
+        project_id=project_id,
+        current_user=current_user,
+        status_id=status_id,
+        sort=sort,
+        pagination=pagination,
+    )
 
 
 @router.post(
@@ -170,13 +202,22 @@ def delete_assumption(assumption_id: UUID) -> dict[str, str]:
     return {"detail": "Assumption deletion is not implemented in Phase 4A."}
 
 
-@router.get("/projects/{project_id}/decisions", response_model=list[DecisionRead])
+@router.get("/projects/{project_id}/decisions", response_model=list[DecisionRead] | PaginatedResponse[DecisionRead])
 def list_decisions(
     project_id: UUID,
+    status_id: UUID | None = None,
+    sort: str | None = Query(default=None),
+    pagination: PaginationParams = Depends(get_pagination_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[DecisionRead]:
-    return RaidService(db).list_decisions(project_id=project_id, current_user=current_user)
+) -> list[DecisionRead] | dict[str, object]:
+    return RaidService(db).list_decisions(
+        project_id=project_id,
+        current_user=current_user,
+        status_id=status_id,
+        sort=sort,
+        pagination=pagination,
+    )
 
 
 @router.post("/projects/{project_id}/decisions", response_model=DecisionRead, status_code=status.HTTP_201_CREATED)
