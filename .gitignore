@@ -1,6 +1,9 @@
 .venv
 .vscode
 .pytest_cache
+.serverless
+.requirements
+node_modules
 .env
 alembic.ini
 tests/__pycache__

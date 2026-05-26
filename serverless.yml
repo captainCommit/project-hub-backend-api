@@ -1,0 +1,73 @@
+service: project-hub-api
+frameworkVersion: "3"
+
+useDotenv: true
+
+plugins:
+  - serverless-python-requirements
+
+provider:
+  name: aws
+  runtime: python3.11
+  architecture: x86_64
+  region: ${env:AWS_REGION, 'ca-central-1'}
+  stage: ${opt:stage, env:ENVIRONMENT, 'dev'}
+  endpointType: regional
+  httpApi:
+    cors: true
+  environment:
+    APP_NAME: ${env:APP_NAME, 'Project Hub API'}
+    ENVIRONMENT: ${env:ENVIRONMENT, self:provider.stage}
+    DATABASE_URL: ${env:DATABASE_URL}
+    AUTH_MODE: ${env:AUTH_MODE, 'cognito'}
+    AWS_REGION: ${self:provider.region}
+    COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID, ''}
+    COGNITO_APP_CLIENT_ID: ${env:COGNITO_APP_CLIENT_ID, ''}
+    S3_BUCKET_NAME: ${env:S3_BUCKET_NAME, ''}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+          Resource:
+            - arn:aws:s3:::${env:S3_BUCKET_NAME, 'project-hub-attachments-placeholder'}/*
+
+functions:
+  api:
+    handler: app.main.handler
+    description: Project Hub FastAPI app served by Mangum behind API Gateway HTTP API.
+    memorySize: 512
+    timeout: 28
+    events:
+      - httpApi:
+          path: /
+          method: ANY
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+
+package:
+  patterns:
+    - "!**"
+    - app/**
+    - requirements.txt
+    - "!app/**/__pycache__/**"
+    - "!app/migrations/**/__pycache__/**"
+    - "!tests/**"
+    - "!screenshots/**"
+
+custom:
+  pythonRequirements:
+    fileName: requirements.txt
+    dockerizePip: ${env:SLS_DOCKERIZE_PIP, false}
+    slim: true
+    strip: false
+    useDownloadCache: true
+    useStaticCache: true
+    noDeploy:
+      - pytest
+      - httpx
+      - uvicorn

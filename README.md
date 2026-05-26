@@ -1,6 +1,6 @@
 # Project Hub API
 
-Phase 0 FastAPI backend skeleton for Project Hub.
+FastAPI backend for Project Hub.
 
 ## Tech stack
 
@@ -13,6 +13,8 @@ Phase 0 FastAPI backend skeleton for Project Hub.
 - PostgreSQL
 - psycopg
 - pytest
+- Serverless Framework
+- AWS Lambda/API Gateway HTTP API
 
 ## Setup
 
@@ -292,3 +294,52 @@ The application exposes a Mangum handler in `app/main.py`:
 ```python
 handler = Mangum(app)
 ```
+
+Phase 9 deploys this handler to AWS Lambda behind API Gateway HTTP API with the Serverless Framework. See the full deployment guide in [`docs/deployment.md`](docs/deployment.md).
+
+Install the Serverless tooling locally:
+
+```bash
+npm install
+```
+
+Set the required deployment environment variables before packaging or deploying:
+
+```env
+APP_NAME=Project Hub API
+ENVIRONMENT=dev
+DATABASE_URL=postgresql+psycopg://postgres:your-password@your-rds-endpoint.region.rds.amazonaws.com:5432/project_hub?sslmode=require
+AUTH_MODE=cognito
+AWS_REGION=ca-central-1
+COGNITO_USER_POOL_ID=your-user-pool-id
+COGNITO_APP_CLIENT_ID=your-app-client-id
+S3_BUCKET_NAME=your-attachments-bucket
+```
+
+Build a deployment artifact:
+
+```bash
+npm run sls:package -- --stage dev
+```
+
+Deploy to AWS:
+
+```bash
+npm run sls:deploy -- --stage dev
+```
+
+Alembic migrations are not run automatically by CI/CD yet. Run them manually from a machine or runner that can reach the target database:
+
+```bash
+export DATABASE_URL="postgresql+psycopg://postgres:your-password@your-rds-endpoint.region.rds.amazonaws.com:5432/project_hub?sslmode=require"
+alembic upgrade head
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:DATABASE_URL="postgresql+psycopg://postgres:your-password@your-rds-endpoint.region.rds.amazonaws.com:5432/project_hub?sslmode=require"
+alembic upgrade head
+```
+
+The included GitHub Actions workflow runs `pytest` only; it does not deploy and does not run migrations.

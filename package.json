@@ -1,0 +1,16 @@
+{
+  "name": "project-hub-api",
+  "version": "0.9.0",
+  "private": true,
+  "description": "Deployment tooling for the Project Hub FastAPI backend.",
+  "scripts": {
+    "test": "pytest",
+    "sls:package": "serverless package",
+    "sls:deploy": "serverless deploy",
+    "sls:remove": "serverless remove"
+  },
+  "devDependencies": {
+    "serverless": "^3.39.0",
+    "serverless-python-requirements": "^6.1.2"
+  }
+}
