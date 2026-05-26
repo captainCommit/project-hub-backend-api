@@ -5,7 +5,6 @@
 .requirements
 node_modules
 .env
-alembic.ini
 tests/__pycache__
 app/__pycache__
 app/models/__pycache__
