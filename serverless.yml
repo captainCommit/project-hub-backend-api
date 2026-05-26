@@ -62,8 +62,8 @@ package:
 custom:
   pythonRequirements:
     fileName: requirements.txt
-    dockerizePip: true
-    slim: true
+    dockerizePip: non-linux
+    slim: false
     strip: false
     useDownloadCache: false
     useStaticCache: false
