@@ -101,6 +101,14 @@ class HierarchyRepository:
         )
         return list(self.db.scalars(statement).all())
 
+    def list_projects_for_portfolio(self, portfolio_id: UUID) -> list[Project]:
+        statement = (
+            select(Project)
+            .where(Project.portfolio_id == portfolio_id)
+            .order_by(Project.name)
+        )
+        return list(self.db.scalars(statement).all())
+
     def update_project(self, project: Project, changes: dict[str, object]) -> Project:
         for field, value in changes.items():
             setattr(project, field, value)

@@ -22,6 +22,11 @@ class Task(Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
+    sprint_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("sprints.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     parent_task_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("tasks.id", ondelete="SET NULL"),

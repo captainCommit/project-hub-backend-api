@@ -20,6 +20,7 @@ from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
 from app.models.risk import Risk
+from app.models.sprint import Sprint
 from app.models.task import Task
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
@@ -39,6 +40,7 @@ ACTIVITY_ENTITY_MODELS: dict[str, type[Any]] = {
     "DECISION": Decision,
     "DECISION_OPTION": DecisionOption,
     "COMMENT": Comment,
+    "SPRINT": Sprint,
 }
 
 ACTIVITY_ACTIONS = {
@@ -53,6 +55,9 @@ ACTIVITY_ACTIONS = {
     "OPTION_REMOVED",
     "ATTACHMENT_ADDED",
     "ATTACHMENT_REMOVED",
+    "SPRINT_CREATED",
+    "SPRINT_UPDATED",
+    "TASK_SPRINT_ASSIGNED",
 }
 
 

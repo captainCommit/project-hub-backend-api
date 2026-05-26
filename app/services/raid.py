@@ -33,6 +33,8 @@ from app.schemas.raid import (
     RiskUpdate,
 )
 from app.services.activity import ActivityLogService
+from app.services.notifications import NotificationService
+from app.models.notification import NotificationType
 
 
 RAID_WRITE_ROLES = {
@@ -409,6 +411,17 @@ class RaidService:
                 new_values=self.activity_values(item, config),
                 created_by=current_user.id,
             )
+            if kind == "risk" and item.assigned_to is not None:
+                NotificationService(self.db).create_notification(
+                    account_id=item.account_id,
+                    user_id=item.assigned_to,
+                    entity_type="RISK",
+                    entity_id=item.id,
+                    notification_type=NotificationType.RISK_CREATED,
+                    title="Risk assigned to you",
+                    message=f"Risk created: {item.title}",
+                    actor_user_id=current_user.id,
+                )
             self.db.commit()
             self.db.refresh(item)
         except IntegrityError as exc:
@@ -449,6 +462,16 @@ class RaidService:
             new_values={field: getattr(item, field) for field in changes},
             created_by=current_user.id,
         )
+        if kind == "decision" and self.decision_changed_to_approved(old_status_id=old_values.get("status_id"), decision=item):
+            NotificationService(self.db).create_for_account_members(
+                account_id=item.account_id,
+                entity_type="DECISION",
+                entity_id=item.id,
+                notification_type=NotificationType.DECISION_APPROVED,
+                title="Decision approved",
+                message=f"Decision approved: {item.title}",
+                actor_user_id=current_user.id,
+            )
         self.db.commit()
         self.db.refresh(item)
         return self.enrich_item(item, config)
@@ -563,6 +586,12 @@ class RaidService:
             "value": option_value.value,
             "color": option_value.color,
         }
+
+    def decision_changed_to_approved(self, *, old_status_id: object, decision: Decision) -> bool:
+        if old_status_id == decision.status_id or decision.status_id is None:
+            return False
+        status_value = self.raid.get_option_values_by_ids([decision.status_id]).get(decision.status_id)
+        return status_value is not None and status_value.value == "APPROVED"
 
     def get_project_or_404(self, project_id: UUID) -> Project:
         project = self.hierarchy.get_project(project_id)

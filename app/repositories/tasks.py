@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
+from app.models.sprint import Sprint
 from app.models.task import Task
 from app.models.task_assignment import TaskAssignment
 from app.models.task_predecessor import TaskPredecessor
@@ -25,6 +26,9 @@ class TaskRepository:
 
     def get_task(self, task_id: UUID) -> Task | None:
         return self.db.get(Task, task_id)
+
+    def get_sprint(self, sprint_id: UUID) -> Sprint | None:
+        return self.db.get(Sprint, sprint_id)
 
     def list_tasks_statement(
         self,
@@ -183,3 +187,10 @@ class TaskRepository:
             return {}
         statement = select(OptionValue).where(OptionValue.id.in_(option_value_ids))
         return {option_value.id: option_value for option_value in self.db.scalars(statement).all()}
+
+    def get_sprints_by_ids(self, sprint_ids: Iterable[UUID]) -> dict[UUID, Sprint]:
+        sprint_ids = list(sprint_ids)
+        if not sprint_ids:
+            return {}
+        statement = select(Sprint).where(Sprint.id.in_(sprint_ids))
+        return {sprint.id: sprint for sprint in self.db.scalars(statement).all()}

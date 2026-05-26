@@ -6,11 +6,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.hierarchy import StatusSummary
+from app.schemas.sprints import SprintSummary
 
 
 class TaskBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
+    sprint_id: UUID | None = None
     parent_task_id: UUID | None = None
     task_type_id: UUID | None = None
     status_id: UUID | None = None
@@ -34,6 +36,7 @@ class TaskCreate(TaskBase):
 class TaskUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
+    sprint_id: UUID | None = None
     parent_task_id: UUID | None = None
     task_type_id: UUID | None = None
     status_id: UUID | None = None
@@ -94,6 +97,7 @@ class TaskRead(BaseModel):
     id: UUID
     account_id: UUID
     project_id: UUID
+    sprint_id: UUID | None
     parent_task_id: UUID | None
     task_type_id: UUID | None
     status_id: UUID | None
@@ -109,6 +113,7 @@ class TaskRead(BaseModel):
     updated_at: datetime
     status: StatusSummary | None = None
     task_type: StatusSummary | None = None
+    sprint: SprintSummary | None = None
     assignments: list[TaskAssignmentRead] = []
     predecessors: list[TaskPredecessorRead] = []
 

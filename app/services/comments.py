@@ -23,6 +23,9 @@ from app.repositories.accounts import AccountRepository
 from app.repositories.comments import CommentRepository
 from app.schemas.comments import CommentCreate, CommentUpdate
 from app.services.activity import ActivityLogService
+from app.services.mentions import MentionService
+from app.services.notifications import NotificationService
+from app.models.notification import NotificationType
 
 
 COMMENT_WRITE_ROLES = {
@@ -112,6 +115,16 @@ class CommentService:
             new_values={"comment_id": comment.id, "body": comment.body},
             created_by=current_user.id,
         )
+        MentionService(self.db).sync_comment_mentions(comment=comment, actor_user_id=current_user.id)
+        NotificationService(self.db).create_for_account_members(
+            account_id=comment.account_id,
+            entity_type="COMMENT",
+            entity_id=comment.id,
+            notification_type=NotificationType.COMMENT_ADDED,
+            title="New comment added",
+            message=f"A comment was added to {comment.entity_type.lower()}.",
+            actor_user_id=current_user.id,
+        )
         self.db.commit()
         self.db.refresh(comment)
         return comment
@@ -129,6 +142,7 @@ class CommentService:
             membership_role=membership_role,
         )
         comment = self.comments.update(comment, body=comment_in.body)
+        MentionService(self.db).sync_comment_mentions(comment=comment, actor_user_id=current_user.id)
         self.db.commit()
         self.db.refresh(comment)
         return comment

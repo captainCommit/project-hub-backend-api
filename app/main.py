@@ -19,9 +19,11 @@ from app.routers.comments import router as comments_router
 from app.routers.health import router as health_router
 from app.routers.hierarchy import router as hierarchy_router
 from app.routers.me import router as me_router
+from app.routers.notifications import router as notifications_router
 from app.routers.options import router as options_router
 from app.routers.raid import router as raid_router
 from app.routers.search import router as search_router
+from app.routers.sprints import router as sprints_router
 from app.routers.tasks import router as tasks_router
 
 
@@ -113,6 +115,8 @@ app.include_router(hierarchy_router)
 app.include_router(tasks_router)
 app.include_router(raid_router)
 app.include_router(search_router)
+app.include_router(notifications_router)
+app.include_router(sprints_router)
 app.include_router(comments_router)
 app.include_router(activity_router)
 app.include_router(attachments_router)

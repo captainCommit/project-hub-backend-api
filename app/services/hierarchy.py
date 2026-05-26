@@ -13,6 +13,7 @@ from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.hierarchy import HierarchyRepository
 from app.schemas.hierarchy import (
+    ProgramsProjectsRead,
     PortfolioCreate,
     PortfolioUpdate,
     ProgramCreate,
@@ -210,6 +211,7 @@ class HierarchyService:
             program_id=program.id,
             name=project_in.name,
             description=project_in.description,
+            delivery_type=project_in.delivery_type.value,
             status_id=status_id,
             color=project_in.color,
             start_date=project_in.start_date,
@@ -239,6 +241,8 @@ class HierarchyService:
             allowed_roles=HIERARCHY_WRITE_ROLES,
         )
         changes = project_in.model_dump(exclude_unset=True)
+        if "delivery_type" in changes:
+            changes["delivery_type"] = changes["delivery_type"].value
         if "status_id" in changes and changes["status_id"] is not None:
             changes["status_id"] = self.validate_status_id(
                 account_id=project.account_id,
@@ -290,6 +294,58 @@ class HierarchyService:
                                     "name": project.name,
                                     "status": self.status_summary(project.status_id, statuses),
                                     "color": project.color,
+                                }
+                                for project in projects_by_program.get(program.id, [])
+                            ],
+                        }
+                        for program in programs_by_portfolio.get(portfolio.id, [])
+                    ],
+                }
+                for portfolio in portfolios
+            ]
+        }
+
+    def get_programs_projects(self, *, account_id: UUID, current_user: User) -> dict[str, list[dict[str, object]]]:
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        portfolios = self.hierarchy.list_portfolios_for_account(account_id)
+        programs = self.hierarchy.list_programs_for_account(account_id)
+        projects = self.hierarchy.list_projects_for_account(account_id)
+
+        status_ids = {
+            item.status_id
+            for item in [*portfolios, *programs, *projects]
+            if item.status_id is not None
+        }
+        statuses = self.hierarchy.get_status_values_by_ids(status_ids)
+
+        projects_by_program: dict[UUID, list[Project]] = {}
+        for project in projects:
+            projects_by_program.setdefault(project.program_id, []).append(project)
+
+        programs_by_portfolio: dict[UUID, list[Program]] = {}
+        for program in programs:
+            programs_by_portfolio.setdefault(program.portfolio_id, []).append(program)
+
+        return {
+            "portfolios": [
+                {
+                    "id": portfolio.id,
+                    "name": portfolio.name,
+                    "status": self.status_summary(portfolio.status_id, statuses),
+                    "programs": [
+                        {
+                            "id": program.id,
+                            "name": program.name,
+                            "status": self.status_summary(program.status_id, statuses),
+                            "project_count": len(projects_by_program.get(program.id, [])),
+                            "projects": [
+                                {
+                                    "id": project.id,
+                                    "name": project.name,
+                                    "status": self.status_summary(project.status_id, statuses),
+                                    "delivery_type": project.delivery_type,
+                                    "start_date": project.start_date,
+                                    "target_end_date": project.target_end_date,
                                 }
                                 for project in projects_by_program.get(program.id, [])
                             ],

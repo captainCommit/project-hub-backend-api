@@ -8,6 +8,7 @@ from app.core.pagination import PaginationParams, paginated_response, validate_s
 from app.models.account_member import AccountMemberRole
 from app.models.option_value import OptionValue
 from app.models.project import Project
+from app.models.sprint import Sprint
 from app.models.task import Task
 from app.models.task_assignment import TaskAssignment
 from app.models.task_predecessor import TaskPredecessor
@@ -18,6 +19,8 @@ from app.repositories.hierarchy import HierarchyRepository
 from app.repositories.tasks import TaskRepository
 from app.schemas.tasks import TaskAssignmentCreate, TaskCreate, TaskPredecessorCreate, TaskUpdate
 from app.services.activity import ActivityLogService
+from app.services.notifications import NotificationService
+from app.models.notification import NotificationType
 
 
 TASK_WRITE_ROLES = {
@@ -84,6 +87,7 @@ class TaskService:
             allowed_roles=TASK_WRITE_ROLES,
         )
         self.validate_parent_task(project_id=project_id, parent_task_id=task_in.parent_task_id)
+        self.validate_sprint(project=project, sprint_id=task_in.sprint_id)
         status_id = self.resolve_task_option_id(
             account_id=project.account_id,
             option_name="STATUS",
@@ -99,6 +103,7 @@ class TaskService:
         task = self.tasks.create_task(
             account_id=project.account_id,
             project_id=project.id,
+            sprint_id=task_in.sprint_id,
             parent_task_id=task_in.parent_task_id,
             task_type_id=task_type_id,
             status_id=status_id,
@@ -136,6 +141,9 @@ class TaskService:
             if parent_task_id == task.id:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task cannot be its own parent.")
             self.validate_parent_task(project_id=task.project_id, parent_task_id=parent_task_id)
+        if "sprint_id" in changes and changes["sprint_id"] is not None:
+            project = self.get_project_or_404(task.project_id)
+            changes["sprint_id"] = self.validate_sprint(project=project, sprint_id=changes["sprint_id"])
         if "status_id" in changes and changes["status_id"] is not None:
             changes["status_id"] = self.validate_task_option_id(
                 account_id=task.account_id,
@@ -161,6 +169,16 @@ class TaskService:
             new_values={field: getattr(task, field) for field in changes},
             created_by=current_user.id,
         )
+        if "sprint_id" in changes:
+            ActivityLogService(self.db).record(
+                account_id=task.account_id,
+                entity_type="TASK",
+                entity_id=task.id,
+                action="TASK_SPRINT_ASSIGNED",
+                old_values={"sprint_id": old_values.get("sprint_id")},
+                new_values={"sprint_id": task.sprint_id},
+                created_by=current_user.id,
+            )
         self.db.commit()
         self.db.refresh(task)
         return self.enrich_task(task)
@@ -184,6 +202,17 @@ class TaskService:
             user_id=assignment_in.user_id,
             resource_name=assignment_in.resource_name,
         )
+        if assignment.user_id is not None:
+            NotificationService(self.db).create_notification(
+                account_id=assignment.account_id,
+                user_id=assignment.user_id,
+                entity_type="TASK",
+                entity_id=task.id,
+                notification_type=NotificationType.TASK_ASSIGNED,
+                title="Task assigned to you",
+                message=f"You were assigned to task {task.name}.",
+                actor_user_id=current_user.id,
+            )
         self.db.commit()
         self.db.refresh(assignment)
         return assignment
@@ -311,6 +340,17 @@ class TaskService:
                 detail="Parent task must belong to the same project.",
             )
 
+    def validate_sprint(self, *, project: Project, sprint_id: UUID | None) -> UUID | None:
+        if sprint_id is None:
+            return None
+        sprint = self.tasks.get_sprint(sprint_id)
+        if sprint is None or sprint.account_id != project.account_id or sprint.project_id != project.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Sprint must belong to the same project.",
+            )
+        return sprint.id
+
     def enrich_task(self, task: Task) -> dict[str, object]:
         return self.enrich_tasks([task])[0]
 
@@ -323,6 +363,7 @@ class TaskService:
             if option_id is not None
         }
         options = self.tasks.get_option_values_by_ids(option_ids)
+        sprints = self.tasks.get_sprints_by_ids({task.sprint_id for task in tasks if task.sprint_id is not None})
         assignments = self.tasks.list_assignments_for_tasks(task_ids)
         predecessors = self.tasks.list_predecessors_for_tasks(task_ids)
         return [
@@ -330,6 +371,7 @@ class TaskService:
                 **task.__dict__,
                 "status": self.option_summary(task.status_id, options),
                 "task_type": self.option_summary(task.task_type_id, options),
+                "sprint": self.sprint_summary(task.sprint_id, sprints),
                 "assignments": assignments.get(task.id, []),
                 "predecessors": predecessors.get(task.id, []),
             }
@@ -349,6 +391,18 @@ class TaskService:
             "label": option_value.label,
             "value": option_value.value,
             "color": option_value.color,
+        }
+
+    def sprint_summary(self, sprint_id: UUID | None, sprints: dict[UUID, Sprint]) -> dict[str, object] | None:
+        if sprint_id is None or sprint_id not in sprints:
+            return None
+        sprint = sprints[sprint_id]
+        return {
+            "id": sprint.id,
+            "name": sprint.name,
+            "status": None,
+            "start_date": sprint.start_date,
+            "end_date": sprint.end_date,
         }
 
     def get_project_or_404(self, project_id: UUID) -> Project:

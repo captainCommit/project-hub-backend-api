@@ -14,6 +14,7 @@ from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
 from app.models.risk import Risk
+from app.models.sprint import Sprint
 from app.models.task import Task
 from app.models.user import User
 
@@ -27,6 +28,7 @@ SUPPORTED_ENTITY_TYPES: tuple[str, ...] = (
     "ISSUE",
     "ASSUMPTION",
     "DECISION",
+    "SPRINT",
 )
 SEARCH_SIMILARITY_THRESHOLD = 0.1
 
@@ -264,6 +266,25 @@ class SearchService:
                     ),
                 ),
             ),
+            "SPRINT": self.entity_statement(
+                entity_type="SPRINT",
+                id_column=Sprint.id,
+                title_column=Sprint.name,
+                extra_search_column=Sprint.goal,
+                subtitle_column=Project.name,
+                created_at_column=Sprint.created_at,
+                from_model=Sprint,
+                joins=(
+                    (Project, Project.id == Sprint.project_id),
+                    (
+                        AccountMember,
+                        and_(
+                            AccountMember.account_id == Sprint.account_id,
+                            AccountMember.user_id == user_id_param,
+                        ),
+                    ),
+                ),
+            ),
         }
 
     def entity_statement(
@@ -276,6 +297,7 @@ class SearchService:
         created_at_column: ColumnElement[object],
         from_model: object,
         joins: tuple[tuple[object, ColumnElement[bool]], ...],
+        extra_search_column: ColumnElement[str] | None = None,
     ) -> object:
         query_lower = bindparam("query_lower")
         pattern = bindparam("pattern")
@@ -292,12 +314,11 @@ class SearchService:
         ).select_from(from_model)
         for target, on_clause in joins:
             statement = statement.join(target, on_clause)
-        return statement.where(
-            or_(
-                title_column.ilike(pattern),
-                score > SEARCH_SIMILARITY_THRESHOLD,
-            )
-        )
+        search_predicates = [title_column.ilike(pattern), score > SEARCH_SIMILARITY_THRESHOLD]
+        if extra_search_column is not None:
+            search_predicates.append(extra_search_column.ilike(pattern))
+            search_predicates.append(func.similarity(func.lower(extra_search_column), query_lower) > SEARCH_SIMILARITY_THRESHOLD)
+        return statement.where(or_(*search_predicates))
 
     def normalize_id(self, value: object) -> str:
         try:

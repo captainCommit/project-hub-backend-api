@@ -12,6 +12,7 @@ SearchEntityType = Literal[
     "ISSUE",
     "ASSUMPTION",
     "DECISION",
+    "SPRINT",
 ]
 
 

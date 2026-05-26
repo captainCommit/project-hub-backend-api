@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.pagination import PaginatedResponse, PaginationParams, get_pagination_params
 from app.models.user import User
-from app.schemas.comments import CommentCreate, CommentRead, CommentUpdate
+from app.schemas.comments import CommentCreate, CommentMentionRead, CommentRead, CommentUpdate
 from app.services.auth import get_current_user
 from app.services.comments import CommentService
+from app.services.mentions import MentionService
 
 
 router = APIRouter(prefix="/api/v1", tags=["comments"])
@@ -64,6 +65,15 @@ def update_comment(
         comment_in=comment_in,
         current_user=current_user,
     )
+
+
+@router.get("/comments/{comment_id}/mentions", response_model=list[CommentMentionRead])
+def list_comment_mentions(
+    comment_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[CommentMentionRead]:
+    return MentionService(db).list_comment_mentions(comment_id=comment_id, current_user=current_user)
 
 
 @router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
