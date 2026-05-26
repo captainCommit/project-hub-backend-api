@@ -382,6 +382,8 @@ class RaidService:
 
         values = item_in.model_dump()
         self.resolve_create_options(config=config, account_id=project.account_id, values=values)
+        if kind == "decision" and "title" in values:
+            values["decision_text"] = values["title"]
         if config.get("created_by_field"):
             values[str(config["created_by_field"])] = current_user.id
         entered_by_field = config.get("entered_by_field")
@@ -434,6 +436,8 @@ class RaidService:
         )
         changes = item_in.model_dump(exclude_unset=True)
         self.validate_update_options(config=config, account_id=item.account_id, changes=changes)
+        if kind == "decision" and "title" in changes:
+            changes["decision_text"] = changes["title"]
         old_values = {field: getattr(item, field) for field in changes}
         item = self.raid.update_item(item, changes)
         ActivityLogService(self.db).record(
