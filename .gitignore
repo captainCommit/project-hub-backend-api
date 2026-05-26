@@ -2,3 +2,12 @@
 .pytest_cache
 .env
 alembic.ini
+tests/__pycache__
+app/__pycache__
+app/models/__pycache__
+app/repositories/__pycache__
+app/services/__pycache__
+app/routers/__pycache__
+app/schemas/__pycache__
+app/core/__pycache__
+app/migrations/__pycache__
