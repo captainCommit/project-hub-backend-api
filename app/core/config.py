@@ -17,7 +17,7 @@ class Settings(BaseSettings):
         default="http://localhost:3000",
         validation_alias="CORS_ORIGINS",
     )
-    aws_region: str = Field(default="ca-central-1", validation_alias="AWS_REGION")
+    aws_region: str = Field(default="ca-central-1", validation_alias="APP_AWS_REGION")
     s3_bucket_name: str = Field(default="", validation_alias="S3_BUCKET_NAME")
     attachment_upload_expires_seconds: int = Field(
         default=900,
