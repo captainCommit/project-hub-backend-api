@@ -31,6 +31,7 @@ from app.schemas.raid import (
     RiskCreate,
     RiskUpdate,
 )
+from app.services.activity import ActivityLogService
 
 
 RAID_WRITE_ROLES = {
@@ -297,6 +298,14 @@ class RaidService:
 
         try:
             item = self.raid.create_item(config["model"], **values)
+            ActivityLogService(self.db).record(
+                account_id=item.account_id,
+                entity_type=config["entity_type"],
+                entity_id=item.id,
+                action="CREATED",
+                new_values=self.activity_values(item, config),
+                created_by=current_user.id,
+            )
             self.db.commit()
             self.db.refresh(item)
         except IntegrityError as exc:
@@ -324,10 +333,30 @@ class RaidService:
         )
         changes = item_in.model_dump(exclude_unset=True)
         self.validate_update_options(config=config, account_id=item.account_id, changes=changes)
+        old_values = {field: getattr(item, field) for field in changes}
         item = self.raid.update_item(item, changes)
+        ActivityLogService(self.db).record(
+            account_id=item.account_id,
+            entity_type=config["entity_type"],
+            entity_id=item.id,
+            action="UPDATED",
+            old_values=old_values,
+            new_values={field: getattr(item, field) for field in changes},
+            created_by=current_user.id,
+        )
         self.db.commit()
         self.db.refresh(item)
         return self.enrich_item(item, config)
+
+    def activity_values(self, item: Any, config: dict[str, Any]) -> dict[str, object]:
+        values: dict[str, object] = {
+            "project_id": item.project_id,
+            config["number_field"]: getattr(item, config["number_field"]),
+        }
+        for field in ("title", "description", "status_id", "priority_id"):
+            if hasattr(item, field):
+                values[field] = getattr(item, field)
+        return values
 
     def resolve_create_options(self, *, config: dict[str, Any], account_id: UUID, values: dict[str, object]) -> None:
         for field, (option_name, detail) in config["options"].items():

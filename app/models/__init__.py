@@ -1,5 +1,6 @@
 from app.models.account import Account
 from app.models.account_member import AccountMember, AccountMemberRole
+from app.models.activity_log import ActivityLog
 from app.models.assumption import Assumption
 from app.models.comment import Comment
 from app.models.decision import Decision
@@ -21,6 +22,7 @@ __all__ = [
     "Account",
     "AccountMember",
     "AccountMemberRole",
+    "ActivityLog",
     "Assumption",
     "Comment",
     "Decision",

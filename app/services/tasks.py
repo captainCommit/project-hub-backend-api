@@ -16,6 +16,7 @@ from app.repositories.accounts import AccountRepository
 from app.repositories.hierarchy import HierarchyRepository
 from app.repositories.tasks import TaskRepository
 from app.schemas.tasks import TaskAssignmentCreate, TaskCreate, TaskPredecessorCreate, TaskUpdate
+from app.services.activity import ActivityLogService
 
 
 TASK_WRITE_ROLES = {
@@ -80,6 +81,14 @@ class TaskService:
             sort_order=task_in.sort_order,
             created_by=current_user.id,
         )
+        ActivityLogService(self.db).record(
+            account_id=task.account_id,
+            entity_type="TASK",
+            entity_id=task.id,
+            action="CREATED",
+            new_values={"name": task.name, "project_id": task.project_id, "status_id": task.status_id},
+            created_by=current_user.id,
+        )
         self.db.commit()
         self.db.refresh(task)
         return self.enrich_task(task)
@@ -111,7 +120,17 @@ class TaskService:
                 option_value_id=changes["task_type_id"],
                 detail="Invalid task type.",
             )
+        old_values = {field: getattr(task, field) for field in changes}
         task = self.tasks.update_task(task, changes)
+        ActivityLogService(self.db).record(
+            account_id=task.account_id,
+            entity_type="TASK",
+            entity_id=task.id,
+            action="UPDATED",
+            old_values=old_values,
+            new_values={field: getattr(task, field) for field in changes},
+            created_by=current_user.id,
+        )
         self.db.commit()
         self.db.refresh(task)
         return self.enrich_task(task)

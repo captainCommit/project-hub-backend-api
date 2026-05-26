@@ -21,6 +21,7 @@ from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.comments import CommentRepository
 from app.schemas.comments import CommentCreate, CommentUpdate
+from app.services.activity import ActivityLogService
 
 
 COMMENT_WRITE_ROLES = {
@@ -85,6 +86,14 @@ class CommentService:
             body=comment_in.body,
             created_by=current_user.id,
         )
+        ActivityLogService(self.db).record(
+            account_id=comment.account_id,
+            entity_type=comment.entity_type,
+            entity_id=comment.entity_id,
+            action="COMMENTED",
+            new_values={"comment_id": comment.id, "body": comment.body},
+            created_by=current_user.id,
+        )
         self.db.commit()
         self.db.refresh(comment)
         return comment
@@ -117,6 +126,14 @@ class CommentService:
             comment=comment,
             current_user=current_user,
             membership_role=membership_role,
+        )
+        ActivityLogService(self.db).record(
+            account_id=comment.account_id,
+            entity_type=comment.entity_type,
+            entity_id=comment.entity_id,
+            action="DELETED",
+            old_values={"comment_id": comment.id, "body": comment.body},
+            created_by=current_user.id,
         )
         self.comments.delete(comment)
         self.db.commit()
