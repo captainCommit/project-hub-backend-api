@@ -10,6 +10,7 @@ from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.schemas.account import AccountCreate, AccountUpdate
+from app.services.options import OptionService
 
 
 EDIT_ACCOUNT_ROLES = {AccountMemberRole.OWNER.value, AccountMemberRole.ADMIN.value}
@@ -33,6 +34,7 @@ class AccountService:
                 user_id=current_user.id,
                 role=AccountMemberRole.OWNER,
             )
+            OptionService(self.db).seed_defaults_for_account(account.id)
             self.db.commit()
             self.db.refresh(account)
         except IntegrityError as exc:

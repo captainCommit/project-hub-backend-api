@@ -6,7 +6,9 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.routers.accounts import router as accounts_router
 from app.routers.health import router as health_router
+from app.routers.hierarchy import router as hierarchy_router
 from app.routers.me import router as me_router
+from app.routers.options import router as options_router
 
 
 settings = get_settings()
@@ -32,5 +34,7 @@ def read_root() -> dict[str, str]:
 app.include_router(health_router)
 app.include_router(me_router)
 app.include_router(accounts_router)
+app.include_router(options_router)
+app.include_router(hierarchy_router)
 
 handler = Mangum(app)

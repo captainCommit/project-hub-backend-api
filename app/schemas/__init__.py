@@ -1,6 +1,39 @@
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate
 from app.schemas.account_member import AccountMemberRead
 from app.schemas.health_check import HealthCheckCreate, HealthCheckRead, HealthStatusResponse
+from app.schemas.hierarchy import (
+    AccountSidebarRead,
+    PortfolioCreate,
+    PortfolioOverviewRead,
+    PortfolioRead,
+    PortfolioUpdate,
+    ProgramCreate,
+    ProgramOverviewRead,
+    ProgramRead,
+    ProgramUpdate,
+    ProjectCreate,
+    ProjectRead,
+    ProjectUpdate,
+)
+from app.schemas.options import (
+    OptionSetCreate,
+    OptionSetRead,
+    OptionSetUpdate,
+    OptionSetWithValuesRead,
+    OptionValueCreate,
+    OptionValueRead,
+    OptionValueUpdate,
+)
+from app.schemas.tasks import (
+    TaskAssignmentCreate,
+    TaskAssignmentRead,
+    TaskCreate,
+    TaskPredecessorCreate,
+    TaskPredecessorRead,
+    TaskRead,
+    TaskTreeRead,
+    TaskUpdate,
+)
 from app.schemas.user import UserRead
 
 __all__ = [
@@ -8,8 +41,35 @@ __all__ = [
     "AccountMemberRead",
     "AccountRead",
     "AccountUpdate",
+    "AccountSidebarRead",
     "HealthCheckCreate",
     "HealthCheckRead",
     "HealthStatusResponse",
+    "PortfolioCreate",
+    "PortfolioOverviewRead",
+    "PortfolioRead",
+    "PortfolioUpdate",
+    "ProgramCreate",
+    "ProgramOverviewRead",
+    "ProgramRead",
+    "ProgramUpdate",
+    "ProjectCreate",
+    "ProjectRead",
+    "ProjectUpdate",
+    "TaskAssignmentCreate",
+    "TaskAssignmentRead",
+    "TaskCreate",
+    "TaskPredecessorCreate",
+    "TaskPredecessorRead",
+    "TaskRead",
+    "TaskTreeRead",
+    "TaskUpdate",
+    "OptionSetCreate",
+    "OptionSetRead",
+    "OptionSetUpdate",
+    "OptionSetWithValuesRead",
+    "OptionValueCreate",
+    "OptionValueRead",
+    "OptionValueUpdate",
     "UserRead",
 ]
