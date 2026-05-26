@@ -10,3 +10,4 @@ pytest
 httpx
 python-jose[cryptography]
 requests
+boto3

@@ -6,6 +6,7 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.routers.accounts import router as accounts_router
 from app.routers.activity import router as activity_router
+from app.routers.attachments import router as attachments_router
 from app.routers.comments import router as comments_router
 from app.routers.health import router as health_router
 from app.routers.hierarchy import router as hierarchy_router
@@ -44,5 +45,6 @@ app.include_router(tasks_router)
 app.include_router(raid_router)
 app.include_router(comments_router)
 app.include_router(activity_router)
+app.include_router(attachments_router)
 
 handler = Mangum(app)

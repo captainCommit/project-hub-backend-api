@@ -160,6 +160,27 @@ If the Cognito user's email or name changes later, the local user record is upda
 pytest
 ```
 
+## S3 attachments
+
+The API supports generic file attachments by storing attachment metadata in PostgreSQL and returning S3 pre-signed URLs for direct browser/client upload and download. Files are not streamed through FastAPI or Lambda.
+
+Configure attachments with:
+
+```env
+AWS_REGION=ca-central-1
+S3_BUCKET_NAME=your-attachments-bucket
+ATTACHMENT_UPLOAD_EXPIRES_SECONDS=900
+ATTACHMENT_DOWNLOAD_EXPIRES_SECONDS=900
+```
+
+The application IAM role/user needs permission to generate pre-signed URLs and delete objects in the configured bucket. At minimum, allow `s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` for keys under the bucket prefix used by the API:
+
+```text
+accounts/{account_id}/{entity_type}/{entity_id}/{attachment_id}/{safe_file_name}
+```
+
+Clients should call `POST /api/v1/entities/{entity_type}/{entity_id}/attachments/presigned-upload`, upload directly to the returned `upload_url` with the returned method/headers, and later call `GET /api/v1/attachments/{attachment_id}/presigned-download` to retrieve a download URL.
+
 ## Phase 0 Verification
 
 Use these steps to verify Phase 0 end-to-end against the local PostgreSQL database:

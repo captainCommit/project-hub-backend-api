@@ -18,6 +18,15 @@ class Settings(BaseSettings):
         validation_alias="CORS_ORIGINS",
     )
     aws_region: str = Field(default="ca-central-1", validation_alias="AWS_REGION")
+    s3_bucket_name: str = Field(default="", validation_alias="S3_BUCKET_NAME")
+    attachment_upload_expires_seconds: int = Field(
+        default=900,
+        validation_alias="ATTACHMENT_UPLOAD_EXPIRES_SECONDS",
+    )
+    attachment_download_expires_seconds: int = Field(
+        default=900,
+        validation_alias="ATTACHMENT_DOWNLOAD_EXPIRES_SECONDS",
+    )
     cognito_user_pool_id: str = Field(default="", validation_alias="COGNITO_USER_POOL_ID")
     cognito_app_client_id: str = Field(default="", validation_alias="COGNITO_APP_CLIENT_ID")
     auth_mode: Literal["local", "cognito"] = Field(default="local", validation_alias="AUTH_MODE")
