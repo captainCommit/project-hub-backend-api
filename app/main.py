@@ -1,8 +1,11 @@
 import logging
 import time
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse
 from mangum import Mangum
 
 from app.core.config import get_settings
@@ -86,6 +89,19 @@ async def request_context_middleware(request: Request, call_next):  # type: igno
 @app.get("/", tags=["root"])
 def read_root() -> dict[str, str]:
     return {"message": "Project Hub API is running"}
+
+
+@app.get("/swagger", include_in_schema=False)
+def swagger_ui(request: Request) -> HTMLResponse:
+    return get_swagger_ui_html(
+        openapi_url=str(request.url_for("swagger_openapi")),
+        title=f"{settings.app_name} - Swagger UI",
+    )
+
+
+@app.get("/swagger.json", include_in_schema=False, name="swagger_openapi")
+def swagger_openapi() -> dict[str, Any]:
+    return app.openapi()
 
 
 app.include_router(health_router)

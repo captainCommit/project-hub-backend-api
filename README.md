@@ -98,6 +98,18 @@ The API will be available at:
 - Root: `http://127.0.0.1:8000/`
 - Health: `http://127.0.0.1:8000/health`
 - OpenAPI docs: `http://127.0.0.1:8000/docs`
+- Swagger UI alias: `http://127.0.0.1:8000/swagger`
+- Swagger/OpenAPI JSON: `http://127.0.0.1:8000/swagger.json`
+
+## Swagger/OpenAPI
+
+The API exposes interactive Swagger documentation and a machine-readable OpenAPI schema:
+
+- `GET /swagger` - interactive Swagger UI for trying the APIs from a browser.
+- `GET /swagger.json` - OpenAPI schema JSON that can be imported into API clients or documentation tooling.
+- `GET /docs` and `GET /openapi.json` remain available as the default FastAPI documentation endpoints.
+
+Protected endpoints use bearer authentication in the generated OpenAPI schema. In Swagger UI, click **Authorize** and enter your Cognito JWT when `AUTH_MODE=cognito`.
 
 ## Authentication
 
