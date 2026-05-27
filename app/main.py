@@ -13,14 +13,19 @@ from app.core.errors import error_response, register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.request_context import REQUEST_ID_HEADER, generate_request_id, reset_request_id, set_request_id
 from app.routers.accounts import router as accounts_router
+from app.routers.account_users import router as account_users_router
 from app.routers.activity import router as activity_router
 from app.routers.attachments import router as attachments_router
 from app.routers.comments import router as comments_router
 from app.routers.health import router as health_router
 from app.routers.hierarchy import router as hierarchy_router
 from app.routers.me import router as me_router
+from app.routers.notifications import router as notifications_router
 from app.routers.options import router as options_router
 from app.routers.raid import router as raid_router
+from app.routers.resources import router as resources_router
+from app.routers.search import router as search_router
+from app.routers.sprints import router as sprints_router
 from app.routers.tasks import router as tasks_router
 
 
@@ -107,10 +112,15 @@ def swagger_openapi() -> dict[str, Any]:
 app.include_router(health_router)
 app.include_router(me_router)
 app.include_router(accounts_router)
+app.include_router(account_users_router)
 app.include_router(options_router)
 app.include_router(hierarchy_router)
 app.include_router(tasks_router)
 app.include_router(raid_router)
+app.include_router(resources_router)
+app.include_router(search_router)
+app.include_router(notifications_router)
+app.include_router(sprints_router)
 app.include_router(comments_router)
 app.include_router(activity_router)
 app.include_router(attachments_router)

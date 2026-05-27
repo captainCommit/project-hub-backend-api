@@ -34,6 +34,13 @@ class OptionService:
 
     def seed_defaults_for_account(self, account_id: UUID) -> None:
         for option_set_definition in DEFAULT_OPTION_SETS:
+            existing = self.option_sets.list_for_account_filtered(
+                account_id=account_id,
+                entity_type=str(option_set_definition["entity_type"]),
+                name=str(option_set_definition["name"]),
+            )
+            if existing:
+                continue
             option_set = self.option_sets.create(
                 account_id=account_id,
                 entity_type=str(option_set_definition["entity_type"]),

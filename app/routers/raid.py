@@ -7,6 +7,10 @@ from app.core.database import get_db
 from app.core.pagination import PaginatedResponse, PaginationParams, get_pagination_params
 from app.models.user import User
 from app.schemas.raid import (
+    AccountAssumptionRead,
+    AccountDecisionRead,
+    AccountIssueRead,
+    AccountRiskRead,
     AssumptionCreate,
     AssumptionRead,
     AssumptionUpdate,
@@ -45,6 +49,42 @@ def list_risks(
         current_user=current_user,
         status_id=status_id,
         priority_id=priority_id,
+        sort=sort,
+        pagination=pagination,
+    )
+
+
+@router.get(
+    "/accounts/{account_id}/risks",
+    response_model=list[AccountRiskRead] | PaginatedResponse[AccountRiskRead],
+    summary="List account risks",
+    description=(
+        "List risks across all projects in an account. Supports optional project/program filters, "
+        "status/priority/assignee filters, text search, safe sorting, and optional pagination."
+    ),
+)
+def list_account_risks(
+    account_id: UUID,
+    project_id: UUID | None = None,
+    program_id: UUID | None = None,
+    status_id: UUID | None = None,
+    priority_id: UUID | None = None,
+    assigned_to: UUID | None = None,
+    search: str | None = None,
+    sort: str | None = Query(default=None, description="Safe sort field, prefix with '-' for descending."),
+    pagination: PaginationParams = Depends(get_pagination_params),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AccountRiskRead] | dict[str, object]:
+    return RaidService(db).list_account_risks(
+        account_id=account_id,
+        current_user=current_user,
+        project_id=project_id,
+        program_id=program_id,
+        status_id=status_id,
+        priority_id=priority_id,
+        assigned_to=assigned_to,
+        search=search,
         sort=sort,
         pagination=pagination,
     )
@@ -104,6 +144,42 @@ def list_issues(
     )
 
 
+@router.get(
+    "/accounts/{account_id}/issues",
+    response_model=list[AccountIssueRead] | PaginatedResponse[AccountIssueRead],
+    summary="List account issues",
+    description=(
+        "List issues across all projects in an account. Supports optional project/program filters, "
+        "status/priority/assignee filters, text search, safe sorting, and optional pagination."
+    ),
+)
+def list_account_issues(
+    account_id: UUID,
+    project_id: UUID | None = None,
+    program_id: UUID | None = None,
+    status_id: UUID | None = None,
+    priority_id: UUID | None = None,
+    assigned_to: UUID | None = None,
+    search: str | None = None,
+    sort: str | None = Query(default=None, description="Safe sort field, prefix with '-' for descending."),
+    pagination: PaginationParams = Depends(get_pagination_params),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AccountIssueRead] | dict[str, object]:
+    return RaidService(db).list_account_issues(
+        account_id=account_id,
+        current_user=current_user,
+        project_id=project_id,
+        program_id=program_id,
+        status_id=status_id,
+        priority_id=priority_id,
+        assigned_to=assigned_to,
+        search=search,
+        sort=sort,
+        pagination=pagination,
+    )
+
+
 @router.post("/projects/{project_id}/issues", response_model=IssueRead, status_code=status.HTTP_201_CREATED)
 def create_issue(
     project_id: UUID,
@@ -151,6 +227,38 @@ def list_assumptions(
         project_id=project_id,
         current_user=current_user,
         status_id=status_id,
+        sort=sort,
+        pagination=pagination,
+    )
+
+
+@router.get(
+    "/accounts/{account_id}/assumptions",
+    response_model=list[AccountAssumptionRead] | PaginatedResponse[AccountAssumptionRead],
+    summary="List account assumptions",
+    description=(
+        "List assumptions across all projects in an account. Supports optional project/program filters, "
+        "status filter, text search, safe sorting, and optional pagination."
+    ),
+)
+def list_account_assumptions(
+    account_id: UUID,
+    project_id: UUID | None = None,
+    program_id: UUID | None = None,
+    status_id: UUID | None = None,
+    search: str | None = None,
+    sort: str | None = Query(default=None, description="Safe sort field, prefix with '-' for descending."),
+    pagination: PaginationParams = Depends(get_pagination_params),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AccountAssumptionRead] | dict[str, object]:
+    return RaidService(db).list_account_assumptions(
+        account_id=account_id,
+        current_user=current_user,
+        project_id=project_id,
+        program_id=program_id,
+        status_id=status_id,
+        search=search,
         sort=sort,
         pagination=pagination,
     )
@@ -215,6 +323,38 @@ def list_decisions(
         project_id=project_id,
         current_user=current_user,
         status_id=status_id,
+        sort=sort,
+        pagination=pagination,
+    )
+
+
+@router.get(
+    "/accounts/{account_id}/decisions",
+    response_model=list[AccountDecisionRead] | PaginatedResponse[AccountDecisionRead],
+    summary="List account decisions",
+    description=(
+        "List decisions across all projects in an account. Supports optional project/program filters, "
+        "status filter, text search, safe sorting, and optional pagination."
+    ),
+)
+def list_account_decisions(
+    account_id: UUID,
+    project_id: UUID | None = None,
+    program_id: UUID | None = None,
+    status_id: UUID | None = None,
+    search: str | None = None,
+    sort: str | None = Query(default=None, description="Safe sort field, prefix with '-' for descending."),
+    pagination: PaginationParams = Depends(get_pagination_params),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AccountDecisionRead] | dict[str, object]:
+    return RaidService(db).list_account_decisions(
+        account_id=account_id,
+        current_user=current_user,
+        project_id=project_id,
+        program_id=program_id,
+        status_id=status_id,
+        search=search,
         sort=sort,
         pagination=pagination,
     )

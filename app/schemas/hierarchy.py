@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.project import ProjectDeliveryType
+
 
 class WorkItemBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -40,10 +42,11 @@ class ProgramUpdate(WorkItemUpdate):
 
 class ProjectCreate(WorkItemBase):
     portfolio_id: UUID | None = None
+    delivery_type: ProjectDeliveryType = ProjectDeliveryType.WATERFALL
 
 
 class ProjectUpdate(WorkItemUpdate):
-    pass
+    delivery_type: ProjectDeliveryType | None = None
 
 
 class StatusSummary(BaseModel):
@@ -95,6 +98,7 @@ class ProjectRead(BaseModel):
     program_id: UUID
     name: str
     description: str | None
+    delivery_type: ProjectDeliveryType
     status_id: UUID | None
     color: str | None
     start_date: date | None
@@ -115,6 +119,34 @@ class SidebarNode(BaseModel):
 
 class SidebarProject(SidebarNode):
     pass
+
+
+class ProgramsProjectsProject(BaseModel):
+    id: UUID
+    name: str
+    status: StatusSummary | None
+    delivery_type: ProjectDeliveryType
+    start_date: date | None
+    target_end_date: date | None
+
+
+class ProgramsProjectsProgram(BaseModel):
+    id: UUID
+    name: str
+    status: StatusSummary | None
+    project_count: int
+    projects: list[ProgramsProjectsProject]
+
+
+class ProgramsProjectsPortfolio(BaseModel):
+    id: UUID
+    name: str
+    status: StatusSummary | None
+    programs: list[ProgramsProjectsProgram]
+
+
+class ProgramsProjectsRead(BaseModel):
+    portfolios: list[ProgramsProjectsPortfolio]
 
 
 class SidebarProgram(SidebarNode):

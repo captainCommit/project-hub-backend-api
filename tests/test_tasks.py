@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,6 +21,8 @@ from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
 from app.models.task import Task
+from app.models.task_assignment import TaskAssignment
+from app.models.task_predecessor import TaskPredecessor
 from app.models.user import User
 from tests.helpers import assert_error_response
 
@@ -96,6 +99,12 @@ def create_work_hierarchy(client: TestClient) -> dict[str, dict]:
 def create_task(client: TestClient, project_id: str, name: str = "Task", **extra: object) -> dict:
     payload = {"name": name, **extra}
     response = client.post(f"/api/v1/projects/{project_id}/tasks", json=payload)
+    assert response.status_code == 201
+    return response.json()
+
+
+def create_sprint(client: TestClient, project_id: str, name: str = "Sprint", **extra: object) -> dict:
+    response = client.post(f"/api/v1/projects/{project_id}/sprints", json={"name": name, **extra})
     assert response.status_code == 201
     return response.json()
 
@@ -469,3 +478,517 @@ def test_task_tree_returns_nested_tasks(client: TestClient) -> None:
     tree = response.json()
     assert tree[0]["id"] == parent["id"]
     assert tree[0]["children"][0]["id"] == child["id"]
+
+
+def test_member_can_bulk_update_tasks(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    task = create_task(client, project_id, "Original")
+    second_task = create_task(client, project_id, "Second")
+    sprint = create_sprint(client, project_id)
+    status_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="STATUS",
+        value="IN_PROGRESS",
+    )
+    task_type_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="TYPE",
+        value="MILESTONE",
+    )
+    parent = create_task(client, project_id, "Parent")
+    set_current_user_role(db_session, account_id, AccountMemberRole.MEMBER)
+
+    response = client.patch(
+        f"/api/v1/projects/{project_id}/tasks/bulk",
+        json={
+            "updates": [
+                {
+                    "id": task["id"],
+                    "fields": {
+                        "name": "Updated Task",
+                        "description": "Updated description",
+                        "status_id": str(status_id),
+                        "task_type_id": str(task_type_id),
+                        "start_date": "2026-01-01",
+                        "finish_date": "2026-01-10",
+                        "duration_days": 5,
+                        "percent_complete": 50,
+                        "assigned_to": None,
+                        "sprint_id": sprint["id"],
+                        "parent_task_id": parent["id"],
+                        "sort_order": 15,
+                    },
+                },
+                {"id": second_task["id"], "fields": {"percent_complete": 25}},
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    updated = {item["id"]: item for item in response.json()}
+    assert updated[task["id"]]["name"] == "Updated Task"
+    assert updated[task["id"]]["description"] == "Updated description"
+    assert updated[task["id"]]["status_id"] == str(status_id)
+    assert updated[task["id"]]["task_type_id"] == str(task_type_id)
+    assert updated[task["id"]]["sprint_id"] == sprint["id"]
+    assert updated[task["id"]]["parent_task_id"] == parent["id"]
+    assert updated[task["id"]]["sort_order"] == "15.00"
+    assert updated[second_task["id"]]["percent_complete"] == "25.00"
+
+
+def test_viewer_cannot_bulk_update_tasks(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Blocked")
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.VIEWER)
+
+    response = client.patch(
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/bulk",
+        json={"updates": [{"id": task["id"], "fields": {"name": "Nope"}}]},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Insufficient account role."
+
+
+def test_bulk_update_rolls_back_if_one_task_is_invalid(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    first = create_task(client, project_id, "First")
+    second = create_task(client, project_id, "Second")
+    invalid_status_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="TYPE",
+        value="WORK_PACKAGE",
+    )
+    set_current_user_role(db_session, account_id, AccountMemberRole.MEMBER)
+
+    response = client.patch(
+        f"/api/v1/projects/{project_id}/tasks/bulk",
+        json={
+            "updates": [
+                {"id": first["id"], "fields": {"name": "Should Roll Back"}},
+                {"id": second["id"], "fields": {"status_id": str(invalid_status_id)}},
+            ]
+        },
+    )
+    db_session.expire_all()
+    first_after = db_session.get(Task, UUID(first["id"]))
+    second_after = db_session.get(Task, UUID(second["id"]))
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Invalid task status."
+    assert first_after is not None and first_after.name == "First"
+    assert second_after is not None and second_after.name == "Second"
+
+
+def test_bulk_update_rejects_task_from_another_project(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    other_hierarchy = create_work_hierarchy(client)
+    other_task = create_task(client, other_hierarchy["project"]["id"], "Other")
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+
+    response = client.patch(
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/bulk",
+        json={"updates": [{"id": other_task["id"], "fields": {"name": "Wrong Project"}}]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "All tasks must belong to the project."
+
+
+def test_bulk_update_rejects_invalid_status_id(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Task")
+    invalid_status_id = get_task_option_id(
+        db_session,
+        account_id=hierarchy["account"]["id"],
+        option_name="TYPE",
+        value="WORK_PACKAGE",
+    )
+
+    response = client.patch(
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/bulk",
+        json={"updates": [{"id": task["id"], "fields": {"status_id": str(invalid_status_id)}}]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Invalid task status."
+
+
+def test_bulk_update_rejects_invalid_sprint_id(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    other_hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Task")
+    other_sprint = create_sprint(client, other_hierarchy["project"]["id"])
+
+    response = client.patch(
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/bulk",
+        json={"updates": [{"id": task["id"], "fields": {"sprint_id": other_sprint["id"]}}]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Sprint must belong to the same project."
+
+
+def test_member_can_bulk_delete_tasks(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    predecessor = create_task(client, project_id, "Predecessor", sort_order=1)
+    parent = create_task(client, project_id, "Parent", sort_order=2)
+    kept = create_task(client, project_id, "Kept", sort_order=3)
+    assignment_response = client.post(
+        f"/api/v1/tasks/{parent['id']}/assignments",
+        json={"resource_name": "Designer"},
+    )
+    predecessor_response = client.post(
+        f"/api/v1/tasks/{parent['id']}/predecessors",
+        json={"predecessor_task_id": predecessor["id"]},
+    )
+    assert assignment_response.status_code == 201
+    assert predecessor_response.status_code == 201
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+    current_user = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+    assert current_user is not None
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/tasks/bulk",
+        json={"task_ids": [parent["id"], predecessor["id"]]},
+    )
+    db_session.expire_all()
+    parent_after = db_session.get(Task, UUID(parent["id"]))
+    predecessor_after = db_session.get(Task, UUID(predecessor["id"]))
+    kept_after = db_session.get(Task, UUID(kept["id"]))
+    assignment = db_session.get(TaskAssignment, UUID(assignment_response.json()["id"]))
+    task_predecessor = db_session.get(TaskPredecessor, UUID(predecessor_response.json()["id"]))
+    list_response = client.get(f"/api/v1/projects/{project_id}/tasks")
+    read_response = client.get(f"/api/v1/tasks/{parent['id']}")
+
+    assert response.status_code == 204
+    assert parent_after is not None
+    assert parent_after.is_deleted is True
+    assert parent_after.deleted_at is not None
+    assert parent_after.deleted_by == current_user.id
+    assert predecessor_after is not None and predecessor_after.is_deleted is True
+    assert kept_after is not None and kept_after.name == "Kept"
+    assert assignment is not None and assignment.task_id == parent_after.id
+    assert task_predecessor is not None and task_predecessor.task_id == parent_after.id
+    assert list_response.status_code == 200
+    assert {task["id"] for task in list_response.json()} == {kept["id"]}
+    assert read_response.status_code == 404
+    assert read_response.json()["message"] == "Task not found."
+
+
+def test_bulk_delete_rejects_task_with_non_deleted_children(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    parent = create_task(client, project_id, "Parent")
+    child = create_task(client, project_id, "Child", parent_task_id=parent["id"])
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/tasks/bulk",
+        json={"task_ids": [parent["id"]]},
+    )
+    db_session.expire_all()
+    parent_after = db_session.get(Task, UUID(parent["id"]))
+    child_after = db_session.get(Task, UUID(child["id"]))
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Cannot delete task with non-deleted children."
+    assert parent_after is not None and parent_after.is_deleted is False
+    assert child_after is not None and child_after.is_deleted is False
+
+
+def test_viewer_cannot_bulk_delete_tasks(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Blocked")
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.VIEWER)
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/bulk",
+        json={"task_ids": [task["id"]]},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Insufficient account role."
+
+
+def test_non_member_cannot_bulk_delete_tasks(client: TestClient, db_session: Session) -> None:
+    other_user = User(email="task-bulk-delete-other@example.com", full_name="Task Bulk Delete Other")
+    db_session.add(other_user)
+    db_session.flush()
+    other_account = Account(name="Other Delete Account", slug="other-delete-account", created_by=other_user.id)
+    db_session.add(other_account)
+    db_session.flush()
+    db_session.add(
+        AccountMember(
+            account_id=other_account.id,
+            user_id=other_user.id,
+            role=AccountMemberRole.OWNER.value,
+        )
+    )
+    portfolio = Portfolio(account_id=other_account.id, name="Other Portfolio", created_by=other_user.id)
+    db_session.add(portfolio)
+    db_session.flush()
+    program = Program(
+        account_id=other_account.id,
+        portfolio_id=portfolio.id,
+        name="Other Program",
+        created_by=other_user.id,
+    )
+    db_session.add(program)
+    db_session.flush()
+    project = Project(
+        account_id=other_account.id,
+        portfolio_id=portfolio.id,
+        program_id=program.id,
+        name="Other Project",
+        created_by=other_user.id,
+    )
+    db_session.add(project)
+    db_session.flush()
+    task = Task(account_id=other_account.id, project_id=project.id, name="Private Task", created_by=other_user.id)
+    db_session.add(task)
+    db_session.commit()
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/projects/{project.id}/tasks/bulk",
+        json={"task_ids": [str(task.id)]},
+    )
+    db_session.expire_all()
+    task_after = db_session.get(Task, task.id)
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Account access denied."
+    assert task_after is not None and task_after.is_deleted is False
+
+
+def test_bulk_delete_rejects_task_from_another_project(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    other_hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Keep")
+    other_task = create_task(client, other_hierarchy["project"]["id"], "Other")
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/bulk",
+        json={"task_ids": [task["id"], other_task["id"]]},
+    )
+    db_session.expire_all()
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "All tasks must belong to the project."
+    assert db_session.get(Task, UUID(task["id"])) is not None
+
+
+def test_bulk_delete_rejects_duplicate_task_ids(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Duplicate")
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/bulk",
+        json={"task_ids": [task["id"], task["id"]]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Duplicate task id."
+
+
+def test_single_task_delete_soft_deletes_task(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Single Delete")
+    current_user = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+    assert current_user is not None
+
+    response = client.delete(f"/api/v1/tasks/{task['id']}")
+    db_session.expire_all()
+    task_after = db_session.get(Task, UUID(task["id"]))
+    list_response = client.get(f"/api/v1/projects/{hierarchy['project']['id']}/tasks")
+    read_response = client.get(f"/api/v1/tasks/{task['id']}")
+
+    assert response.status_code == 204
+    assert task_after is not None
+    assert task_after.is_deleted is True
+    assert task_after.deleted_at is not None
+    assert task_after.deleted_by == current_user.id
+    assert list_response.status_code == 200
+    assert list_response.json() == []
+    assert read_response.status_code == 404
+    assert read_response.json()["message"] == "Task not found."
+
+
+def test_member_can_reorder_tasks(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    parent = create_task(client, project_id, "Parent", sort_order=1)
+    child = create_task(client, project_id, "Child", sort_order=2)
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/tasks/reorder",
+        json={
+            "tasks": [
+                {"id": parent["id"], "parent_task_id": None, "sort_order": 10},
+                {"id": child["id"], "parent_task_id": parent["id"], "sort_order": 1},
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    updated = {item["id"]: item for item in response.json()}
+    assert updated[parent["id"]]["sort_order"] == "10.00"
+    assert updated[child["id"]]["parent_task_id"] == parent["id"]
+
+
+def test_viewer_cannot_reorder_tasks(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Task")
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.VIEWER)
+
+    response = client.post(
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/reorder",
+        json={"tasks": [{"id": task["id"], "parent_task_id": None, "sort_order": 5}]},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Insufficient account role."
+
+
+def test_reorder_is_atomic(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    first = create_task(client, project_id, "First", sort_order=1)
+    second = create_task(client, project_id, "Second", sort_order=2)
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/tasks/reorder",
+        json={
+            "tasks": [
+                {"id": first["id"], "parent_task_id": None, "sort_order": 10},
+                {"id": second["id"], "parent_task_id": second["id"], "sort_order": 20},
+            ]
+        },
+    )
+    db_session.expire_all()
+    first_after = db_session.get(Task, UUID(first["id"]))
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Task cannot be its own parent."
+    assert first_after is not None and first_after.sort_order == Decimal("1.00")
+
+
+def test_reorder_rejects_self_parenting(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Task")
+
+    response = client.post(
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/reorder",
+        json={"tasks": [{"id": task["id"], "parent_task_id": task["id"], "sort_order": 1}]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Task cannot be its own parent."
+
+
+def test_reorder_rejects_circular_parent(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    parent = create_task(client, hierarchy["project"]["id"], "Parent")
+    child = create_task(client, hierarchy["project"]["id"], "Child", parent_task_id=parent["id"])
+
+    response = client.post(
+        f"/api/v1/projects/{hierarchy['project']['id']}/tasks/reorder",
+        json={"tasks": [{"id": parent["id"], "parent_task_id": child["id"], "sort_order": 1}]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Task hierarchy cannot contain circular parent references."
+
+
+def test_move_task_works(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    parent = create_task(client, hierarchy["project"]["id"], "Parent")
+    task = create_task(client, hierarchy["project"]["id"], "Task")
+
+    response = client.post(
+        f"/api/v1/tasks/{task['id']}/move",
+        json={"parent_task_id": parent["id"], "sort_order": 5},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["parent_task_id"] == parent["id"]
+    assert response.json()["sort_order"] == "5.00"
+
+
+def test_indent_makes_previous_sibling_parent(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    previous = create_task(client, project_id, "Previous", sort_order=1)
+    task = create_task(client, project_id, "Task", sort_order=2)
+
+    response = client.post(f"/api/v1/tasks/{task['id']}/indent")
+
+    assert response.status_code == 200
+    assert response.json()["parent_task_id"] == previous["id"]
+
+
+def test_indent_without_previous_sibling_returns_400(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "First", sort_order=1)
+
+    response = client.post(f"/api/v1/tasks/{task['id']}/indent")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Cannot indent task without a previous sibling."
+
+
+def test_outdent_moves_task_one_level_up(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    grandparent = create_task(client, project_id, "Grandparent", sort_order=1)
+    parent = create_task(client, project_id, "Parent", parent_task_id=grandparent["id"], sort_order=2)
+    task = create_task(client, project_id, "Task", parent_task_id=parent["id"], sort_order=1)
+
+    response = client.post(f"/api/v1/tasks/{task['id']}/outdent")
+    db_session.expire_all()
+    task_after = db_session.get(Task, UUID(task["id"]))
+
+    assert response.status_code == 200
+    assert response.json()["parent_task_id"] == grandparent["id"]
+    assert task_after is not None and task_after.sort_order > Decimal("2.00")
+
+
+def test_outdent_root_task_returns_400(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Root")
+
+    response = client.post(f"/api/v1/tasks/{task['id']}/outdent")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Cannot outdent a root task."
+
+
+def test_cross_project_parent_rejected_for_move(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    other_hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Task")
+    other_parent = create_task(client, other_hierarchy["project"]["id"], "Other Parent")
+
+    response = client.post(
+        f"/api/v1/tasks/{task['id']}/move",
+        json={"parent_task_id": other_parent["id"], "sort_order": 1},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Parent task must belong to the same project."

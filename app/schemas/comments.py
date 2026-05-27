@@ -23,3 +23,13 @@ class CommentRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CommentMentionRead(BaseModel):
+    id: UUID
+    account_id: UUID
+    comment_id: UUID
+    mentioned_user_id: UUID
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

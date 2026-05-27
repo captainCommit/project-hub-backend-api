@@ -6,11 +6,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.hierarchy import StatusSummary
+from app.schemas.sprints import SprintSummary
 
 
 class TaskBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
+    sprint_id: UUID | None = None
     parent_task_id: UUID | None = None
     task_type_id: UUID | None = None
     status_id: UUID | None = None
@@ -34,6 +36,7 @@ class TaskCreate(TaskBase):
 class TaskUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
+    sprint_id: UUID | None = None
     parent_task_id: UUID | None = None
     task_type_id: UUID | None = None
     status_id: UUID | None = None
@@ -48,6 +51,61 @@ class TaskUpdate(BaseModel):
         if self.start_date and self.finish_date and self.finish_date < self.start_date:
             raise ValueError("finish_date cannot be before start_date")
         return self
+
+
+class TaskBulkUpdateFields(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    status_id: UUID | None = None
+    task_type_id: UUID | None = None
+    start_date: date | None = None
+    finish_date: date | None = None
+    duration_days: Decimal | None = None
+    percent_complete: Decimal | None = Field(default=None, ge=0, le=100)
+    assigned_to: UUID | None = None
+    sprint_id: UUID | None = None
+    parent_task_id: UUID | None = None
+    sort_order: Decimal | None = None
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "TaskBulkUpdateFields":
+        if self.start_date and self.finish_date and self.finish_date < self.start_date:
+            raise ValueError("finish_date cannot be before start_date")
+        return self
+
+
+class TaskBulkUpdateItem(BaseModel):
+    id: UUID
+    fields: TaskBulkUpdateFields
+
+    @model_validator(mode="after")
+    def validate_has_fields(self) -> "TaskBulkUpdateItem":
+        if not self.fields.model_fields_set:
+            raise ValueError("fields must include at least one value")
+        return self
+
+
+class TaskBulkUpdateRequest(BaseModel):
+    updates: list[TaskBulkUpdateItem] = Field(min_length=1)
+
+
+class TaskBulkDeleteRequest(BaseModel):
+    task_ids: list[UUID] = Field(min_length=1)
+
+
+class TaskReorderItem(BaseModel):
+    id: UUID
+    parent_task_id: UUID | None = None
+    sort_order: Decimal
+
+
+class TaskReorderRequest(BaseModel):
+    tasks: list[TaskReorderItem] = Field(min_length=1)
+
+
+class TaskMoveRequest(BaseModel):
+    parent_task_id: UUID | None = None
+    sort_order: Decimal
 
 
 class TaskAssignmentCreate(BaseModel):
@@ -94,6 +152,7 @@ class TaskRead(BaseModel):
     id: UUID
     account_id: UUID
     project_id: UUID
+    sprint_id: UUID | None
     parent_task_id: UUID | None
     task_type_id: UUID | None
     status_id: UUID | None
@@ -109,6 +168,7 @@ class TaskRead(BaseModel):
     updated_at: datetime
     status: StatusSummary | None = None
     task_type: StatusSummary | None = None
+    sprint: SprintSummary | None = None
     assignments: list[TaskAssignmentRead] = []
     predecessors: list[TaskPredecessorRead] = []
 

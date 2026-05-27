@@ -11,6 +11,7 @@ from app.schemas.hierarchy import (
     PortfolioOverviewRead,
     PortfolioRead,
     PortfolioUpdate,
+    ProgramsProjectsRead,
     ProgramCreate,
     ProgramOverviewRead,
     ProgramRead,
@@ -198,6 +199,15 @@ def get_sidebar(
     current_user: User = Depends(get_current_user),
 ) -> AccountSidebarRead:
     return HierarchyService(db).get_sidebar(account_id=account_id, current_user=current_user)
+
+
+@router.get("/accounts/{account_id}/programs-projects", response_model=ProgramsProjectsRead)
+def get_programs_projects(
+    account_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProgramsProjectsRead:
+    return HierarchyService(db).get_programs_projects(account_id=account_id, current_user=current_user)
 
 
 @router.get("/portfolios/{portfolio_id}/overview", response_model=PortfolioOverviewRead)

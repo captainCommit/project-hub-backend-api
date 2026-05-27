@@ -1,12 +1,14 @@
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, delete, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
+from app.models.sprint import Sprint
 from app.models.task import Task
 from app.models.task_assignment import TaskAssignment
 from app.models.task_predecessor import TaskPredecessor
@@ -23,8 +25,23 @@ class TaskRepository:
         self.db.refresh(task)
         return task
 
-    def get_task(self, task_id: UUID) -> Task | None:
-        return self.db.get(Task, task_id)
+    def get_task(self, task_id: UUID, *, include_deleted: bool = False) -> Task | None:
+        statement = select(Task).where(Task.id == task_id)
+        if not include_deleted:
+            statement = statement.where(Task.is_deleted.is_(False))
+        return self.db.scalar(statement)
+
+    def get_tasks_by_ids(self, task_ids: Iterable[UUID], *, include_deleted: bool = False) -> dict[UUID, Task]:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return {}
+        statement = select(Task).where(Task.id.in_(task_ids))
+        if not include_deleted:
+            statement = statement.where(Task.is_deleted.is_(False))
+        return {task.id: task for task in self.db.scalars(statement).all()}
+
+    def get_sprint(self, sprint_id: UUID) -> Sprint | None:
+        return self.db.get(Sprint, sprint_id)
 
     def list_tasks_statement(
         self,
@@ -34,7 +51,7 @@ class TaskRepository:
         task_type_id: UUID | None = None,
         sort: str = "sort_order",
     ) -> Select[tuple[Task]]:
-        statement = select(Task).where(Task.project_id == project_id)
+        statement = select(Task).where(Task.project_id == project_id, Task.is_deleted.is_(False))
         if status_id is not None:
             statement = statement.where(Task.status_id == status_id)
         if task_type_id is not None:
@@ -67,6 +84,15 @@ class TaskRepository:
         )
         return list(self.db.scalars(statement).all())
 
+    def list_tasks_by_parent(self, *, project_id: UUID, parent_task_id: UUID | None) -> list[Task]:
+        statement = select(Task).where(Task.project_id == project_id, Task.is_deleted.is_(False))
+        if parent_task_id is None:
+            statement = statement.where(Task.parent_task_id.is_(None))
+        else:
+            statement = statement.where(Task.parent_task_id == parent_task_id)
+        statement = statement.order_by(Task.sort_order, Task.name, Task.id)
+        return list(self.db.scalars(statement).all())
+
     def list_tasks_for_project_paginated(
         self,
         project_id: UUID,
@@ -92,6 +118,66 @@ class TaskRepository:
         self.db.flush()
         self.db.refresh(task)
         return task
+
+    def clear_parent_for_children(self, task_ids: Iterable[UUID]) -> None:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return
+        self.db.execute(
+            update(Task)
+            .where(Task.parent_task_id.in_(task_ids))
+            .values(parent_task_id=None)
+        )
+        self.db.flush()
+
+    def has_non_deleted_children(self, task_ids: Iterable[UUID]) -> bool:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return False
+        statement = (
+            select(Task.id)
+            .where(
+                Task.parent_task_id.in_(task_ids),
+                Task.is_deleted.is_(False),
+            )
+            .limit(1)
+        )
+        return self.db.scalar(statement) is not None
+
+    def soft_delete_tasks(self, tasks: Iterable[Task], *, deleted_by: UUID) -> None:
+        deleted_at = datetime.now(UTC)
+        for task in tasks:
+            task.is_deleted = True
+            task.deleted_at = deleted_at
+            task.deleted_by = deleted_by
+            self.db.add(task)
+        self.db.flush()
+
+    def delete_tasks(self, tasks: Iterable[Task]) -> None:
+        for task in tasks:
+            self.db.delete(task)
+        self.db.flush()
+
+    def delete_assignments_for_tasks(self, task_ids: Iterable[UUID]) -> None:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return
+        self.db.execute(delete(TaskAssignment).where(TaskAssignment.task_id.in_(task_ids)))
+        self.db.flush()
+
+    def delete_predecessors_for_tasks(self, task_ids: Iterable[UUID]) -> None:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return
+        self.db.execute(
+            delete(TaskPredecessor).where(
+                or_(
+                    TaskPredecessor.task_id.in_(task_ids),
+                    TaskPredecessor.predecessor_task_id.in_(task_ids),
+                )
+            )
+        )
+        self.db.flush()
 
     def create_assignment(self, **values: object) -> TaskAssignment:
         assignment = TaskAssignment(**values)
@@ -183,3 +269,10 @@ class TaskRepository:
             return {}
         statement = select(OptionValue).where(OptionValue.id.in_(option_value_ids))
         return {option_value.id: option_value for option_value in self.db.scalars(statement).all()}
+
+    def get_sprints_by_ids(self, sprint_ids: Iterable[UUID]) -> dict[UUID, Sprint]:
+        sprint_ids = list(sprint_ids)
+        if not sprint_ids:
+            return {}
+        statement = select(Sprint).where(Sprint.id.in_(sprint_ids))
+        return {sprint.id: sprint for sprint in self.db.scalars(statement).all()}

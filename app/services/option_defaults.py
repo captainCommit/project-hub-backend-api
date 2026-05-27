@@ -50,4 +50,9 @@ DEFAULT_OPTION_SETS: tuple[dict[str, object], ...] = (
         "name": "STATUS",
         "values": ("Draft", "Validated", "Invalidated"),
     },
+    {
+        "entity_type": "SPRINT",
+        "name": "STATUS",
+        "values": ("Planned", "Active", "Completed", "Cancelled"),
+    },
 )

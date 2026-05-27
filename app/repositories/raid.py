@@ -2,13 +2,15 @@ from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
 from app.models.decision_option import DecisionOption
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
+from app.models.program import Program
+from app.models.project import Project
 
 
 class RaidRepository:
@@ -66,6 +68,102 @@ class RaidRepository:
         )
         items, total = paginate_statement(self.db, statement, pagination)
         return items, total
+
+    def list_items_for_account(
+        self,
+        model_cls: type[Any],
+        *,
+        account_id: UUID,
+        sort: str,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        status_id: UUID | None = None,
+        priority_id: UUID | None = None,
+        assigned_to: UUID | None = None,
+        search: str | None = None,
+        search_fields: Iterable[str] = (),
+    ) -> list[Any]:
+        statement = self.list_items_for_account_statement(
+            model_cls,
+            account_id=account_id,
+            sort=sort,
+            project_id=project_id,
+            program_id=program_id,
+            status_id=status_id,
+            priority_id=priority_id,
+            assigned_to=assigned_to,
+            search=search,
+            search_fields=search_fields,
+        )
+        return list(self.db.scalars(statement).all())
+
+    def list_items_for_account_paginated(
+        self,
+        model_cls: type[Any],
+        *,
+        account_id: UUID,
+        sort: str,
+        pagination: PaginationParams,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        status_id: UUID | None = None,
+        priority_id: UUID | None = None,
+        assigned_to: UUID | None = None,
+        search: str | None = None,
+        search_fields: Iterable[str] = (),
+    ) -> tuple[list[Any], int]:
+        statement = self.list_items_for_account_statement(
+            model_cls,
+            account_id=account_id,
+            sort=sort,
+            project_id=project_id,
+            program_id=program_id,
+            status_id=status_id,
+            priority_id=priority_id,
+            assigned_to=assigned_to,
+            search=search,
+            search_fields=search_fields,
+        )
+        items, total = paginate_statement(self.db, statement, pagination)
+        return items, total
+
+    def list_items_for_account_statement(
+        self,
+        model_cls: type[Any],
+        *,
+        account_id: UUID,
+        sort: str,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        status_id: UUID | None = None,
+        priority_id: UUID | None = None,
+        assigned_to: UUID | None = None,
+        search: str | None = None,
+        search_fields: Iterable[str] = (),
+    ) -> Select[Any]:
+        statement = select(model_cls).where(model_cls.account_id == account_id)
+        if project_id is not None:
+            statement = statement.where(model_cls.project_id == project_id)
+        if program_id is not None and hasattr(model_cls, "program_id"):
+            statement = statement.where(model_cls.program_id == program_id)
+        if status_id is not None and hasattr(model_cls, "status_id"):
+            statement = statement.where(model_cls.status_id == status_id)
+        if priority_id is not None and hasattr(model_cls, "priority_id"):
+            statement = statement.where(model_cls.priority_id == priority_id)
+        if assigned_to is not None and hasattr(model_cls, "assigned_to"):
+            statement = statement.where(model_cls.assigned_to == assigned_to)
+
+        search_value = (search or "").strip()
+        if search_value:
+            search_clauses = [getattr(model_cls, field).ilike(f"%{search_value}%") for field in search_fields]
+            if search_clauses:
+                statement = statement.where(or_(*search_clauses))
+
+        sort_field = sort.removeprefix("-")
+        sort_column = getattr(model_cls, sort_field)
+        if sort_descending(sort):
+            sort_column = sort_column.desc()
+        return statement.order_by(sort_column, model_cls.id)
 
     def list_items_for_project_statement(
         self,
@@ -155,6 +253,20 @@ class RaidRepository:
             return {}
         statement = select(OptionValue).where(OptionValue.id.in_(option_value_ids))
         return {option_value.id: option_value for option_value in self.db.scalars(statement).all()}
+
+    def get_projects_by_ids(self, project_ids: Iterable[UUID]) -> dict[UUID, Project]:
+        project_ids = list(project_ids)
+        if not project_ids:
+            return {}
+        statement = select(Project).where(Project.id.in_(project_ids))
+        return {project.id: project for project in self.db.scalars(statement).all()}
+
+    def get_programs_by_ids(self, program_ids: Iterable[UUID]) -> dict[UUID, Program]:
+        program_ids = list(program_ids)
+        if not program_ids:
+            return {}
+        statement = select(Program).where(Program.id.in_(program_ids))
+        return {program.id: program for program in self.db.scalars(statement).all()}
 
     def create_decision_option(self, **values: object) -> DecisionOption:
         option = DecisionOption(**values)

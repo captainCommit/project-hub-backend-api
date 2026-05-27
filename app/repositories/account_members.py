@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.account_member import AccountMember, AccountMemberRole
+from app.models.user import User
 
 
 class AccountMemberRepository:
@@ -33,3 +34,15 @@ class AccountMemberRepository:
             AccountMember.user_id == user_id,
         )
         return self.db.scalar(statement)
+
+    def list_for_account(self, account_id: UUID) -> list[AccountMember]:
+        statement = select(AccountMember).where(AccountMember.account_id == account_id)
+        return list(self.db.scalars(statement).all())
+
+    def list_users_for_account(self, account_id: UUID) -> list[User]:
+        statement = (
+            select(User)
+            .join(AccountMember, AccountMember.user_id == User.id)
+            .where(AccountMember.account_id == account_id)
+        )
+        return list(self.db.scalars(statement).all())

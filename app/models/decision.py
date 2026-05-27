@@ -31,6 +31,7 @@ class Decision(Base):
     )
     decision_number: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
+    decision_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     impact: Mapped[str | None] = mapped_column(Text, nullable=True)
     status_id: Mapped[UUID | None] = mapped_column(

@@ -1,28 +1,14 @@
 from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from enum import Enum
-
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import Date, DateTime, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
 
-class ProjectDeliveryType(str, Enum):
-    WATERFALL = "WATERFALL"
-    AGILE = "AGILE"
-    HYBRID = "HYBRID"
-
-
-class Project(Base):
-    __tablename__ = "projects"
-    __table_args__ = (
-        CheckConstraint(
-            "delivery_type in ('WATERFALL', 'AGILE', 'HYBRID')",
-            name="ck_projects_delivery_type",
-        ),
-    )
+class Sprint(Base):
+    __tablename__ = "sprints"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     account_id: Mapped[UUID] = mapped_column(
@@ -30,32 +16,20 @@ class Project(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
-    portfolio_id: Mapped[UUID] = mapped_column(
+    project_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("portfolios.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    program_id: Mapped[UUID] = mapped_column(
-        Uuid(as_uuid=True),
-        ForeignKey("programs.id", ondelete="CASCADE"),
+        ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    delivery_type: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        default=ProjectDeliveryType.WATERFALL.value,
-        server_default=ProjectDeliveryType.WATERFALL.value,
-    )
+    goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     status_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("option_values.id", ondelete="SET NULL"),
         nullable=True,
     )
-    color: Mapped[str | None] = mapped_column(String(50), nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    target_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

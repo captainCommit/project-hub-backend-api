@@ -157,6 +157,27 @@ def create_work_hierarchy(client: TestClient) -> dict[str, dict]:
     return {"account": account, "portfolio": portfolio, "program": program, "project": project_response.json()}
 
 
+def create_project_in_program(client: TestClient, program_id: str, name: str) -> dict:
+    response = client.post(f"/api/v1/programs/{program_id}/projects", json={"name": name})
+    assert response.status_code == 201
+    return response.json()
+
+
+def create_program_in_account(client: TestClient, account_id: str, name: str) -> tuple[dict, dict]:
+    portfolio_response = client.post(
+        f"/api/v1/accounts/{account_id}/portfolios",
+        json={"name": f"{name} Portfolio"},
+    )
+    assert portfolio_response.status_code == 201
+    portfolio = portfolio_response.json()
+    program_response = client.post(
+        f"/api/v1/portfolios/{portfolio['id']}/programs",
+        json={"name": name},
+    )
+    assert program_response.status_code == 201
+    return portfolio, program_response.json()
+
+
 def set_current_user_role(db_session: Session, account_id: str | UUID, role: AccountMemberRole) -> None:
     membership = db_session.scalar(
         select(AccountMember).where(AccountMember.account_id == UUID(str(account_id)))
@@ -400,6 +421,223 @@ def test_risk_filtering_and_pagination(client: TestClient, db_session: Session) 
     assert page_response.status_code == 200
     assert page_response.json()["total"] == 2
     assert len(page_response.json()["items"]) == 1
+
+
+def test_account_member_can_list_risks_across_projects_with_filters_search_pagination_and_related(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    second_project = create_project_in_program(client, hierarchy["program"]["id"], "Second Project")
+    _, other_program = create_program_in_account(client, account_id, "Other Program")
+    other_program_project = create_project_in_program(client, other_program["id"], "Other Program Project")
+    open_status_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="RISK",
+        option_name="STATUS",
+        value="OPEN",
+    )
+    closed_status_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="RISK",
+        option_name="STATUS",
+        value="CLOSED",
+    )
+    high_priority_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="RISK",
+        option_name="PRIORITY",
+        value="HIGH",
+    )
+    low_priority_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="RISK",
+        option_name="PRIORITY",
+        value="LOW",
+    )
+    first = create_raid_item(
+        client,
+        project_id,
+        RAID_CASES[0],
+        title="Alpha vendor risk",
+        cause="Special supplier dependency",
+        effect="Schedule slip",
+        status_id=str(open_status_id),
+        priority_id=str(high_priority_id),
+    )
+    second = create_raid_item(
+        client,
+        second_project["id"],
+        RAID_CASES[0],
+        title="Beta budget risk",
+        cause="Cost increase",
+        status_id=str(closed_status_id),
+        priority_id=str(low_priority_id),
+    )
+    third = create_raid_item(
+        client,
+        other_program_project["id"],
+        RAID_CASES[0],
+        title="Gamma scope risk",
+        cause="Scope churn",
+        status_id=str(open_status_id),
+        priority_id=str(low_priority_id),
+    )
+    set_current_user_role(db_session, account_id, AccountMemberRole.MEMBER)
+
+    all_response = client.get(f"/api/v1/accounts/{account_id}/risks?sort=title")
+    project_response = client.get(f"/api/v1/accounts/{account_id}/risks?project_id={second_project['id']}")
+    program_response = client.get(f"/api/v1/accounts/{account_id}/risks?program_id={other_program['id']}")
+    filter_response = client.get(
+        f"/api/v1/accounts/{account_id}/risks?status_id={open_status_id}&priority_id={high_priority_id}"
+    )
+    search_response = client.get(f"/api/v1/accounts/{account_id}/risks?search=supplier")
+    page_response = client.get(f"/api/v1/accounts/{account_id}/risks?paginated=true&page=1&page_size=2&sort=title")
+    invalid_sort_response = client.get(f"/api/v1/accounts/{account_id}/risks?sort=drop_table")
+
+    assert all_response.status_code == 200
+    assert [item["id"] for item in all_response.json()] == [first["id"], second["id"], third["id"]]
+    assert all_response.json()[0]["project"] == {"id": project_id, "name": hierarchy["project"]["name"]}
+    assert all_response.json()[0]["program"] == {"id": hierarchy["program"]["id"], "name": hierarchy["program"]["name"]}
+    assert all_response.json()[0]["status"]["id"] == str(open_status_id)
+    assert all_response.json()[0]["priority"]["id"] == str(high_priority_id)
+
+    assert project_response.status_code == 200
+    assert [item["id"] for item in project_response.json()] == [second["id"]]
+    assert program_response.status_code == 200
+    assert [item["id"] for item in program_response.json()] == [third["id"]]
+    assert filter_response.status_code == 200
+    assert [item["id"] for item in filter_response.json()] == [first["id"]]
+    assert search_response.status_code == 200
+    assert [item["id"] for item in search_response.json()] == [first["id"]]
+    assert page_response.status_code == 200
+    assert page_response.json()["total"] == 3
+    assert [item["id"] for item in page_response.json()["items"]] == [first["id"], second["id"]]
+    assert invalid_sort_response.status_code == 400
+    assert invalid_sort_response.json()["message"] == "Invalid sort field: drop_table."
+
+
+@pytest.mark.parametrize(
+    "case,query_field,search_value",
+    [
+        (RAID_CASES[1], "title", "supplier"),
+        (RAID_CASES[2], "description", "supplier"),
+        (RAID_CASES[3], "title", "supplier"),
+    ],
+    ids=["issues", "assumptions", "decisions"],
+)
+def test_account_member_can_list_non_risk_raid_across_projects_with_filters_search_pagination_and_related(
+    client: TestClient,
+    db_session: Session,
+    case: dict[str, object],
+    query_field: str,
+    search_value: str,
+) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    second_project = create_project_in_program(client, hierarchy["program"]["id"], "Second Project")
+    _, other_program = create_program_in_account(client, account_id, f"Other {case['entity']} Program")
+    other_program_project = create_project_in_program(client, other_program["id"], "Other Program Project")
+    status_entity_type = str(case["status_entity_type"])
+    open_status_value = "OPEN" if case["entity"] == "issue" else "DRAFT"
+    closed_status_value = {
+        "issue": "CLOSED",
+        "assumption": "VALIDATED",
+        "decision": "APPROVED",
+    }[str(case["entity"])]
+    open_status_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type=status_entity_type,
+        option_name="STATUS",
+        value=open_status_value,
+    )
+    closed_status_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type=status_entity_type,
+        option_name="STATUS",
+        value=closed_status_value,
+    )
+    first = create_raid_item(
+        client,
+        project_id,
+        case,
+        **{query_field: f"Alpha {search_value} {case['entity']}", "status_id": str(open_status_id)},
+    )
+    second = create_raid_item(
+        client,
+        second_project["id"],
+        case,
+        **{query_field: f"Beta {case['entity']}", "status_id": str(closed_status_id)},
+    )
+    third = create_raid_item(
+        client,
+        other_program_project["id"],
+        case,
+        **{query_field: f"Gamma {case['entity']}", "status_id": str(open_status_id)},
+    )
+    collection = str(case["collection"])
+    set_current_user_role(db_session, account_id, AccountMemberRole.MEMBER)
+
+    all_response = client.get(f"/api/v1/accounts/{account_id}/{collection}?sort={query_field}")
+    project_response = client.get(f"/api/v1/accounts/{account_id}/{collection}?project_id={second_project['id']}")
+    program_response = client.get(f"/api/v1/accounts/{account_id}/{collection}?program_id={other_program['id']}")
+    filter_response = client.get(f"/api/v1/accounts/{account_id}/{collection}?status_id={open_status_id}")
+    search_response = client.get(f"/api/v1/accounts/{account_id}/{collection}?search={search_value}")
+    page_response = client.get(
+        f"/api/v1/accounts/{account_id}/{collection}?paginated=true&page=1&page_size=2&sort={query_field}"
+    )
+
+    assert all_response.status_code == 200
+    assert [item["id"] for item in all_response.json()] == [first["id"], second["id"], third["id"]]
+    assert all_response.json()[0]["project"] == {"id": project_id, "name": hierarchy["project"]["name"]}
+    assert all_response.json()[0]["program"] == {"id": hierarchy["program"]["id"], "name": hierarchy["program"]["name"]}
+    assert all_response.json()[0]["status"]["id"] == str(open_status_id)
+    assert project_response.status_code == 200
+    assert [item["id"] for item in project_response.json()] == [second["id"]]
+    assert program_response.status_code == 200
+    assert [item["id"] for item in program_response.json()] == [third["id"]]
+    assert filter_response.status_code == 200
+    assert {item["id"] for item in filter_response.json()} == {first["id"], third["id"]}
+    assert search_response.status_code == 200
+    assert [item["id"] for item in search_response.json()] == [first["id"]]
+    assert page_response.status_code == 200
+    assert page_response.json()["total"] == 3
+    assert [item["id"] for item in page_response.json()["items"]] == [first["id"], second["id"]]
+
+
+def test_non_member_cannot_list_account_risks(client: TestClient, db_session: Session) -> None:
+    other_user = User(email="account-raid-other@example.com", full_name="Account RAID Other")
+    db_session.add(other_user)
+    db_session.flush()
+    other_account = Account(
+        name="Other Account RAID",
+        slug="other-account-raid",
+        created_by=other_user.id,
+    )
+    db_session.add(other_account)
+    db_session.flush()
+    db_session.add(
+        AccountMember(
+            account_id=other_account.id,
+            user_id=other_user.id,
+            role=AccountMemberRole.OWNER.value,
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"/api/v1/accounts/{other_account.id}/risks")
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Account access denied."
 
 
 @pytest.mark.parametrize("case", RAID_CASES, ids=[str(case["entity"]) for case in RAID_CASES])
