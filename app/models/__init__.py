@@ -15,6 +15,8 @@ from app.models.option_value import OptionValue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project, ProjectDeliveryType
+from app.models.resource import Resource
+from app.models.resource_allocation import ResourceAllocation
 from app.models.risk import Risk
 from app.models.sprint import Sprint
 from app.models.task import Task
@@ -43,6 +45,8 @@ __all__ = [
     "Program",
     "Project",
     "ProjectDeliveryType",
+    "Resource",
+    "ResourceAllocation",
     "Risk",
     "Sprint",
     "Task",

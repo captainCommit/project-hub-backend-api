@@ -13,6 +13,7 @@ from app.models.issue import Issue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
+from app.models.resource import Resource
 from app.models.risk import Risk
 from app.models.sprint import Sprint
 from app.models.task import Task
@@ -29,6 +30,7 @@ SUPPORTED_ENTITY_TYPES: tuple[str, ...] = (
     "ASSUMPTION",
     "DECISION",
     "SPRINT",
+    "RESOURCE",
 )
 SEARCH_SIMILARITY_THRESHOLD = 0.1
 
@@ -285,6 +287,26 @@ class SearchService:
                         ),
                     ),
                 ),
+            ),
+            "RESOURCE": self.entity_statement(
+                entity_type="RESOURCE",
+                id_column=Resource.id,
+                title_column=Resource.name,
+                extra_search_column=Resource.role,
+                subtitle_column=Account.name,
+                created_at_column=Resource.created_at,
+                from_model=Resource,
+                joins=(
+                    (Account, Account.id == Resource.account_id),
+                    (
+                        AccountMember,
+                        and_(
+                            AccountMember.account_id == Resource.account_id,
+                            AccountMember.user_id == user_id_param,
+                        ),
+                    ),
+                ),
+                filters=(Resource.is_active.is_(True),),
             ),
         }
 

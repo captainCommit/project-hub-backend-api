@@ -19,6 +19,8 @@ from app.models.issue import Issue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
+from app.models.resource import Resource
+from app.models.resource_allocation import ResourceAllocation
 from app.models.risk import Risk
 from app.models.sprint import Sprint
 from app.models.task import Task
@@ -41,6 +43,8 @@ ACTIVITY_ENTITY_MODELS: dict[str, type[Any]] = {
     "DECISION_OPTION": DecisionOption,
     "COMMENT": Comment,
     "SPRINT": Sprint,
+    "RESOURCE": Resource,
+    "RESOURCE_ALLOCATION": ResourceAllocation,
 }
 
 ACTIVITY_ACTIONS = {
@@ -63,6 +67,12 @@ ACTIVITY_ACTIONS = {
     "TASK_INDENTED",
     "TASK_OUTDENTED",
     "TASK_DELETED",
+    "RESOURCE_CREATED",
+    "RESOURCE_UPDATED",
+    "RESOURCE_DEACTIVATED",
+    "RESOURCE_ALLOCATION_CREATED",
+    "RESOURCE_ALLOCATION_UPDATED",
+    "RESOURCE_ALLOCATION_DELETED",
 }
 
 
