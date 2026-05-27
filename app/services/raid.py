@@ -55,6 +55,8 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
             "priority_id": ("PRIORITY", "Invalid risk priority."),
             "status_id": ("STATUS", "Invalid risk status."),
         },
+        "account_sort_fields": {"created_at", "updated_at", "target_resolution_date", "title"},
+        "search_fields": ("title", "cause", "effect"),
         "created_by_field": "created_by",
     },
     "issue": {
@@ -67,6 +69,8 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
             "priority_id": ("PRIORITY", "Invalid issue priority."),
             "status_id": ("STATUS", "Invalid issue status."),
         },
+        "account_sort_fields": {"created_at", "updated_at", "target_resolution_date", "title"},
+        "search_fields": ("title", "description"),
         "created_by_field": "created_by",
     },
     "assumption": {
@@ -78,6 +82,8 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "options": {
             "status_id": ("STATUS", "Invalid assumption status."),
         },
+        "account_sort_fields": {"created_at", "updated_at", "date_entered", "description"},
+        "search_fields": ("description",),
         "entered_by_field": "entered_by",
     },
     "decision": {
@@ -89,6 +95,8 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "options": {
             "status_id": ("STATUS", "Invalid decision status."),
         },
+        "account_sort_fields": {"created_at", "updated_at", "proposed_date", "approved_date", "title"},
+        "search_fields": ("title", "description", "impact"),
         "created_by_field": "created_by",
     },
 }
@@ -122,6 +130,34 @@ class RaidService:
             pagination=pagination,
         )
 
+    def list_account_risks(
+        self,
+        *,
+        account_id: UUID,
+        current_user: User,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        status_id: UUID | None = None,
+        priority_id: UUID | None = None,
+        assigned_to: UUID | None = None,
+        search: str | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
+        return self.list_account_items(
+            kind="risk",
+            account_id=account_id,
+            current_user=current_user,
+            project_id=project_id,
+            program_id=program_id,
+            status_id=status_id,
+            priority_id=priority_id,
+            assigned_to=assigned_to,
+            search=search,
+            sort=sort,
+            pagination=pagination,
+        )
+
     def get_risk(self, *, risk_id: UUID, current_user: User) -> dict[str, object]:
         return self.get_item(kind="risk", item_id=risk_id, current_user=current_user)
 
@@ -151,6 +187,34 @@ class RaidService:
             pagination=pagination,
         )
 
+    def list_account_issues(
+        self,
+        *,
+        account_id: UUID,
+        current_user: User,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        status_id: UUID | None = None,
+        priority_id: UUID | None = None,
+        assigned_to: UUID | None = None,
+        search: str | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
+        return self.list_account_items(
+            kind="issue",
+            account_id=account_id,
+            current_user=current_user,
+            project_id=project_id,
+            program_id=program_id,
+            status_id=status_id,
+            priority_id=priority_id,
+            assigned_to=assigned_to,
+            search=search,
+            sort=sort,
+            pagination=pagination,
+        )
+
     def get_issue(self, *, issue_id: UUID, current_user: User) -> dict[str, object]:
         return self.get_item(kind="issue", item_id=issue_id, current_user=current_user)
 
@@ -174,6 +238,30 @@ class RaidService:
             project_id=project_id,
             current_user=current_user,
             status_id=status_id,
+            sort=sort,
+            pagination=pagination,
+        )
+
+    def list_account_assumptions(
+        self,
+        *,
+        account_id: UUID,
+        current_user: User,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        status_id: UUID | None = None,
+        search: str | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
+        return self.list_account_items(
+            kind="assumption",
+            account_id=account_id,
+            current_user=current_user,
+            project_id=project_id,
+            program_id=program_id,
+            status_id=status_id,
+            search=search,
             sort=sort,
             pagination=pagination,
         )
@@ -223,6 +311,30 @@ class RaidService:
             project_id=project_id,
             current_user=current_user,
             status_id=status_id,
+            sort=sort,
+            pagination=pagination,
+        )
+
+    def list_account_decisions(
+        self,
+        *,
+        account_id: UUID,
+        current_user: User,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        status_id: UUID | None = None,
+        search: str | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
+        return self.list_account_items(
+            kind="decision",
+            account_id=account_id,
+            current_user=current_user,
+            project_id=project_id,
+            program_id=program_id,
+            status_id=status_id,
+            search=search,
             sort=sort,
             pagination=pagination,
         )
@@ -357,6 +469,72 @@ class RaidService:
             number_field=number_field,
             status_id=status_id,
             priority_id=priority_id,
+            sort=sort_value,
+        )
+        return self.enrich_items(items, config)
+
+    def list_account_items(
+        self,
+        *,
+        kind: str,
+        account_id: UUID,
+        current_user: User,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        status_id: UUID | None = None,
+        priority_id: UUID | None = None,
+        assigned_to: UUID | None = None,
+        search: str | None = None,
+        sort: str | None = None,
+        pagination: PaginationParams | None = None,
+    ) -> list[dict[str, object]] | dict[str, object]:
+        config = RAID_CONFIGS[kind]
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        sort_value = validate_sort(
+            sort,
+            allowed_fields=config["account_sort_fields"],
+            default="-created_at",
+        )
+        if project_id is not None:
+            project = self.get_project_or_404(project_id)
+            if project.account_id != account_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Project must belong to the account.",
+                )
+        if program_id is not None:
+            program = self.hierarchy.get_program(program_id)
+            if program is None or program.account_id != account_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Program must belong to the account.",
+                )
+        if pagination and pagination.paginated:
+            items, total = self.raid.list_items_for_account_paginated(
+                config["model"],
+                account_id=account_id,
+                project_id=project_id,
+                program_id=program_id,
+                status_id=status_id,
+                priority_id=priority_id,
+                assigned_to=assigned_to,
+                search=search,
+                search_fields=config["search_fields"],
+                sort=sort_value,
+                pagination=pagination,
+            )
+            return paginated_response(items=self.enrich_items(items, config), total=total, pagination=pagination)
+
+        items = self.raid.list_items_for_account(
+            config["model"],
+            account_id=account_id,
+            project_id=project_id,
+            program_id=program_id,
+            status_id=status_id,
+            priority_id=priority_id,
+            assigned_to=assigned_to,
+            search=search,
+            search_fields=config["search_fields"],
             sort=sort_value,
         )
         return self.enrich_items(items, config)
@@ -563,12 +741,20 @@ class RaidService:
             if option_id is not None
         }
         options = self.raid.get_option_values_by_ids(option_ids)
+        projects = self.raid.get_projects_by_ids({item.project_id for item in items})
+        programs = self.raid.get_programs_by_ids(
+            {item.program_id for item in items if getattr(item, "program_id", None) is not None}
+        )
         enriched_items: list[dict[str, object]] = []
         for item in items:
             item_data = {**item.__dict__}
             for option_field in option_fields:
                 summary_field = option_field[:-3] if option_field.endswith("_id") else option_field
                 item_data[summary_field] = self.option_summary(getattr(item, option_field), options)
+            project = projects.get(item.project_id)
+            program = programs.get(item.program_id)
+            item_data["project"] = {"id": project.id, "name": project.name} if project is not None else None
+            item_data["program"] = {"id": program.id, "name": program.name} if program is not None else None
             enriched_items.append(item_data)
         return enriched_items
 

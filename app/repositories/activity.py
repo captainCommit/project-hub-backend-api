@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Select, and_, or_, select
+from sqlalchemy import Select, and_, case, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
@@ -31,9 +31,12 @@ class ActivityLogRepository:
         entity_id: UUID,
         sort: str = "-created_at",
     ) -> Select[tuple[ActivityLog]]:
-        sort_column = ActivityLog.created_at.desc() if sort_descending(sort) else ActivityLog.created_at
+        descending = sort_descending(sort)
+        sort_column = ActivityLog.created_at.desc() if descending else ActivityLog.created_at
+        created_tie_breaker = case((ActivityLog.action == "CREATED", 1 if descending else 0), else_=0 if descending else 1)
         return select(ActivityLog).where(ActivityLog.entity_type == entity_type, ActivityLog.entity_id == entity_id).order_by(
             sort_column,
+            created_tie_breaker,
             ActivityLog.id.desc(),
         )
 
@@ -77,8 +80,10 @@ class ActivityLogRepository:
                     )
                 )
 
-        sort_column = ActivityLog.created_at.desc() if sort_descending(sort) else ActivityLog.created_at
-        return select(ActivityLog).where(or_(*conditions)).order_by(sort_column, ActivityLog.id.desc())
+        descending = sort_descending(sort)
+        sort_column = ActivityLog.created_at.desc() if descending else ActivityLog.created_at
+        created_tie_breaker = case((ActivityLog.action == "CREATED", 1 if descending else 0), else_=0 if descending else 1)
+        return select(ActivityLog).where(or_(*conditions)).order_by(sort_column, created_tie_breaker, ActivityLog.id.desc())
 
     def list_for_project(self, project_id: UUID, *, sort: str = "-created_at") -> list[ActivityLog]:
         statement = self.list_for_project_statement(project_id, sort=sort)

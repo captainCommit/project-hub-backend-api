@@ -9,10 +9,14 @@ from app.models.user import User
 from app.schemas.tasks import (
     TaskAssignmentCreate,
     TaskAssignmentRead,
+    TaskBulkDeleteRequest,
+    TaskBulkUpdateRequest,
     TaskCreate,
+    TaskMoveRequest,
     TaskPredecessorCreate,
     TaskPredecessorRead,
     TaskRead,
+    TaskReorderRequest,
     TaskTreeRead,
     TaskUpdate,
 )
@@ -62,6 +66,58 @@ def create_task(
     return TaskService(db).create_task(project_id=project_id, task_in=task_in, current_user=current_user)
 
 
+@router.patch(
+    "/projects/{project_id}/tasks/bulk",
+    response_model=list[TaskRead],
+    summary="Bulk update project tasks",
+    description=(
+        "Apply spreadsheet-style updates to multiple tasks in one transaction. "
+        "If any update is invalid, all changes are rolled back."
+    ),
+)
+def bulk_update_tasks(
+    project_id: UUID,
+    bulk_in: TaskBulkUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[TaskRead]:
+    return TaskService(db).bulk_update_tasks(project_id=project_id, bulk_in=bulk_in, current_user=current_user)
+
+
+@router.delete(
+    "/projects/{project_id}/tasks/bulk",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Bulk delete project tasks",
+    description=(
+        "Delete multiple tasks from a project in one transaction. "
+        "If any task is invalid, no tasks are deleted."
+    ),
+)
+def bulk_delete_tasks(
+    project_id: UUID,
+    bulk_in: TaskBulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    TaskService(db).bulk_delete_tasks(project_id=project_id, bulk_in=bulk_in, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/projects/{project_id}/tasks/reorder",
+    response_model=list[TaskRead],
+    summary="Reorder project tasks",
+    description="Atomically update parent_task_id and sort_order for tasks in a project while preventing cycles.",
+)
+def reorder_tasks(
+    project_id: UUID,
+    reorder_in: TaskReorderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[TaskRead]:
+    return TaskService(db).reorder_tasks(project_id=project_id, reorder_in=reorder_in, current_user=current_user)
+
+
 @router.get("/tasks/{task_id}", response_model=TaskRead)
 def get_task(
     task_id: UUID,
@@ -79,6 +135,49 @@ def update_task(
     current_user: User = Depends(get_current_user),
 ) -> TaskRead:
     return TaskService(db).update_task(task_id=task_id, task_in=task_in, current_user=current_user)
+
+
+@router.post(
+    "/tasks/{task_id}/move",
+    response_model=TaskRead,
+    summary="Move a task",
+    description="Move one task to a new parent and sort order while preventing self-parenting and cycles.",
+)
+def move_task(
+    task_id: UUID,
+    move_in: TaskMoveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TaskRead:
+    return TaskService(db).move_task(task_id=task_id, move_in=move_in, current_user=current_user)
+
+
+@router.post(
+    "/tasks/{task_id}/indent",
+    response_model=TaskRead,
+    summary="Indent a task",
+    description="Make the task a child of its previous sibling within the same parent.",
+)
+def indent_task(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TaskRead:
+    return TaskService(db).indent_task(task_id=task_id, current_user=current_user)
+
+
+@router.post(
+    "/tasks/{task_id}/outdent",
+    response_model=TaskRead,
+    summary="Outdent a task",
+    description="Move a task one hierarchy level up and place it immediately after its previous parent.",
+)
+def outdent_task(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TaskRead:
+    return TaskService(db).outdent_task(task_id=task_id, current_user=current_user)
 
 
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)

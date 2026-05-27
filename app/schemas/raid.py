@@ -6,6 +6,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.hierarchy import StatusSummary
 
 
+class RaidProjectSummary(BaseModel):
+    id: UUID
+    name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RaidProgramSummary(BaseModel):
+    id: UUID
+    name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class RiskCreate(BaseModel):
     title: str = Field(min_length=1)
     cause: str | None = None
@@ -48,6 +62,11 @@ class RiskRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AccountRiskRead(RiskRead):
+    project: RaidProjectSummary | None = None
+    program: RaidProgramSummary | None = None
+
+
 class IssueCreate(BaseModel):
     title: str = Field(min_length=1)
     description: str | None = None
@@ -87,6 +106,11 @@ class IssueRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AccountIssueRead(IssueRead):
+    project: RaidProjectSummary | None = None
+    program: RaidProgramSummary | None = None
+
+
 class AssumptionCreate(BaseModel):
     description: str = Field(min_length=1)
     status_id: UUID | None = None
@@ -116,6 +140,11 @@ class AssumptionRead(BaseModel):
     status: StatusSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AccountAssumptionRead(AssumptionRead):
+    project: RaidProjectSummary | None = None
+    program: RaidProgramSummary | None = None
 
 
 class DecisionCreate(BaseModel):
@@ -157,6 +186,11 @@ class DecisionRead(BaseModel):
     status: StatusSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AccountDecisionRead(DecisionRead):
+    project: RaidProjectSummary | None = None
+    program: RaidProgramSummary | None = None
 
 
 class DecisionOptionCreate(BaseModel):

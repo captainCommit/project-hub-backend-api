@@ -53,6 +53,61 @@ class TaskUpdate(BaseModel):
         return self
 
 
+class TaskBulkUpdateFields(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    status_id: UUID | None = None
+    task_type_id: UUID | None = None
+    start_date: date | None = None
+    finish_date: date | None = None
+    duration_days: Decimal | None = None
+    percent_complete: Decimal | None = Field(default=None, ge=0, le=100)
+    assigned_to: UUID | None = None
+    sprint_id: UUID | None = None
+    parent_task_id: UUID | None = None
+    sort_order: Decimal | None = None
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "TaskBulkUpdateFields":
+        if self.start_date and self.finish_date and self.finish_date < self.start_date:
+            raise ValueError("finish_date cannot be before start_date")
+        return self
+
+
+class TaskBulkUpdateItem(BaseModel):
+    id: UUID
+    fields: TaskBulkUpdateFields
+
+    @model_validator(mode="after")
+    def validate_has_fields(self) -> "TaskBulkUpdateItem":
+        if not self.fields.model_fields_set:
+            raise ValueError("fields must include at least one value")
+        return self
+
+
+class TaskBulkUpdateRequest(BaseModel):
+    updates: list[TaskBulkUpdateItem] = Field(min_length=1)
+
+
+class TaskBulkDeleteRequest(BaseModel):
+    task_ids: list[UUID] = Field(min_length=1)
+
+
+class TaskReorderItem(BaseModel):
+    id: UUID
+    parent_task_id: UUID | None = None
+    sort_order: Decimal
+
+
+class TaskReorderRequest(BaseModel):
+    tasks: list[TaskReorderItem] = Field(min_length=1)
+
+
+class TaskMoveRequest(BaseModel):
+    parent_task_id: UUID | None = None
+    sort_order: Decimal
+
+
 class TaskAssignmentCreate(BaseModel):
     user_id: UUID | None = None
     resource_name: str | None = Field(default=None, max_length=255)

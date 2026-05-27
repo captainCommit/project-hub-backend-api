@@ -1,3 +1,4 @@
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -17,7 +18,16 @@ from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.hierarchy import HierarchyRepository
 from app.repositories.tasks import TaskRepository
-from app.schemas.tasks import TaskAssignmentCreate, TaskCreate, TaskPredecessorCreate, TaskUpdate
+from app.schemas.tasks import (
+    TaskAssignmentCreate,
+    TaskBulkDeleteRequest,
+    TaskBulkUpdateRequest,
+    TaskCreate,
+    TaskMoveRequest,
+    TaskPredecessorCreate,
+    TaskReorderRequest,
+    TaskUpdate,
+)
 from app.services.activity import ActivityLogService
 from app.services.notifications import NotificationService
 from app.models.notification import NotificationType
@@ -135,29 +145,9 @@ class TaskService:
             user_id=current_user.id,
             allowed_roles=TASK_WRITE_ROLES,
         )
+        project = self.get_project_or_404(task.project_id)
         changes = task_in.model_dump(exclude_unset=True)
-        if "parent_task_id" in changes:
-            parent_task_id = changes["parent_task_id"]
-            if parent_task_id == task.id:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task cannot be its own parent.")
-            self.validate_parent_task(project_id=task.project_id, parent_task_id=parent_task_id)
-        if "sprint_id" in changes and changes["sprint_id"] is not None:
-            project = self.get_project_or_404(task.project_id)
-            changes["sprint_id"] = self.validate_sprint(project=project, sprint_id=changes["sprint_id"])
-        if "status_id" in changes and changes["status_id"] is not None:
-            changes["status_id"] = self.validate_task_option_id(
-                account_id=task.account_id,
-                option_name="STATUS",
-                option_value_id=changes["status_id"],
-                detail="Invalid task status.",
-            )
-        if "task_type_id" in changes and changes["task_type_id"] is not None:
-            changes["task_type_id"] = self.validate_task_option_id(
-                account_id=task.account_id,
-                option_name="TYPE",
-                option_value_id=changes["task_type_id"],
-                detail="Invalid task type.",
-            )
+        self.prepare_task_update_changes(task=task, project=project, changes=changes)
         old_values = {field: getattr(task, field) for field in changes}
         task = self.tasks.update_task(task, changes)
         ActivityLogService(self.db).record(
@@ -182,6 +172,277 @@ class TaskService:
         self.db.commit()
         self.db.refresh(task)
         return self.enrich_task(task)
+
+    def bulk_update_tasks(
+        self,
+        *,
+        project_id: UUID,
+        bulk_in: TaskBulkUpdateRequest,
+        current_user: User,
+    ) -> list[dict[str, object]]:
+        project = self.get_project_or_404(project_id)
+        self.require_account_role(
+            account_id=project.account_id,
+            user_id=current_user.id,
+            allowed_roles=TASK_WRITE_ROLES,
+        )
+        task_ids = [update.id for update in bulk_in.updates]
+        if len(set(task_ids)) != len(task_ids):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duplicate task update id.")
+        tasks_by_id = self.tasks.get_tasks_by_ids(task_ids)
+        if len(tasks_by_id) != len(task_ids):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found.")
+        for task in tasks_by_id.values():
+            if task.project_id != project.id or task.account_id != project.account_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="All tasks must belong to the project.",
+                )
+
+        updated_tasks: list[Task] = []
+        try:
+            for update in bulk_in.updates:
+                task = tasks_by_id[update.id]
+                fields_set = update.fields.model_fields_set
+                changes = update.fields.model_dump(exclude_unset=True)
+                assigned_to_supplied = "assigned_to" in fields_set
+                assigned_to = changes.pop("assigned_to", None)
+                self.prepare_task_update_changes(task=task, project=project, changes=changes)
+                old_values = {field: getattr(task, field) for field in changes}
+                if assigned_to_supplied:
+                    old_values["assigned_to"] = self.replace_task_user_assignment(task=task, assigned_to=assigned_to)
+                if changes:
+                    task = self.tasks.update_task(task, changes)
+                new_values = {field: getattr(task, field) for field in changes}
+                if assigned_to_supplied:
+                    new_values["assigned_to"] = assigned_to
+                if old_values or new_values:
+                    ActivityLogService(self.db).record(
+                        account_id=task.account_id,
+                        entity_type="TASK",
+                        entity_id=task.id,
+                        action="UPDATED",
+                        old_values=old_values,
+                        new_values=new_values,
+                        created_by=current_user.id,
+                    )
+                if "sprint_id" in changes:
+                    ActivityLogService(self.db).record(
+                        account_id=task.account_id,
+                        entity_type="TASK",
+                        entity_id=task.id,
+                        action="TASK_SPRINT_ASSIGNED",
+                        old_values={"sprint_id": old_values.get("sprint_id")},
+                        new_values={"sprint_id": task.sprint_id},
+                        created_by=current_user.id,
+                    )
+                updated_tasks.append(task)
+            self.db.commit()
+            for task in updated_tasks:
+                self.db.refresh(task)
+            return self.enrich_tasks(updated_tasks)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def bulk_delete_tasks(
+        self,
+        *,
+        project_id: UUID,
+        bulk_in: TaskBulkDeleteRequest,
+        current_user: User,
+    ) -> None:
+        project = self.get_project_or_404(project_id)
+        self.require_account_role(
+            account_id=project.account_id,
+            user_id=current_user.id,
+            allowed_roles=TASK_WRITE_ROLES,
+        )
+        task_ids = bulk_in.task_ids
+        if len(set(task_ids)) != len(task_ids):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duplicate task id.")
+        tasks_by_id = self.tasks.get_tasks_by_ids(task_ids)
+        if len(tasks_by_id) != len(task_ids):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found.")
+        tasks_to_delete = [tasks_by_id[task_id] for task_id in task_ids]
+        for task in tasks_to_delete:
+            if task.project_id != project.id or task.account_id != project.account_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="All tasks must belong to the project.",
+                )
+
+        try:
+            for task in tasks_to_delete:
+                ActivityLogService(self.db).record(
+                    account_id=task.account_id,
+                    entity_type="TASK",
+                    entity_id=task.id,
+                    action="DELETED",
+                    old_values={
+                        "name": task.name,
+                        "project_id": task.project_id,
+                        "parent_task_id": task.parent_task_id,
+                        "sort_order": task.sort_order,
+                        "status_id": task.status_id,
+                    },
+                    created_by=current_user.id,
+                )
+            self.tasks.clear_parent_for_children(task_ids)
+            self.tasks.delete_assignments_for_tasks(task_ids)
+            self.tasks.delete_predecessors_for_tasks(task_ids)
+            self.tasks.delete_tasks(tasks_to_delete)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def reorder_tasks(
+        self,
+        *,
+        project_id: UUID,
+        reorder_in: TaskReorderRequest,
+        current_user: User,
+    ) -> list[dict[str, object]]:
+        project = self.get_project_or_404(project_id)
+        self.require_account_role(
+            account_id=project.account_id,
+            user_id=current_user.id,
+            allowed_roles=TASK_WRITE_ROLES,
+        )
+        task_ids = [item.id for item in reorder_in.tasks]
+        if len(set(task_ids)) != len(task_ids):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duplicate task reorder id.")
+        tasks_by_id = self.tasks.get_tasks_by_ids(task_ids)
+        if len(tasks_by_id) != len(task_ids):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found.")
+        for task in tasks_by_id.values():
+            if task.project_id != project.id or task.account_id != project.account_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="All tasks must belong to the project.",
+                )
+
+        parent_overrides = {item.id: item.parent_task_id for item in reorder_in.tasks}
+        for item in reorder_in.tasks:
+            self.assert_valid_parent(
+                project_id=project.id,
+                task_id=item.id,
+                new_parent_task_id=item.parent_task_id,
+                parent_overrides=parent_overrides,
+            )
+
+        updated_tasks: list[Task] = []
+        try:
+            for item in reorder_in.tasks:
+                task = tasks_by_id[item.id]
+                task = self.update_task_hierarchy(
+                    task=task,
+                    changes={"parent_task_id": item.parent_task_id, "sort_order": item.sort_order},
+                    action="TASK_REORDERED",
+                    current_user=current_user,
+                )
+                updated_tasks.append(task)
+            self.db.commit()
+            for task in updated_tasks:
+                self.db.refresh(task)
+            return self.enrich_tasks(updated_tasks)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def move_task(self, *, task_id: UUID, move_in: TaskMoveRequest, current_user: User) -> dict[str, object]:
+        task = self.get_task_or_404(task_id)
+        self.require_account_role(
+            account_id=task.account_id,
+            user_id=current_user.id,
+            allowed_roles=TASK_WRITE_ROLES,
+        )
+        self.assert_valid_parent(
+            project_id=task.project_id,
+            task_id=task.id,
+            new_parent_task_id=move_in.parent_task_id,
+        )
+        try:
+            task = self.update_task_hierarchy(
+                task=task,
+                changes={"parent_task_id": move_in.parent_task_id, "sort_order": move_in.sort_order},
+                action="TASK_MOVED",
+                current_user=current_user,
+            )
+            self.db.commit()
+            self.db.refresh(task)
+            return self.enrich_task(task)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def indent_task(self, *, task_id: UUID, current_user: User) -> dict[str, object]:
+        task = self.get_task_or_404(task_id)
+        self.require_account_role(
+            account_id=task.account_id,
+            user_id=current_user.id,
+            allowed_roles=TASK_WRITE_ROLES,
+        )
+        previous_sibling = self.previous_sibling(task)
+        if previous_sibling is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot indent task without a previous sibling.",
+            )
+        self.assert_valid_parent(
+            project_id=task.project_id,
+            task_id=task.id,
+            new_parent_task_id=previous_sibling.id,
+        )
+        try:
+            task = self.update_task_hierarchy(
+                task=task,
+                changes={
+                    "parent_task_id": previous_sibling.id,
+                    "sort_order": self.next_child_sort_order(project_id=task.project_id, parent_task_id=previous_sibling.id),
+                },
+                action="TASK_INDENTED",
+                current_user=current_user,
+            )
+            self.db.commit()
+            self.db.refresh(task)
+            return self.enrich_task(task)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def outdent_task(self, *, task_id: UUID, current_user: User) -> dict[str, object]:
+        task = self.get_task_or_404(task_id)
+        self.require_account_role(
+            account_id=task.account_id,
+            user_id=current_user.id,
+            allowed_roles=TASK_WRITE_ROLES,
+        )
+        if task.parent_task_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot outdent a root task.")
+        old_parent = self.get_task_or_404(task.parent_task_id)
+        self.assert_valid_parent(
+            project_id=task.project_id,
+            task_id=task.id,
+            new_parent_task_id=old_parent.parent_task_id,
+        )
+        try:
+            task = self.update_task_hierarchy(
+                task=task,
+                changes={
+                    "parent_task_id": old_parent.parent_task_id,
+                    "sort_order": self.sort_order_after_task(old_parent),
+                },
+                action="TASK_OUTDENTED",
+                current_user=current_user,
+            )
+            self.db.commit()
+            self.db.refresh(task)
+            return self.enrich_task(task)
+        except Exception:
+            self.db.rollback()
+            raise
 
     def create_assignment(
         self,
@@ -295,6 +556,133 @@ class TaskService:
             else:
                 roots.append(task)
         return roots
+
+    def prepare_task_update_changes(self, *, task: Task, project: Project, changes: dict[str, object]) -> None:
+        if "parent_task_id" in changes:
+            self.assert_valid_parent(
+                project_id=task.project_id,
+                task_id=task.id,
+                new_parent_task_id=changes["parent_task_id"],  # type: ignore[arg-type]
+            )
+        if "sprint_id" in changes and changes["sprint_id"] is not None:
+            changes["sprint_id"] = self.validate_sprint(project=project, sprint_id=changes["sprint_id"])  # type: ignore[arg-type]
+        if "status_id" in changes and changes["status_id"] is not None:
+            changes["status_id"] = self.validate_task_option_id(
+                account_id=task.account_id,
+                option_name="STATUS",
+                option_value_id=changes["status_id"],  # type: ignore[arg-type]
+                detail="Invalid task status.",
+            )
+        if "task_type_id" in changes and changes["task_type_id"] is not None:
+            changes["task_type_id"] = self.validate_task_option_id(
+                account_id=task.account_id,
+                option_name="TYPE",
+                option_value_id=changes["task_type_id"],  # type: ignore[arg-type]
+                detail="Invalid task type.",
+            )
+
+    def replace_task_user_assignment(self, *, task: Task, assigned_to: object) -> object:
+        existing_assignments = self.tasks.list_assignments_for_tasks([task.id]).get(task.id, [])
+        existing_user_ids = [assignment.user_id for assignment in existing_assignments if assignment.user_id is not None]
+        for assignment in existing_assignments:
+            if assignment.user_id is not None:
+                self.tasks.delete_assignment(assignment)
+        if assigned_to is not None:
+            self.tasks.create_assignment(
+                account_id=task.account_id,
+                task_id=task.id,
+                user_id=assigned_to,
+                resource_name=None,
+            )
+        if not existing_user_ids:
+            return None
+        if len(existing_user_ids) == 1:
+            return existing_user_ids[0]
+        return existing_user_ids
+
+    def assert_valid_parent(
+        self,
+        *,
+        project_id: UUID,
+        task_id: UUID,
+        new_parent_task_id: UUID | None,
+        parent_overrides: dict[UUID, UUID | None] | None = None,
+    ) -> None:
+        if new_parent_task_id is None:
+            return
+        if new_parent_task_id == task_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task cannot be its own parent.")
+        parent_task = self.get_task_or_404(new_parent_task_id)
+        if parent_task.project_id != project_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Parent task must belong to the same project.",
+            )
+
+        visited: set[UUID] = set()
+        current_parent_id: UUID | None = new_parent_task_id
+        while current_parent_id is not None:
+            if current_parent_id == task_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Task hierarchy cannot contain circular parent references.",
+                )
+            if current_parent_id in visited:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Task hierarchy cannot contain circular parent references.",
+                )
+            visited.add(current_parent_id)
+            if parent_overrides is not None and current_parent_id in parent_overrides:
+                current_parent_id = parent_overrides[current_parent_id]
+                continue
+            current_parent = self.get_task_or_404(current_parent_id)
+            if current_parent.project_id != project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Parent task must belong to the same project.",
+                )
+            current_parent_id = current_parent.parent_task_id
+
+    def update_task_hierarchy(
+        self,
+        *,
+        task: Task,
+        changes: dict[str, object],
+        action: str,
+        current_user: User,
+    ) -> Task:
+        old_values = {field: getattr(task, field) for field in changes}
+        task = self.tasks.update_task(task, changes)
+        ActivityLogService(self.db).record(
+            account_id=task.account_id,
+            entity_type="TASK",
+            entity_id=task.id,
+            action=action,
+            old_values=old_values,
+            new_values={field: getattr(task, field) for field in changes},
+            created_by=current_user.id,
+        )
+        return task
+
+    def previous_sibling(self, task: Task) -> Task | None:
+        siblings = self.tasks.list_tasks_by_parent(project_id=task.project_id, parent_task_id=task.parent_task_id)
+        previous: Task | None = None
+        for sibling in siblings:
+            if sibling.id == task.id:
+                return previous
+            previous = sibling
+        preceding_siblings = [sibling for sibling in siblings if sibling.id != task.id and sibling.sort_order < task.sort_order]
+        return preceding_siblings[-1] if preceding_siblings else None
+
+    def next_child_sort_order(self, *, project_id: UUID, parent_task_id: UUID) -> Decimal:
+        children = self.tasks.list_tasks_by_parent(project_id=project_id, parent_task_id=parent_task_id)
+        if not children:
+            return Decimal("1")
+        return max(child.sort_order for child in children) + Decimal("1")
+
+    def sort_order_after_task(self, task: Task) -> Decimal:
+        return task.sort_order + Decimal("0.01")
 
     def resolve_task_option_id(
         self,

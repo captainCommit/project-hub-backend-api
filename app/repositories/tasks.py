@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, delete, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
@@ -26,6 +26,13 @@ class TaskRepository:
 
     def get_task(self, task_id: UUID) -> Task | None:
         return self.db.get(Task, task_id)
+
+    def get_tasks_by_ids(self, task_ids: Iterable[UUID]) -> dict[UUID, Task]:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return {}
+        statement = select(Task).where(Task.id.in_(task_ids))
+        return {task.id: task for task in self.db.scalars(statement).all()}
 
     def get_sprint(self, sprint_id: UUID) -> Sprint | None:
         return self.db.get(Sprint, sprint_id)
@@ -71,6 +78,15 @@ class TaskRepository:
         )
         return list(self.db.scalars(statement).all())
 
+    def list_tasks_by_parent(self, *, project_id: UUID, parent_task_id: UUID | None) -> list[Task]:
+        statement = select(Task).where(Task.project_id == project_id)
+        if parent_task_id is None:
+            statement = statement.where(Task.parent_task_id.is_(None))
+        else:
+            statement = statement.where(Task.parent_task_id == parent_task_id)
+        statement = statement.order_by(Task.sort_order, Task.name, Task.id)
+        return list(self.db.scalars(statement).all())
+
     def list_tasks_for_project_paginated(
         self,
         project_id: UUID,
@@ -96,6 +112,43 @@ class TaskRepository:
         self.db.flush()
         self.db.refresh(task)
         return task
+
+    def clear_parent_for_children(self, task_ids: Iterable[UUID]) -> None:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return
+        self.db.execute(
+            update(Task)
+            .where(Task.parent_task_id.in_(task_ids))
+            .values(parent_task_id=None)
+        )
+        self.db.flush()
+
+    def delete_tasks(self, tasks: Iterable[Task]) -> None:
+        for task in tasks:
+            self.db.delete(task)
+        self.db.flush()
+
+    def delete_assignments_for_tasks(self, task_ids: Iterable[UUID]) -> None:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return
+        self.db.execute(delete(TaskAssignment).where(TaskAssignment.task_id.in_(task_ids)))
+        self.db.flush()
+
+    def delete_predecessors_for_tasks(self, task_ids: Iterable[UUID]) -> None:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return
+        self.db.execute(
+            delete(TaskPredecessor).where(
+                or_(
+                    TaskPredecessor.task_id.in_(task_ids),
+                    TaskPredecessor.predecessor_task_id.in_(task_ids),
+                )
+            )
+        )
+        self.db.flush()
 
     def create_assignment(self, **values: object) -> TaskAssignment:
         assignment = TaskAssignment(**values)
