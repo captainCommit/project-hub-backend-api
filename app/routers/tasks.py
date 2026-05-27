@@ -180,9 +180,14 @@ def outdent_task(
     return TaskService(db).outdent_task(task_id=task_id, current_user=current_user)
 
 
-@router.delete("/tasks/{task_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def delete_task(task_id: UUID) -> dict[str, str]:
-    return {"detail": "Task deletion is not implemented in Phase 3B."}
+@router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    TaskService(db).delete_task(task_id=task_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

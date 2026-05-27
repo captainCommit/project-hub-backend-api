@@ -271,6 +271,11 @@ class TaskService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="All tasks must belong to the project.",
                 )
+        if self.tasks.has_non_deleted_children(task_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete task with non-deleted children.",
+            )
 
         try:
             for task in tasks_to_delete:
@@ -278,7 +283,7 @@ class TaskService:
                     account_id=task.account_id,
                     entity_type="TASK",
                     entity_id=task.id,
-                    action="DELETED",
+                    action="TASK_DELETED",
                     old_values={
                         "name": task.name,
                         "project_id": task.project_id,
@@ -286,12 +291,45 @@ class TaskService:
                         "sort_order": task.sort_order,
                         "status_id": task.status_id,
                     },
+                    new_values={"is_deleted": True, "deleted_by": current_user.id},
                     created_by=current_user.id,
                 )
-            self.tasks.clear_parent_for_children(task_ids)
-            self.tasks.delete_assignments_for_tasks(task_ids)
-            self.tasks.delete_predecessors_for_tasks(task_ids)
-            self.tasks.delete_tasks(tasks_to_delete)
+            self.tasks.soft_delete_tasks(tasks_to_delete, deleted_by=current_user.id)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def delete_task(self, *, task_id: UUID, current_user: User) -> None:
+        task = self.get_task_or_404(task_id)
+        self.require_account_role(
+            account_id=task.account_id,
+            user_id=current_user.id,
+            allowed_roles=TASK_WRITE_ROLES,
+        )
+        if self.tasks.has_non_deleted_children([task.id]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete task with non-deleted children.",
+            )
+
+        try:
+            ActivityLogService(self.db).record(
+                account_id=task.account_id,
+                entity_type="TASK",
+                entity_id=task.id,
+                action="TASK_DELETED",
+                old_values={
+                    "name": task.name,
+                    "project_id": task.project_id,
+                    "parent_task_id": task.parent_task_id,
+                    "sort_order": task.sort_order,
+                    "status_id": task.status_id,
+                },
+                new_values={"is_deleted": True, "deleted_by": current_user.id},
+                created_by=current_user.id,
+            )
+            self.tasks.soft_delete_tasks([task], deleted_by=current_user.id)
             self.db.commit()
         except Exception:
             self.db.rollback()

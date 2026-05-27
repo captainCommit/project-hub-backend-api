@@ -193,6 +193,7 @@ class SearchService:
                         ),
                     ),
                 ),
+                filters=(Task.is_deleted.is_(False),),
             ),
             "RISK": self.entity_statement(
                 entity_type="RISK",
@@ -298,6 +299,7 @@ class SearchService:
         from_model: object,
         joins: tuple[tuple[object, ColumnElement[bool]], ...],
         extra_search_column: ColumnElement[str] | None = None,
+        filters: tuple[ColumnElement[bool], ...] = (),
     ) -> object:
         query_lower = bindparam("query_lower")
         pattern = bindparam("pattern")
@@ -318,7 +320,7 @@ class SearchService:
         if extra_search_column is not None:
             search_predicates.append(extra_search_column.ilike(pattern))
             search_predicates.append(func.similarity(func.lower(extra_search_column), query_lower) > SEARCH_SIMILARITY_THRESHOLD)
-        return statement.where(or_(*search_predicates))
+        return statement.where(*filters, or_(*search_predicates))
 
     def normalize_id(self, value: object) -> str:
         try:

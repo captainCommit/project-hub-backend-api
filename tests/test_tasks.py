@@ -21,6 +21,8 @@ from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
 from app.models.task import Task
+from app.models.task_assignment import TaskAssignment
+from app.models.task_predecessor import TaskPredecessor
 from app.models.user import User
 from tests.helpers import assert_error_response
 
@@ -639,7 +641,6 @@ def test_member_can_bulk_delete_tasks(client: TestClient, db_session: Session) -
     project_id = hierarchy["project"]["id"]
     predecessor = create_task(client, project_id, "Predecessor", sort_order=1)
     parent = create_task(client, project_id, "Parent", sort_order=2)
-    child = create_task(client, project_id, "Child", parent_task_id=parent["id"], sort_order=1)
     kept = create_task(client, project_id, "Kept", sort_order=3)
     assignment_response = client.post(
         f"/api/v1/tasks/{parent['id']}/assignments",
@@ -652,6 +653,8 @@ def test_member_can_bulk_delete_tasks(client: TestClient, db_session: Session) -
     assert assignment_response.status_code == 201
     assert predecessor_response.status_code == 201
     set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+    current_user = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+    assert current_user is not None
 
     response = client.request(
         "DELETE",
@@ -659,14 +662,49 @@ def test_member_can_bulk_delete_tasks(client: TestClient, db_session: Session) -
         json={"task_ids": [parent["id"], predecessor["id"]]},
     )
     db_session.expire_all()
-    child_after = db_session.get(Task, UUID(child["id"]))
+    parent_after = db_session.get(Task, UUID(parent["id"]))
+    predecessor_after = db_session.get(Task, UUID(predecessor["id"]))
     kept_after = db_session.get(Task, UUID(kept["id"]))
+    assignment = db_session.get(TaskAssignment, UUID(assignment_response.json()["id"]))
+    task_predecessor = db_session.get(TaskPredecessor, UUID(predecessor_response.json()["id"]))
+    list_response = client.get(f"/api/v1/projects/{project_id}/tasks")
+    read_response = client.get(f"/api/v1/tasks/{parent['id']}")
 
     assert response.status_code == 204
-    assert db_session.get(Task, UUID(parent["id"])) is None
-    assert db_session.get(Task, UUID(predecessor["id"])) is None
-    assert child_after is not None and child_after.parent_task_id is None
+    assert parent_after is not None
+    assert parent_after.is_deleted is True
+    assert parent_after.deleted_at is not None
+    assert parent_after.deleted_by == current_user.id
+    assert predecessor_after is not None and predecessor_after.is_deleted is True
     assert kept_after is not None and kept_after.name == "Kept"
+    assert assignment is not None and assignment.task_id == parent_after.id
+    assert task_predecessor is not None and task_predecessor.task_id == parent_after.id
+    assert list_response.status_code == 200
+    assert {task["id"] for task in list_response.json()} == {kept["id"]}
+    assert read_response.status_code == 404
+    assert read_response.json()["message"] == "Task not found."
+
+
+def test_bulk_delete_rejects_task_with_non_deleted_children(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    parent = create_task(client, project_id, "Parent")
+    child = create_task(client, project_id, "Child", parent_task_id=parent["id"])
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/projects/{project_id}/tasks/bulk",
+        json={"task_ids": [parent["id"]]},
+    )
+    db_session.expire_all()
+    parent_after = db_session.get(Task, UUID(parent["id"]))
+    child_after = db_session.get(Task, UUID(child["id"]))
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Cannot delete task with non-deleted children."
+    assert parent_after is not None and parent_after.is_deleted is False
+    assert child_after is not None and child_after.is_deleted is False
 
 
 def test_viewer_cannot_bulk_delete_tasks(client: TestClient, db_session: Session) -> None:
@@ -682,6 +720,57 @@ def test_viewer_cannot_bulk_delete_tasks(client: TestClient, db_session: Session
 
     assert response.status_code == 403
     assert response.json()["message"] == "Insufficient account role."
+
+
+def test_non_member_cannot_bulk_delete_tasks(client: TestClient, db_session: Session) -> None:
+    other_user = User(email="task-bulk-delete-other@example.com", full_name="Task Bulk Delete Other")
+    db_session.add(other_user)
+    db_session.flush()
+    other_account = Account(name="Other Delete Account", slug="other-delete-account", created_by=other_user.id)
+    db_session.add(other_account)
+    db_session.flush()
+    db_session.add(
+        AccountMember(
+            account_id=other_account.id,
+            user_id=other_user.id,
+            role=AccountMemberRole.OWNER.value,
+        )
+    )
+    portfolio = Portfolio(account_id=other_account.id, name="Other Portfolio", created_by=other_user.id)
+    db_session.add(portfolio)
+    db_session.flush()
+    program = Program(
+        account_id=other_account.id,
+        portfolio_id=portfolio.id,
+        name="Other Program",
+        created_by=other_user.id,
+    )
+    db_session.add(program)
+    db_session.flush()
+    project = Project(
+        account_id=other_account.id,
+        portfolio_id=portfolio.id,
+        program_id=program.id,
+        name="Other Project",
+        created_by=other_user.id,
+    )
+    db_session.add(project)
+    db_session.flush()
+    task = Task(account_id=other_account.id, project_id=project.id, name="Private Task", created_by=other_user.id)
+    db_session.add(task)
+    db_session.commit()
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/projects/{project.id}/tasks/bulk",
+        json={"task_ids": [str(task.id)]},
+    )
+    db_session.expire_all()
+    task_after = db_session.get(Task, task.id)
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Account access denied."
+    assert task_after is not None and task_after.is_deleted is False
 
 
 def test_bulk_delete_rejects_task_from_another_project(client: TestClient, db_session: Session) -> None:
@@ -715,6 +804,29 @@ def test_bulk_delete_rejects_duplicate_task_ids(client: TestClient) -> None:
 
     assert response.status_code == 400
     assert response.json()["message"] == "Duplicate task id."
+
+
+def test_single_task_delete_soft_deletes_task(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Single Delete")
+    current_user = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+    assert current_user is not None
+
+    response = client.delete(f"/api/v1/tasks/{task['id']}")
+    db_session.expire_all()
+    task_after = db_session.get(Task, UUID(task["id"]))
+    list_response = client.get(f"/api/v1/projects/{hierarchy['project']['id']}/tasks")
+    read_response = client.get(f"/api/v1/tasks/{task['id']}")
+
+    assert response.status_code == 204
+    assert task_after is not None
+    assert task_after.is_deleted is True
+    assert task_after.deleted_at is not None
+    assert task_after.deleted_by == current_user.id
+    assert list_response.status_code == 200
+    assert list_response.json() == []
+    assert read_response.status_code == 404
+    assert read_response.json()["message"] == "Task not found."
 
 
 def test_member_can_reorder_tasks(client: TestClient, db_session: Session) -> None:

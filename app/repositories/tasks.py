@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import Select, delete, or_, select, update
@@ -24,14 +25,19 @@ class TaskRepository:
         self.db.refresh(task)
         return task
 
-    def get_task(self, task_id: UUID) -> Task | None:
-        return self.db.get(Task, task_id)
+    def get_task(self, task_id: UUID, *, include_deleted: bool = False) -> Task | None:
+        statement = select(Task).where(Task.id == task_id)
+        if not include_deleted:
+            statement = statement.where(Task.is_deleted.is_(False))
+        return self.db.scalar(statement)
 
-    def get_tasks_by_ids(self, task_ids: Iterable[UUID]) -> dict[UUID, Task]:
+    def get_tasks_by_ids(self, task_ids: Iterable[UUID], *, include_deleted: bool = False) -> dict[UUID, Task]:
         task_ids = list(task_ids)
         if not task_ids:
             return {}
         statement = select(Task).where(Task.id.in_(task_ids))
+        if not include_deleted:
+            statement = statement.where(Task.is_deleted.is_(False))
         return {task.id: task for task in self.db.scalars(statement).all()}
 
     def get_sprint(self, sprint_id: UUID) -> Sprint | None:
@@ -45,7 +51,7 @@ class TaskRepository:
         task_type_id: UUID | None = None,
         sort: str = "sort_order",
     ) -> Select[tuple[Task]]:
-        statement = select(Task).where(Task.project_id == project_id)
+        statement = select(Task).where(Task.project_id == project_id, Task.is_deleted.is_(False))
         if status_id is not None:
             statement = statement.where(Task.status_id == status_id)
         if task_type_id is not None:
@@ -79,7 +85,7 @@ class TaskRepository:
         return list(self.db.scalars(statement).all())
 
     def list_tasks_by_parent(self, *, project_id: UUID, parent_task_id: UUID | None) -> list[Task]:
-        statement = select(Task).where(Task.project_id == project_id)
+        statement = select(Task).where(Task.project_id == project_id, Task.is_deleted.is_(False))
         if parent_task_id is None:
             statement = statement.where(Task.parent_task_id.is_(None))
         else:
@@ -122,6 +128,29 @@ class TaskRepository:
             .where(Task.parent_task_id.in_(task_ids))
             .values(parent_task_id=None)
         )
+        self.db.flush()
+
+    def has_non_deleted_children(self, task_ids: Iterable[UUID]) -> bool:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return False
+        statement = (
+            select(Task.id)
+            .where(
+                Task.parent_task_id.in_(task_ids),
+                Task.is_deleted.is_(False),
+            )
+            .limit(1)
+        )
+        return self.db.scalar(statement) is not None
+
+    def soft_delete_tasks(self, tasks: Iterable[Task], *, deleted_by: UUID) -> None:
+        deleted_at = datetime.now(UTC)
+        for task in tasks:
+            task.is_deleted = True
+            task.deleted_at = deleted_at
+            task.deleted_by = deleted_by
+            self.db.add(task)
         self.db.flush()
 
     def delete_tasks(self, tasks: Iterable[Task]) -> None:
