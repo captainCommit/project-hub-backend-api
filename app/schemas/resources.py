@@ -206,3 +206,73 @@ class AccountCapacityForecastRead(BaseModel):
     end_date: date
     resources: list[ResourceCapacityForecastResourceRead]
     summary: AccountCapacityForecastSummaryRead
+
+
+class ResourceAnalysisSummaryRead(BaseModel):
+    resource_count: int
+    overallocated_count: int
+    underutilized_count: int
+    unassigned_task_count: int
+    skill_gap_count: int
+
+
+class ResourceAnalysisResourceRead(BaseModel):
+    resource: ResourceCalendarResourceSummary
+    allocated_hours: Decimal
+    available_hours: Decimal
+    remaining_hours: Decimal
+    utilization_percent: float
+    overallocated: bool = False
+
+
+class ResourceAnalysisTaskSummary(BaseModel):
+    id: UUID
+    project_id: UUID
+    name: str
+    start_date: date | None
+    finish_date: date | None
+    project: ResourceCalendarProjectSummary
+    program: ResourceCalendarProgramSummary
+
+
+class ResourceAnalysisSkillSummary(BaseModel):
+    id: UUID
+    name: str
+    category: str | None
+    required_proficiency: str | None = None
+
+
+class ResourceAnalysisUnassignedTaskRead(BaseModel):
+    task: ResourceAnalysisTaskSummary
+    reasons: list[str] = Field(default_factory=list)
+
+
+class ResourceAnalysisSkillGapRead(BaseModel):
+    task: ResourceAnalysisTaskSummary
+    skill: ResourceAnalysisSkillSummary
+    assigned_resources: list[ResourceCalendarResourceSummary] = Field(default_factory=list)
+    message: str
+
+
+class ResourceAnalysisSuggestionRead(BaseModel):
+    type: str
+    message: str
+    resource: ResourceCalendarResourceSummary | None = None
+    task: ResourceAnalysisTaskSummary | None = None
+    skill: ResourceAnalysisSkillSummary | None = None
+
+
+class ResourceAnalysisRead(BaseModel):
+    summary: ResourceAnalysisSummaryRead
+    overallocated_resources: list[ResourceAnalysisResourceRead]
+    underutilized_resources: list[ResourceAnalysisResourceRead]
+    unassigned_tasks: list[ResourceAnalysisUnassignedTaskRead]
+    skill_gaps: list[ResourceAnalysisSkillGapRead]
+    suggestions: list[ResourceAnalysisSuggestionRead]
+
+
+class ResourceRecommendationRead(BaseModel):
+    resource: ResourceCalendarResourceSummary
+    score: int = Field(ge=0, le=100)
+    reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -20,8 +20,11 @@ from app.models.program import Program
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.resource_allocation import ResourceAllocation
+from app.models.resource_skill import ResourceSkill
 from app.models.resource_time_off import ResourceTimeOff
 from app.models.task import Task
+from app.models.task_assignment import TaskAssignment
+from app.models.task_required_skill import TaskRequiredSkill
 from app.models.user import User
 
 
@@ -169,6 +172,36 @@ def create_holiday(client: TestClient, account_id: str, **extra: object) -> dict
     )
     assert response.status_code == 201
     return response.json()
+
+
+def create_skill(client: TestClient, account_id: str, name: str = "AWS", **extra: object) -> dict:
+    response = client.post(f"/api/v1/accounts/{account_id}/skills", json={"name": name, **extra})
+    assert response.status_code == 201
+    return response.json()
+
+
+def create_resource_skill(client: TestClient, resource_id: str, skill_id: str, proficiency: str = "ADVANCED") -> dict:
+    response = client.post(
+        f"/api/v1/resources/{resource_id}/skills",
+        json={"skill_id": skill_id, "proficiency": proficiency},
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def create_required_skill(client: TestClient, task_id: str, skill_id: str, required_proficiency: str | None = None) -> dict:
+    payload = {"skill_id": skill_id}
+    if required_proficiency is not None:
+        payload["required_proficiency"] = required_proficiency
+    response = client.post(f"/api/v1/tasks/{task_id}/required-skills", json=payload)
+    assert response.status_code == 201
+    return response.json()
+
+
+def model_count(db_session: Session, model: type) -> int:
+    count = db_session.scalar(select(func.count()).select_from(model))
+    assert count is not None
+    return count
 
 
 def set_current_user_role(db_session: Session, account_id: str | UUID, role: AccountMemberRole) -> None:
@@ -1131,3 +1164,288 @@ def test_resource_can_be_found_in_global_search(client: TestClient) -> None:
     assert results[0]["entity_type"] == "RESOURCE"
     assert results[0]["id"] == resource["id"]
     assert results[0]["title"] == "Capacity Planner"
+
+
+def test_resource_analysis_identifies_capacity_assignment_and_skill_problems(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    overloaded = create_resource(client, account_id, "Overloaded Engineer", weekly_capacity_hours=40)
+    underutilized = create_resource(client, account_id, "Available Engineer", weekly_capacity_hours=40)
+    overloaded_task = create_task(
+        client,
+        project_id,
+        "Overloaded AWS Work",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+    create_allocation(
+        client,
+        overloaded_task["id"],
+        overloaded["id"],
+        allocated_hours=41,
+        start_date="2026-06-01",
+        end_date="2026-06-05",
+    )
+    skill = create_skill(client, account_id, "AWS")
+    create_required_skill(client, overloaded_task["id"], skill["id"], "ADVANCED")
+    unassigned_task = create_task(
+        client,
+        project_id,
+        "Unassigned Work",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+
+    response = client.get(
+        f"/api/v1/accounts/{account_id}/resource-analysis",
+        params={"start_date": "2026-06-01", "end_date": "2026-06-05"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"] == {
+        "resource_count": 2,
+        "overallocated_count": 1,
+        "underutilized_count": 1,
+        "unassigned_task_count": 1,
+        "skill_gap_count": 1,
+    }
+    assert body["overallocated_resources"][0]["resource"]["id"] == overloaded["id"]
+    assert body["overallocated_resources"][0]["allocated_hours"] == "41.00"
+    assert body["overallocated_resources"][0]["available_hours"] == "40.00"
+    assert body["underutilized_resources"][0]["resource"]["id"] == underutilized["id"]
+    assert body["underutilized_resources"][0]["utilization_percent"] == 0.0
+    assert body["unassigned_tasks"][0]["task"]["id"] == unassigned_task["id"]
+    assert body["skill_gaps"][0]["task"]["id"] == overloaded_task["id"]
+    assert body["skill_gaps"][0]["skill"]["name"] == "AWS"
+    assert {suggestion["type"] for suggestion in body["suggestions"]} == {
+        "OVERALLOCATION",
+        "UNDERUTILIZATION",
+        "UNASSIGNED_TASK",
+        "SKILL_GAP",
+    }
+
+
+def test_resource_analysis_filters_work(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client, account_slug="resource-analysis-filter-account")
+    account_id = hierarchy["account"]["id"]
+    first_resource = create_resource(client, account_id, "Filtered Resource")
+    create_resource(client, account_id, "Other Resource")
+    first_task = create_task(
+        client,
+        hierarchy["project"]["id"],
+        "Included Unassigned Task",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+
+    second_portfolio_response = client.post(f"/api/v1/accounts/{account_id}/portfolios", json={"name": "Filter Portfolio"})
+    assert second_portfolio_response.status_code == 201
+    second_program_response = client.post(
+        f"/api/v1/portfolios/{second_portfolio_response.json()['id']}/programs",
+        json={"name": "Filter Program"},
+    )
+    assert second_program_response.status_code == 201
+    second_project_response = client.post(
+        f"/api/v1/programs/{second_program_response.json()['id']}/projects",
+        json={"name": "Filter Project"},
+    )
+    assert second_project_response.status_code == 201
+    create_task(
+        client,
+        second_project_response.json()["id"],
+        "Excluded Unassigned Task",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+
+    project_response = client.get(
+        f"/api/v1/accounts/{account_id}/resource-analysis",
+        params={
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-05",
+            "project_id": hierarchy["project"]["id"],
+        },
+    )
+    program_response = client.get(
+        f"/api/v1/accounts/{account_id}/resource-analysis",
+        params={
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-05",
+            "program_id": hierarchy["program"]["id"],
+        },
+    )
+    resource_response = client.get(
+        f"/api/v1/accounts/{account_id}/resource-analysis",
+        params={
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-05",
+            "resource_id": first_resource["id"],
+        },
+    )
+
+    assert project_response.status_code == 200
+    assert program_response.status_code == 200
+    assert resource_response.status_code == 200
+    assert project_response.json()["summary"]["unassigned_task_count"] == 1
+    assert project_response.json()["unassigned_tasks"][0]["task"]["id"] == first_task["id"]
+    assert program_response.json()["summary"]["unassigned_task_count"] == 1
+    assert resource_response.json()["summary"]["resource_count"] == 1
+    assert resource_response.json()["underutilized_resources"][0]["resource"]["id"] == first_resource["id"]
+
+
+def test_resource_analysis_allows_account_members_and_blocks_non_members(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    create_resource(client, account_id, "Analysis Viewer Resource")
+    set_current_user_role(db_session, account_id, AccountMemberRole.VIEWER)
+    private_account = create_private_account(db_session, slug="private-resource-analysis")
+
+    member_response = client.get(
+        f"/api/v1/accounts/{account_id}/resource-analysis",
+        params={"start_date": "2026-06-01", "end_date": "2026-06-05"},
+    )
+    non_member_response = client.get(
+        f"/api/v1/accounts/{private_account.id}/resource-analysis",
+        params={"start_date": "2026-06-01", "end_date": "2026-06-05"},
+    )
+
+    assert member_response.status_code == 200
+    assert non_member_response.status_code == 403
+    assert non_member_response.json()["message"] == "Account access denied."
+
+
+def test_task_resource_recommendations_rank_skilled_available_resources_higher_and_include_reasons(
+    client: TestClient,
+) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    task = create_task(
+        client,
+        project_id,
+        "Recommendation Task",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+    skill = create_skill(client, account_id, "AWS")
+    create_required_skill(client, task["id"], skill["id"], "INTERMEDIATE")
+    skilled_available = create_resource(client, account_id, "Skilled Available", weekly_capacity_hours=40)
+    unskilled_available = create_resource(client, account_id, "Unskilled Available", weekly_capacity_hours=40)
+    busy_skilled = create_resource(client, account_id, "Busy Skilled", weekly_capacity_hours=40)
+    create_resource_skill(client, skilled_available["id"], skill["id"], "ADVANCED")
+    create_resource_skill(client, busy_skilled["id"], skill["id"], "ADVANCED")
+    busy_task = create_task(
+        client,
+        project_id,
+        "Busy Work",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+    create_allocation(
+        client,
+        busy_task["id"],
+        busy_skilled["id"],
+        allocated_hours=40,
+        start_date="2026-06-01",
+        end_date="2026-06-05",
+    )
+
+    response = client.get(f"/api/v1/tasks/{task['id']}/resource-recommendations")
+
+    assert response.status_code == 200
+    recommendations = response.json()
+    assert recommendations[0]["resource"]["id"] == skilled_available["id"]
+    assert recommendations[0]["score"] == 100
+    assert "Matches required skill: AWS" in recommendations[0]["reasons"]
+    assert "Has 40 available hours" in recommendations[0]["reasons"]
+    assert "Currently 0% utilized" in recommendations[0]["reasons"]
+    assert recommendations[0]["warnings"] == []
+    assert recommendations[0]["score"] > next(
+        recommendation["score"]
+        for recommendation in recommendations
+        if recommendation["resource"]["id"] == unskilled_available["id"]
+    )
+
+
+def test_resource_analysis_and_recommendations_do_not_mutate_database(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    resource = create_resource(client, account_id, "Read Only Resource")
+    task = create_task(
+        client,
+        project_id,
+        "Read Only Task",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+    skill = create_skill(client, account_id, "Read Only Skill")
+    create_resource_skill(client, resource["id"], skill["id"], "EXPERT")
+    create_required_skill(client, task["id"], skill["id"], "ADVANCED")
+    before_counts = {
+        model: model_count(db_session, model)
+        for model in (
+            ActivityLog,
+            Resource,
+            ResourceAllocation,
+            ResourceSkill,
+            ResourceTimeOff,
+            Task,
+            TaskAssignment,
+            TaskRequiredSkill,
+        )
+    }
+
+    analysis_response = client.get(
+        f"/api/v1/accounts/{account_id}/resource-analysis",
+        params={"start_date": "2026-06-01", "end_date": "2026-06-05"},
+    )
+    recommendations_response = client.get(f"/api/v1/tasks/{task['id']}/resource-recommendations")
+    after_counts = {model: model_count(db_session, model) for model in before_counts}
+
+    assert analysis_response.status_code == 200
+    assert recommendations_response.status_code == 200
+    assert after_counts == before_counts
+
+
+def test_non_member_blocked_from_task_resource_recommendations(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    private_account = create_private_account(db_session, slug="private-resource-recommendations")
+    portfolio = Portfolio(account_id=private_account.id, name="Private Portfolio", created_by=private_account.created_by)
+    db_session.add(portfolio)
+    db_session.flush()
+    program = Program(
+        account_id=private_account.id,
+        portfolio_id=portfolio.id,
+        name="Private Program",
+        created_by=private_account.created_by,
+    )
+    db_session.add(program)
+    db_session.flush()
+    project = Project(
+        account_id=private_account.id,
+        portfolio_id=portfolio.id,
+        program_id=program.id,
+        name="Private Project",
+        created_by=private_account.created_by,
+    )
+    db_session.add(project)
+    db_session.flush()
+    task = Task(account_id=private_account.id, project_id=project.id, name="Private Recommendation Task")
+    db_session.add(task)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/tasks/{task.id}/resource-recommendations")
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Account access denied."

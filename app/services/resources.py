@@ -11,14 +11,19 @@ from app.models.program import Program
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.resource_allocation import ResourceAllocation
+from app.models.resource_skill import ResourceSkill
 from app.models.resource_time_off import ResourceTimeOff
+from app.models.skill import Skill
 from app.models.task import Task
+from app.models.task_assignment import TaskAssignment
+from app.models.task_required_skill import TaskRequiredSkill
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.account_settings import AccountHolidayRepository, AccountSettingsRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.hierarchy import HierarchyRepository
 from app.repositories.resources import ResourceRepository
+from app.repositories.skills import SkillRepository
 from app.repositories.tasks import TaskRepository
 from app.schemas.resources import (
     ResourceAllocationCreate,
@@ -46,6 +51,12 @@ RESOURCE_ALLOCATION_WRITE_ROLES = {
 
 RESOURCE_TIME_OFF_WRITE_ROLES = RESOURCE_WRITE_ROLES
 HOURS_QUANTIZER = Decimal("0.01")
+PROFICIENCY_RANK = {
+    "BEGINNER": 1,
+    "INTERMEDIATE": 2,
+    "ADVANCED": 3,
+    "EXPERT": 4,
+}
 
 WEEKDAY_INDEXES = {
     "MONDAY": 0,
@@ -67,6 +78,7 @@ class ResourceService:
         self.account_holidays = AccountHolidayRepository(db)
         self.hierarchy = HierarchyRepository(db)
         self.resources = ResourceRepository(db)
+        self.skills = SkillRepository(db)
         self.tasks = TaskRepository(db)
 
     def list_resources(self, *, account_id: UUID, current_user: User) -> list[Resource]:
@@ -569,6 +581,111 @@ class ResourceService:
             "summary": self.capacity_forecast_summary(forecast_resources),
         }
 
+    def get_resource_analysis(
+        self,
+        *,
+        account_id: UUID,
+        start_date: date,
+        end_date: date,
+        current_user: User,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        resource_id: UUID | None = None,
+    ) -> dict[str, object]:
+        self.validate_allocation_date_range(start_date=start_date, end_date=end_date)
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        if resource_id is not None:
+            self.validate_resource_belongs_to_account(resource_id=resource_id, account_id=account_id)
+        if project_id is not None:
+            self.validate_project_belongs_to_account(project_id=project_id, account_id=account_id)
+        if program_id is not None:
+            self.validate_program_belongs_to_account(program_id=program_id, account_id=account_id)
+
+        resources = self.resources.list_calendar_resources(account_id=account_id, resource_id=resource_id)
+        forecast_resources = self.build_capacity_forecast_resources(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            resources=resources,
+            resource_id=resource_id,
+            project_id=project_id,
+            program_id=program_id,
+        )
+        resource_analysis = [self.resource_analysis_summary(forecast_resource) for forecast_resource in forecast_resources]
+        overallocated_resources = [entry for entry in resource_analysis if entry["allocated_hours"] > entry["available_hours"]]
+        underutilized_resources = [
+            entry
+            for entry in resource_analysis
+            if entry["available_hours"] > 0 and float(entry["utilization_percent"]) < 50
+        ]
+
+        task_contexts = self.resource_analysis_task_contexts(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            project_id=project_id,
+            program_id=program_id,
+            resource_id=resource_id,
+        )
+        unassigned_tasks = self.resource_analysis_unassigned_tasks(task_contexts)
+        skill_gaps = self.resource_analysis_skill_gaps(task_contexts)
+        suggestions = self.resource_analysis_suggestions(
+            overallocated_resources=overallocated_resources,
+            underutilized_resources=underutilized_resources,
+            unassigned_tasks=unassigned_tasks,
+            skill_gaps=skill_gaps,
+        )
+
+        return {
+            "summary": {
+                "resource_count": len(resource_analysis),
+                "overallocated_count": len(overallocated_resources),
+                "underutilized_count": len(underutilized_resources),
+                "unassigned_task_count": len(unassigned_tasks),
+                "skill_gap_count": len(skill_gaps),
+            },
+            "overallocated_resources": overallocated_resources,
+            "underutilized_resources": underutilized_resources,
+            "unassigned_tasks": unassigned_tasks,
+            "skill_gaps": skill_gaps,
+            "suggestions": suggestions,
+        }
+
+    def get_task_resource_recommendations(self, *, task_id: UUID, current_user: User) -> list[dict[str, object]]:
+        task = self.get_task_or_404(task_id)
+        self.require_account_member(account_id=task.account_id, user_id=current_user.id)
+        start_date = task.start_date or task.finish_date or date.today()
+        end_date = task.finish_date or task.start_date or start_date
+        self.validate_allocation_date_range(start_date=start_date, end_date=end_date)
+
+        resources = self.resources.list_calendar_resources(account_id=task.account_id)
+        forecast_resources = self.build_capacity_forecast_resources(
+            account_id=task.account_id,
+            start_date=start_date,
+            end_date=end_date,
+            resources=resources,
+        )
+        required_skills = self.skills.list_task_required_skills(task.id)
+        resource_skills_by_resource = self.skills.list_resource_skills_for_resources(
+            [resource.id for resource in resources]
+        )
+        recommendations = [
+            self.resource_recommendation(
+                forecast_resource=forecast_resource,
+                required_skills=required_skills,
+                resource_skills_by_resource=resource_skills_by_resource,
+            )
+            for forecast_resource in forecast_resources
+        ]
+        return sorted(
+            recommendations,
+            key=lambda recommendation: (
+                -int(recommendation["score"]),
+                str(recommendation["resource"]["name"]),
+                str(recommendation["resource"]["id"]),
+            ),
+        )
+
     def build_capacity_forecast_resources(
         self,
         *,
@@ -714,6 +831,363 @@ class ResourceService:
                 available_hours=total_available,
             ),
         }
+
+    def resource_analysis_summary(self, forecast_resource: dict[str, object]) -> dict[str, object]:
+        allocated_hours, available_hours = self.forecast_totals(forecast_resource)
+        remaining_hours = available_hours - allocated_hours
+        return {
+            "resource": forecast_resource["resource"],
+            "allocated_hours": allocated_hours,
+            "available_hours": available_hours,
+            "remaining_hours": remaining_hours,
+            "utilization_percent": self.calculate_utilization_percent(
+                allocated_hours=allocated_hours,
+                available_hours=available_hours,
+            ),
+            "overallocated": allocated_hours > available_hours,
+        }
+
+    def resource_analysis_task_contexts(
+        self,
+        *,
+        account_id: UUID,
+        start_date: date,
+        end_date: date,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        resource_id: UUID | None = None,
+    ) -> list[dict[str, object]]:
+        rows = self.tasks.list_tasks_for_resource_analysis(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            project_id=project_id,
+            program_id=program_id,
+        )
+        tasks = [task for task, _project, _program in rows]
+        task_ids = [task.id for task in tasks]
+        assignments_by_task = self.tasks.list_assignments_for_tasks(task_ids)
+        allocations_by_task = self.tasks.list_resource_allocations_for_tasks(task_ids)
+        required_skills_by_task = self.skills.list_task_required_skills_for_tasks(task_ids)
+        user_ids = {
+            assignment.user_id
+            for assignments in assignments_by_task.values()
+            for assignment in assignments
+            if assignment.user_id is not None
+        }
+        resources_by_user_id: dict[UUID, list[Resource]] = {}
+        for resource in self.resources.list_resources_for_account_by_user_ids(account_id=account_id, user_ids=user_ids):
+            resources_by_user_id.setdefault(resource.user_id, []).append(resource)  # type: ignore[arg-type]
+
+        contexts: list[dict[str, object]] = []
+        for task, project, program in rows:
+            assignments = assignments_by_task.get(task.id, [])
+            allocations = [
+                (allocation, resource)
+                for allocation, resource in allocations_by_task.get(task.id, [])
+                if self.allocation_overlaps_range(allocation, start_date=start_date, end_date=end_date)
+            ]
+            assigned_resources = self.task_assigned_resources(
+                assignments=assignments,
+                allocations=allocations,
+                resources_by_user_id=resources_by_user_id,
+            )
+            if resource_id is not None and all(resource.id != resource_id for resource in assigned_resources):
+                continue
+            contexts.append(
+                {
+                    "task": task,
+                    "project": project,
+                    "program": program,
+                    "assignments": assignments,
+                    "allocations": allocations,
+                    "assigned_resources": assigned_resources,
+                    "required_skills": required_skills_by_task.get(task.id, []),
+                }
+            )
+        return contexts
+
+    def task_assigned_resources(
+        self,
+        *,
+        assignments: list[TaskAssignment],
+        allocations: list[tuple[ResourceAllocation, Resource]],
+        resources_by_user_id: dict[UUID, list[Resource]],
+    ) -> list[Resource]:
+        assigned_resources: list[Resource] = []
+        seen_resource_ids: set[UUID] = set()
+        for _allocation, resource in allocations:
+            if resource.id in seen_resource_ids:
+                continue
+            seen_resource_ids.add(resource.id)
+            assigned_resources.append(resource)
+        for assignment in assignments:
+            if assignment.user_id is None:
+                continue
+            for resource in resources_by_user_id.get(assignment.user_id, []):
+                if resource.id in seen_resource_ids:
+                    continue
+                seen_resource_ids.add(resource.id)
+                assigned_resources.append(resource)
+        return assigned_resources
+
+    def resource_analysis_unassigned_tasks(self, task_contexts: list[dict[str, object]]) -> list[dict[str, object]]:
+        unassigned_tasks: list[dict[str, object]] = []
+        for context in task_contexts:
+            assignments = context["assignments"]
+            allocations = context["allocations"]
+            if assignments or allocations:
+                continue
+            task = context["task"]
+            project = context["project"]
+            program = context["program"]
+            if not isinstance(task, Task) or not isinstance(project, Project) or not isinstance(program, Program):
+                continue
+            unassigned_tasks.append(
+                {
+                    "task": self.resource_analysis_task_summary(task=task, project=project, program=program),
+                    "reasons": ["Task has no assignment or resource allocation in the date range."],
+                }
+            )
+        return unassigned_tasks
+
+    def resource_analysis_skill_gaps(self, task_contexts: list[dict[str, object]]) -> list[dict[str, object]]:
+        gaps: list[dict[str, object]] = []
+        all_assigned_resource_ids = {
+            resource.id
+            for context in task_contexts
+            for resource in context["assigned_resources"]
+            if isinstance(resource, Resource)
+        }
+        skills_by_resource = self.skills.list_resource_skills_for_resources(all_assigned_resource_ids)
+        for context in task_contexts:
+            task = context["task"]
+            project = context["project"]
+            program = context["program"]
+            if not isinstance(task, Task) or not isinstance(project, Project) or not isinstance(program, Program):
+                continue
+            assigned_resources = [
+                resource for resource in context["assigned_resources"] if isinstance(resource, Resource)
+            ]
+            for required_skill, skill in context["required_skills"]:
+                if self.any_resource_matches_required_skill(
+                    assigned_resources=assigned_resources,
+                    required_skill=required_skill,
+                    skills_by_resource=skills_by_resource,
+                ):
+                    continue
+                gaps.append(
+                    {
+                        "task": self.resource_analysis_task_summary(task=task, project=project, program=program),
+                        "skill": self.resource_analysis_skill_summary(required_skill=required_skill, skill=skill),
+                        "assigned_resources": [self.resource_summary(resource) for resource in assigned_resources],
+                        "message": f"No assigned or allocated resource matches required skill: {skill.name}.",
+                    }
+                )
+        return gaps
+
+    def resource_analysis_suggestions(
+        self,
+        *,
+        overallocated_resources: list[dict[str, object]],
+        underutilized_resources: list[dict[str, object]],
+        unassigned_tasks: list[dict[str, object]],
+        skill_gaps: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        suggestions: list[dict[str, object]] = []
+        for entry in overallocated_resources:
+            resource = entry["resource"]
+            suggestions.append(
+                {
+                    "type": "OVERALLOCATION",
+                    "message": "Review workload or move work to an available resource; no changes were applied.",
+                    "resource": resource,
+                    "task": None,
+                    "skill": None,
+                }
+            )
+        for entry in underutilized_resources:
+            suggestions.append(
+                {
+                    "type": "UNDERUTILIZATION",
+                    "message": "Consider this resource for additional work if their skills match demand.",
+                    "resource": entry["resource"],
+                    "task": None,
+                    "skill": None,
+                }
+            )
+        for entry in unassigned_tasks:
+            suggestions.append(
+                {
+                    "type": "UNASSIGNED_TASK",
+                    "message": "Review resource recommendations and assign a suitable resource manually.",
+                    "resource": None,
+                    "task": entry["task"],
+                    "skill": None,
+                }
+            )
+        for entry in skill_gaps:
+            suggestions.append(
+                {
+                    "type": "SKILL_GAP",
+                    "message": "Find a matching skilled resource or adjust the required skill manually.",
+                    "resource": None,
+                    "task": entry["task"],
+                    "skill": entry["skill"],
+                }
+            )
+        return suggestions
+
+    def resource_recommendation(
+        self,
+        *,
+        forecast_resource: dict[str, object],
+        required_skills: list[tuple[TaskRequiredSkill, Skill]],
+        resource_skills_by_resource: dict[UUID, list[tuple[ResourceSkill, Skill]]],
+    ) -> dict[str, object]:
+        resource_summary = forecast_resource["resource"]
+        resource_id = resource_summary["id"]  # type: ignore[index]
+        allocated_hours, available_hours = self.forecast_totals(forecast_resource)
+        remaining_hours = available_hours - allocated_hours
+        utilization_percent = self.calculate_utilization_percent(
+            allocated_hours=allocated_hours,
+            available_hours=available_hours,
+        )
+        resource_skills = resource_skills_by_resource.get(resource_id, [])
+
+        reasons: list[str] = []
+        warnings: list[str] = []
+        skill_score, skill_reasons, skill_warnings = self.recommendation_skill_score(
+            required_skills=required_skills,
+            resource_skills=resource_skills,
+        )
+        reasons.extend(skill_reasons)
+        warnings.extend(skill_warnings)
+
+        if remaining_hours > 0:
+            availability_score = 30
+            reasons.append(f"Has {self.format_hours(remaining_hours)} available hours")
+        else:
+            availability_score = 0
+            warnings.append("No available hours in the task date range")
+
+        utilization_score = self.recommendation_utilization_score(utilization_percent)
+        reasons.append(f"Currently {self.format_percent(utilization_percent)} utilized")
+        if allocated_hours > available_hours:
+            warnings.append("Currently overallocated")
+
+        return {
+            "resource": resource_summary,
+            "score": min(100, skill_score + availability_score + utilization_score),
+            "reasons": reasons,
+            "warnings": warnings,
+        }
+
+    def recommendation_skill_score(
+        self,
+        *,
+        required_skills: list[tuple[TaskRequiredSkill, Skill]],
+        resource_skills: list[tuple[ResourceSkill, Skill]],
+    ) -> tuple[int, list[str], list[str]]:
+        if not required_skills:
+            return 50, ["No required skills specified"], []
+
+        matched_count = 0
+        reasons: list[str] = []
+        warnings: list[str] = []
+        for required_skill, skill in required_skills:
+            matching_resource_skill = self.matching_resource_skill(
+                required_skill=required_skill,
+                resource_skills=resource_skills,
+            )
+            if matching_resource_skill is None:
+                warnings.append(f"Missing required skill: {skill.name}")
+                continue
+            matched_count += 1
+            reasons.append(f"Matches required skill: {skill.name}")
+        return round(50 * matched_count / len(required_skills)), reasons, warnings
+
+    def matching_resource_skill(
+        self,
+        *,
+        required_skill: TaskRequiredSkill,
+        resource_skills: list[tuple[ResourceSkill, Skill]],
+    ) -> ResourceSkill | None:
+        for resource_skill, _skill in resource_skills:
+            if self.resource_skill_matches_required_skill(resource_skill, required_skill):
+                return resource_skill
+        return None
+
+    def recommendation_utilization_score(self, utilization_percent: float) -> int:
+        if utilization_percent < 50:
+            return 20
+        if utilization_percent <= 80:
+            return 15
+        if utilization_percent <= 100:
+            return 5
+        return 0
+
+    def forecast_totals(self, forecast_resource: dict[str, object]) -> tuple[Decimal, Decimal]:
+        allocated_hours = Decimal("0")
+        available_hours = Decimal("0")
+        for week in forecast_resource["weeks"]:  # type: ignore[index]
+            allocated_hours += week["allocated_hours"]
+            available_hours += week["available_hours"]
+        return allocated_hours, available_hours
+
+    def resource_analysis_task_summary(self, *, task: Task, project: Project, program: Program) -> dict[str, object]:
+        return {
+            "id": task.id,
+            "project_id": task.project_id,
+            "name": task.name,
+            "start_date": task.start_date,
+            "finish_date": task.finish_date,
+            "project": {"id": project.id, "name": project.name},
+            "program": {"id": program.id, "name": program.name},
+        }
+
+    def resource_analysis_skill_summary(self, *, required_skill: TaskRequiredSkill, skill: Skill) -> dict[str, object]:
+        return {
+            "id": skill.id,
+            "name": skill.name,
+            "category": skill.category,
+            "required_proficiency": required_skill.required_proficiency,
+        }
+
+    def any_resource_matches_required_skill(
+        self,
+        *,
+        assigned_resources: list[Resource],
+        required_skill: TaskRequiredSkill,
+        skills_by_resource: dict[UUID, list[tuple[ResourceSkill, Skill]]],
+    ) -> bool:
+        return any(
+            self.matching_resource_skill(
+                required_skill=required_skill,
+                resource_skills=skills_by_resource.get(resource.id, []),
+            )
+            is not None
+            for resource in assigned_resources
+        )
+
+    def resource_skill_matches_required_skill(self, resource_skill: ResourceSkill, required_skill: TaskRequiredSkill) -> bool:
+        if resource_skill.skill_id != required_skill.skill_id:
+            return False
+        if required_skill.required_proficiency is None:
+            return True
+        return PROFICIENCY_RANK.get(resource_skill.proficiency, 0) >= PROFICIENCY_RANK.get(
+            required_skill.required_proficiency,
+            0,
+        )
+
+    def format_hours(self, hours: Decimal) -> str:
+        quantized = self.quantize_hours(hours)
+        return f"{quantized.normalize():f}"
+
+    def format_percent(self, utilization_percent: float) -> str:
+        if utilization_percent.is_integer():
+            return f"{int(utilization_percent)}%"
+        return f"{utilization_percent:.2f}%"
 
     def empty_calendar_entry(
         self,

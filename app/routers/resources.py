@@ -11,9 +11,11 @@ from app.schemas.resources import (
     ResourceAllocationCreate,
     ResourceAllocationRead,
     ResourceAllocationUpdate,
+    ResourceAnalysisRead,
     ResourceCalendarRead,
     ResourceCapacityForecastRead,
     ResourceCreate,
+    ResourceRecommendationRead,
     ResourceRead,
     ResourceTimeOffCreate,
     ResourceTimeOffRead,
@@ -169,6 +171,37 @@ def get_account_capacity_forecast(
         project_id=project_id,
         program_id=program_id,
     )
+
+
+@router.get("/accounts/{account_id}/resource-analysis", response_model=ResourceAnalysisRead)
+def get_resource_analysis(
+    account_id: UUID,
+    start_date: date,
+    end_date: date,
+    project_id: UUID | None = None,
+    program_id: UUID | None = None,
+    resource_id: UUID | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return ResourceService(db).get_resource_analysis(
+        account_id=account_id,
+        start_date=start_date,
+        end_date=end_date,
+        current_user=current_user,
+        project_id=project_id,
+        program_id=program_id,
+        resource_id=resource_id,
+    )
+
+
+@router.get("/tasks/{task_id}/resource-recommendations", response_model=list[ResourceRecommendationRead])
+def get_task_resource_recommendations(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    return ResourceService(db).get_task_resource_recommendations(task_id=task_id, current_user=current_user)
 
 
 @router.post(

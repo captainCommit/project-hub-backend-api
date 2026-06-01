@@ -180,3 +180,17 @@ class ResourceRepository:
             return {}
         statement = select(Resource).where(Resource.id.in_(resource_ids))
         return {resource.id: resource for resource in self.db.scalars(statement).all()}
+
+    def list_resources_for_account_by_user_ids(self, *, account_id: UUID, user_ids: Iterable[UUID]) -> list[Resource]:
+        user_ids = list(user_ids)
+        if not user_ids:
+            return []
+        statement = (
+            select(Resource)
+            .where(
+                Resource.account_id == account_id,
+                Resource.user_id.in_(user_ids),
+            )
+            .order_by(Resource.name, Resource.id)
+        )
+        return list(self.db.scalars(statement).all())

@@ -1,17 +1,22 @@
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, delete, or_, select, update
+from sqlalchemy import Select, and_, delete, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
+from app.models.program import Program
+from app.models.project import Project
+from app.models.resource import Resource
+from app.models.resource_allocation import ResourceAllocation
 from app.models.sprint import Sprint
 from app.models.task import Task
 from app.models.task_assignment import TaskAssignment
 from app.models.task_predecessor import TaskPredecessor
+from app.models.user import User
 
 
 class TaskRepository:
@@ -83,6 +88,104 @@ class TaskRepository:
             sort=sort,
         )
         return list(self.db.scalars(statement).all())
+
+    def list_tasks_for_board(self, *, project_id: UUID, sprint_id: UUID | None = None) -> list[Task]:
+        statement = select(Task).where(Task.project_id == project_id, Task.is_deleted.is_(False))
+        if sprint_id is not None:
+            statement = statement.where(Task.sprint_id == sprint_id)
+        statement = statement.order_by(Task.sort_order, Task.created_at, Task.id)
+        return list(self.db.scalars(statement).all())
+
+    def list_tasks_for_gantt(self, project_id: UUID) -> list[Task]:
+        statement = (
+            select(Task)
+            .where(Task.project_id == project_id, Task.is_deleted.is_(False))
+            .order_by(Task.sort_order, Task.created_at, Task.id)
+        )
+        return list(self.db.scalars(statement).all())
+
+    def list_due_tasks(
+        self,
+        *,
+        account_id: UUID,
+        today: date,
+        horizon: date,
+        include_overdue: bool,
+        include_upcoming: bool,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        assigned_to: UUID | None = None,
+    ) -> list[tuple[Task, Project, Program]]:
+        due_conditions = []
+        if include_overdue:
+            due_conditions.append(Task.finish_date < today)
+        if include_upcoming:
+            due_conditions.append(and_(Task.finish_date >= today, Task.finish_date <= horizon))
+
+        statement: Select[tuple[Task, Project, Program]] = (
+            select(Task, Project, Program)
+            .join(Project, Project.id == Task.project_id)
+            .join(Program, Program.id == Project.program_id)
+            .where(
+                Task.account_id == account_id,
+                Task.is_deleted.is_(False),
+                Task.finish_date.is_not(None),
+                Task.percent_complete < 100,
+                or_(*due_conditions),
+            )
+            .order_by(Task.finish_date, Task.sort_order, Task.created_at, Task.id)
+        )
+        completed_status_ids = (
+            select(OptionValue.id)
+            .join(OptionSet, OptionSet.id == OptionValue.option_set_id)
+            .where(
+                OptionSet.account_id == account_id,
+                OptionSet.entity_type == "TASK",
+                OptionSet.name == "STATUS",
+                OptionValue.value == "COMPLETE",
+            )
+        )
+        statement = statement.where(or_(Task.status_id.is_(None), Task.status_id.not_in(completed_status_ids)))
+        if project_id is not None:
+            statement = statement.where(Task.project_id == project_id)
+        if program_id is not None:
+            statement = statement.where(Project.program_id == program_id)
+        if assigned_to is not None:
+            assignment_task_ids = select(TaskAssignment.task_id).where(TaskAssignment.user_id == assigned_to)
+            allocation_task_ids = (
+                select(ResourceAllocation.task_id)
+                .join(Resource, Resource.id == ResourceAllocation.resource_id)
+                .where(or_(ResourceAllocation.resource_id == assigned_to, Resource.user_id == assigned_to))
+            )
+            statement = statement.where(or_(Task.id.in_(assignment_task_ids), Task.id.in_(allocation_task_ids)))
+        return list(self.db.execute(statement).all())
+
+    def list_tasks_for_resource_analysis(
+        self,
+        *,
+        account_id: UUID,
+        start_date: date,
+        end_date: date,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+    ) -> list[tuple[Task, Project, Program]]:
+        statement: Select[tuple[Task, Project, Program]] = (
+            select(Task, Project, Program)
+            .join(Project, Project.id == Task.project_id)
+            .join(Program, Program.id == Project.program_id)
+            .where(
+                Task.account_id == account_id,
+                Task.is_deleted.is_(False),
+                or_(Task.start_date.is_(None), Task.start_date <= end_date),
+                or_(Task.finish_date.is_(None), Task.finish_date >= start_date),
+            )
+            .order_by(Task.sort_order, Task.start_date, Task.created_at, Task.id)
+        )
+        if project_id is not None:
+            statement = statement.where(Task.project_id == project_id)
+        if program_id is not None:
+            statement = statement.where(Project.program_id == program_id)
+        return list(self.db.execute(statement).all())
 
     def list_tasks_by_parent(self, *, project_id: UUID, parent_task_id: UUID | None) -> list[Task]:
         statement = select(Task).where(Task.project_id == project_id, Task.is_deleted.is_(False))
@@ -203,6 +306,24 @@ class TaskRepository:
             assignments_by_task.setdefault(assignment.task_id, []).append(assignment)
         return assignments_by_task
 
+    def list_resource_allocations_for_tasks(
+        self,
+        task_ids: Iterable[UUID],
+    ) -> dict[UUID, list[tuple[ResourceAllocation, Resource]]]:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return {}
+        statement: Select[tuple[ResourceAllocation, Resource]] = (
+            select(ResourceAllocation, Resource)
+            .join(Resource, Resource.id == ResourceAllocation.resource_id)
+            .where(ResourceAllocation.task_id.in_(task_ids))
+            .order_by(Resource.name, ResourceAllocation.created_at, ResourceAllocation.id)
+        )
+        allocations_by_task: dict[UUID, list[tuple[ResourceAllocation, Resource]]] = {}
+        for allocation, resource in self.db.execute(statement).all():
+            allocations_by_task.setdefault(allocation.task_id, []).append((allocation, resource))
+        return allocations_by_task
+
     def create_predecessor(self, **values: object) -> TaskPredecessor:
         predecessor = TaskPredecessor(**values)
         self.db.add(predecessor)
@@ -247,6 +368,20 @@ class TaskRepository:
         )
         return self.db.scalar(statement)
 
+    def list_active_task_status_options(self, account_id: UUID) -> list[OptionValue]:
+        statement = (
+            select(OptionValue)
+            .join(OptionSet, OptionSet.id == OptionValue.option_set_id)
+            .where(
+                OptionSet.account_id == account_id,
+                OptionSet.entity_type == "TASK",
+                OptionSet.name == "STATUS",
+                OptionValue.is_active.is_(True),
+            )
+            .order_by(OptionValue.sort_order, OptionValue.label, OptionValue.id)
+        )
+        return list(self.db.scalars(statement).all())
+
     def get_default_task_option_id(self, *, account_id: UUID, option_name: str) -> UUID | None:
         statement = (
             select(OptionValue.id)
@@ -276,3 +411,10 @@ class TaskRepository:
             return {}
         statement = select(Sprint).where(Sprint.id.in_(sprint_ids))
         return {sprint.id: sprint for sprint in self.db.scalars(statement).all()}
+
+    def get_users_by_ids(self, user_ids: Iterable[UUID]) -> dict[UUID, User]:
+        user_ids = list(user_ids)
+        if not user_ids:
+            return {}
+        statement = select(User).where(User.id.in_(user_ids))
+        return {user.id: user for user in self.db.scalars(statement).all()}

@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
+from typing import Literal
 
 from app.core.database import get_db
 from app.core.pagination import PaginatedResponse, PaginationParams, get_pagination_params
@@ -11,6 +12,10 @@ from app.schemas.tasks import (
     TaskAssignmentRead,
     TaskBulkDeleteRequest,
     TaskBulkUpdateRequest,
+    DueTasksRead,
+    ProjectTaskGanttRead,
+    TaskBoardPositionUpdate,
+    TaskBoardRead,
     TaskCreate,
     TaskMoveRequest,
     TaskPredecessorCreate,
@@ -44,6 +49,55 @@ def list_tasks(
         task_type_id=task_type_id,
         sort=sort,
         pagination=pagination,
+    )
+
+
+@router.get("/projects/{project_id}/board", response_model=TaskBoardRead)
+def get_project_board(
+    project_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return TaskService(db).get_project_board(project_id=project_id, current_user=current_user)
+
+
+@router.get("/projects/{project_id}/gantt", response_model=ProjectTaskGanttRead)
+def get_project_gantt(
+    project_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return TaskService(db).get_project_gantt(project_id=project_id, current_user=current_user)
+
+
+@router.get("/sprints/{sprint_id}/board", response_model=TaskBoardRead)
+def get_sprint_board(
+    sprint_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return TaskService(db).get_sprint_board(sprint_id=sprint_id, current_user=current_user)
+
+
+@router.get("/accounts/{account_id}/tasks/due", response_model=DueTasksRead)
+def list_due_tasks(
+    account_id: UUID,
+    mode: Literal["OVERDUE", "UPCOMING", "BOTH"] = Query(default="BOTH"),
+    days: int = Query(default=30, ge=0),
+    project_id: UUID | None = None,
+    program_id: UUID | None = None,
+    assigned_to: UUID | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return TaskService(db).list_due_tasks(
+        account_id=account_id,
+        current_user=current_user,
+        mode=mode,
+        days=days,
+        project_id=project_id,
+        program_id=program_id,
+        assigned_to=assigned_to,
     )
 
 
@@ -135,6 +189,16 @@ def update_task(
     current_user: User = Depends(get_current_user),
 ) -> TaskRead:
     return TaskService(db).update_task(task_id=task_id, task_in=task_in, current_user=current_user)
+
+
+@router.patch("/tasks/{task_id}/board-position", response_model=TaskRead)
+def update_task_board_position(
+    task_id: UUID,
+    position_in: TaskBoardPositionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TaskRead:
+    return TaskService(db).update_board_position(task_id=task_id, position_in=position_in, current_user=current_user)
 
 
 @router.post(

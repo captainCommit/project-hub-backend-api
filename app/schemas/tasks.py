@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.hierarchy import StatusSummary
+from app.schemas.hierarchy import ProjectRead, StatusSummary
 from app.schemas.sprints import SprintSummary
 
 
@@ -114,6 +114,12 @@ class TaskMoveRequest(BaseModel):
     sort_order: Decimal
 
 
+class TaskBoardPositionUpdate(BaseModel):
+    status_id: UUID | None
+    sort_order: Decimal
+    sprint_id: UUID | None
+
+
 class TaskAssignmentCreate(BaseModel):
     user_id: UUID | None = None
     resource_name: str | None = Field(default=None, max_length=255)
@@ -186,3 +192,84 @@ class TaskRead(BaseModel):
 
 class TaskTreeRead(TaskRead):
     children: list["TaskTreeRead"] = []
+
+
+class TaskBoardColumnRead(BaseModel):
+    id: UUID | None
+    status_id: UUID | None
+    label: str
+    value: str | None
+    color: str | None
+    sort_order: int | None
+    is_uncategorized: bool = False
+    tasks: list[TaskRead] = Field(default_factory=list)
+
+
+class TaskBoardRead(BaseModel):
+    project_id: UUID
+    sprint_id: UUID | None = None
+    columns: list[TaskBoardColumnRead]
+
+
+class TaskResourceSummaryRead(BaseModel):
+    id: UUID | None
+    user_id: UUID | None = None
+    name: str
+    role: str | None = None
+    allocated_hours: Decimal | None = None
+    source: Literal["ALLOCATION", "ASSIGNMENT"]
+
+
+class TaskGanttTaskRead(BaseModel):
+    id: UUID
+    parent_task_id: UUID | None
+    name: str
+    task_type: StatusSummary | None
+    start_date: date | None
+    finish_date: date | None
+    duration_days: Decimal | None
+    percent_complete: Decimal
+    sort_order: Decimal
+    resources: list[TaskResourceSummaryRead] = Field(default_factory=list)
+    predecessors: list[TaskPredecessorRead] = Field(default_factory=list)
+
+
+class ProjectTaskGanttRead(BaseModel):
+    project: ProjectRead
+    tasks: list[TaskGanttTaskRead]
+
+
+class TaskProjectSummaryRead(BaseModel):
+    id: UUID
+    name: str
+
+
+class TaskProgramSummaryRead(BaseModel):
+    id: UUID
+    name: str
+
+
+class DueTaskRead(BaseModel):
+    id: UUID
+    project_id: UUID
+    sprint_id: UUID | None
+    parent_task_id: UUID | None
+    name: str
+    finish_date: date
+    start_date: date | None
+    duration_days: Decimal | None
+    percent_complete: Decimal
+    sort_order: Decimal
+    due_status: Literal["OVERDUE", "UPCOMING"]
+    project: TaskProjectSummaryRead
+    program: TaskProgramSummaryRead
+    status: StatusSummary | None
+    resources: list[TaskResourceSummaryRead] = Field(default_factory=list)
+
+
+class DueTasksRead(BaseModel):
+    mode: Literal["OVERDUE", "UPCOMING", "BOTH"]
+    days: int
+    tasks: list[DueTaskRead]
+    overdue: list[DueTaskRead]
+    upcoming: list[DueTaskRead]

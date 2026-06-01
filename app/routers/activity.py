@@ -46,3 +46,19 @@ def list_project_activity(
         sort=sort,
         pagination=pagination,
     )
+
+
+@router.get("/projects/{project_id}/audit", response_model=list[ActivityLogRead] | PaginatedResponse[ActivityLogRead])
+def list_project_audit(
+    project_id: UUID,
+    sort: str | None = Query(default=None),
+    pagination: PaginationParams = Depends(get_pagination_params),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ActivityLogRead] | dict[str, object]:
+    return ActivityLogService(db).list_project_activity(
+        project_id=project_id,
+        current_user=current_user,
+        sort=sort,
+        pagination=pagination,
+    )

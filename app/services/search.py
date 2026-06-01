@@ -15,6 +15,7 @@ from app.models.program import Program
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.risk import Risk
+from app.models.skill import Skill
 from app.models.sprint import Sprint
 from app.models.task import Task
 from app.models.user import User
@@ -31,6 +32,7 @@ SUPPORTED_ENTITY_TYPES: tuple[str, ...] = (
     "DECISION",
     "SPRINT",
     "RESOURCE",
+    "SKILL",
 )
 SEARCH_SIMILARITY_THRESHOLD = 0.1
 
@@ -307,6 +309,26 @@ class SearchService:
                     ),
                 ),
                 filters=(Resource.is_active.is_(True),),
+            ),
+            "SKILL": self.entity_statement(
+                entity_type="SKILL",
+                id_column=Skill.id,
+                title_column=Skill.name,
+                extra_search_column=Skill.category,
+                subtitle_column=Account.name,
+                created_at_column=Skill.created_at,
+                from_model=Skill,
+                joins=(
+                    (Account, Account.id == Skill.account_id),
+                    (
+                        AccountMember,
+                        and_(
+                            AccountMember.account_id == Skill.account_id,
+                            AccountMember.user_id == user_id_param,
+                        ),
+                    ),
+                ),
+                filters=(Skill.is_active.is_(True),),
             ),
         }
 
