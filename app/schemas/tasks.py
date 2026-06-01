@@ -16,9 +16,11 @@ class TaskBase(BaseModel):
     parent_task_id: UUID | None = None
     task_type_id: UUID | None = None
     status_id: UUID | None = None
+    priority_id: UUID | None = None
     start_date: date | None = None
     finish_date: date | None = None
     duration_days: Decimal | None = None
+    story_points: int | None = Field(default=None, gt=0)
     percent_complete: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     sort_order: Decimal = Decimal("0")
 
@@ -40,9 +42,11 @@ class TaskUpdate(BaseModel):
     parent_task_id: UUID | None = None
     task_type_id: UUID | None = None
     status_id: UUID | None = None
+    priority_id: UUID | None = None
     start_date: date | None = None
     finish_date: date | None = None
     duration_days: Decimal | None = None
+    story_points: int | None = Field(default=None, gt=0)
     percent_complete: Decimal | None = Field(default=None, ge=0, le=100)
     sort_order: Decimal | None = None
 
@@ -57,10 +61,12 @@ class TaskBulkUpdateFields(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     status_id: UUID | None = None
+    priority_id: UUID | None = None
     task_type_id: UUID | None = None
     start_date: date | None = None
     finish_date: date | None = None
     duration_days: Decimal | None = None
+    story_points: int | None = Field(default=None, gt=0)
     percent_complete: Decimal | None = Field(default=None, ge=0, le=100)
     assigned_to: UUID | None = None
     sprint_id: UUID | None = None
@@ -156,11 +162,13 @@ class TaskRead(BaseModel):
     parent_task_id: UUID | None
     task_type_id: UUID | None
     status_id: UUID | None
+    priority_id: UUID | None
     name: str
     description: str | None
     start_date: date | None
     finish_date: date | None
     duration_days: Decimal | None
+    story_points: int | None
     percent_complete: Decimal
     sort_order: Decimal
     created_by: UUID | None
@@ -168,6 +176,7 @@ class TaskRead(BaseModel):
     updated_at: datetime
     status: StatusSummary | None = None
     task_type: StatusSummary | None = None
+    priority: StatusSummary | None = None
     sprint: SprintSummary | None = None
     assignments: list[TaskAssignmentRead] = []
     predecessors: list[TaskPredecessorRead] = []

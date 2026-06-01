@@ -63,3 +63,19 @@ class SprintSummary(BaseModel):
     end_date: date | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StoryPointLegendItem(BaseModel):
+    points: int
+    label: str
+
+
+class SprintMetricsRead(BaseModel):
+    sprint: SprintRead
+    total_tasks: int
+    total_story_points: int
+    completed_story_points: int
+    remaining_story_points: int
+    completion_percent: int
+    days_remaining: int
+    story_point_legend: list[StoryPointLegendItem]

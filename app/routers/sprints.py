@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.sprints import SprintCreate, SprintRead, SprintUpdate
+from app.schemas.sprints import SprintCreate, SprintMetricsRead, SprintRead, SprintUpdate
 from app.services.auth import get_current_user
 from app.services.sprints import SprintService
 
@@ -39,6 +39,15 @@ def get_sprint(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, object]:
     return SprintService(db).get_sprint(sprint_id=sprint_id, current_user=current_user)
+
+
+@router.get("/sprints/{sprint_id}/metrics", response_model=SprintMetricsRead)
+def get_sprint_metrics(
+    sprint_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return SprintService(db).get_sprint_metrics(sprint_id=sprint_id, current_user=current_user)
 
 
 @router.patch("/sprints/{sprint_id}", response_model=SprintRead)

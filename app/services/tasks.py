@@ -110,6 +110,14 @@ class TaskService:
             option_value_id=task_in.task_type_id,
             detail="Invalid task type.",
         )
+        priority_id = None
+        if task_in.priority_id is not None:
+            priority_id = self.validate_task_option_id(
+                account_id=project.account_id,
+                option_name="PRIORITY",
+                option_value_id=task_in.priority_id,
+                detail="Invalid task priority.",
+            )
         task = self.tasks.create_task(
             account_id=project.account_id,
             project_id=project.id,
@@ -117,11 +125,13 @@ class TaskService:
             parent_task_id=task_in.parent_task_id,
             task_type_id=task_type_id,
             status_id=status_id,
+            priority_id=priority_id,
             name=task_in.name,
             description=task_in.description,
             start_date=task_in.start_date,
             finish_date=task_in.finish_date,
             duration_days=task_in.duration_days,
+            story_points=task_in.story_points,
             percent_complete=task_in.percent_complete,
             sort_order=task_in.sort_order,
             created_by=current_user.id,
@@ -618,6 +628,13 @@ class TaskService:
                 option_value_id=changes["task_type_id"],  # type: ignore[arg-type]
                 detail="Invalid task type.",
             )
+        if "priority_id" in changes and changes["priority_id"] is not None:
+            changes["priority_id"] = self.validate_task_option_id(
+                account_id=task.account_id,
+                option_name="PRIORITY",
+                option_value_id=changes["priority_id"],  # type: ignore[arg-type]
+                detail="Invalid task priority.",
+            )
 
     def replace_task_user_assignment(self, *, task: Task, assigned_to: object) -> object:
         existing_assignments = self.tasks.list_assignments_for_tasks([task.id]).get(task.id, [])
@@ -785,7 +802,7 @@ class TaskService:
         option_ids = {
             option_id
             for task in tasks
-            for option_id in (task.status_id, task.task_type_id)
+            for option_id in (task.status_id, task.task_type_id, task.priority_id)
             if option_id is not None
         }
         options = self.tasks.get_option_values_by_ids(option_ids)
@@ -797,6 +814,7 @@ class TaskService:
                 **task.__dict__,
                 "status": self.option_summary(task.status_id, options),
                 "task_type": self.option_summary(task.task_type_id, options),
+                "priority": self.option_summary(task.priority_id, options),
                 "sprint": self.sprint_summary(task.sprint_id, sprints),
                 "assignments": assignments.get(task.id, []),
                 "predecessors": predecessors.get(task.id, []),

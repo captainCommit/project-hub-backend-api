@@ -7,12 +7,17 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.resources import (
+    AccountCapacityForecastRead,
     ResourceAllocationCreate,
     ResourceAllocationRead,
     ResourceAllocationUpdate,
     ResourceCalendarRead,
+    ResourceCapacityForecastRead,
     ResourceCreate,
     ResourceRead,
+    ResourceTimeOffCreate,
+    ResourceTimeOffRead,
+    ResourceTimeOffUpdate,
     ResourceUpdate,
 )
 from app.services.auth import get_current_user
@@ -79,6 +84,49 @@ def list_resource_allocations(
     return ResourceService(db).list_resource_allocations(resource_id=resource_id, current_user=current_user)
 
 
+@router.get("/resources/{resource_id}/time-off", response_model=list[ResourceTimeOffRead])
+def list_resource_time_off(
+    resource_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ResourceTimeOffRead]:
+    return ResourceService(db).list_resource_time_off(resource_id=resource_id, current_user=current_user)
+
+
+@router.post("/resources/{resource_id}/time-off", response_model=ResourceTimeOffRead, status_code=status.HTTP_201_CREATED)
+def create_resource_time_off(
+    resource_id: UUID,
+    time_off_in: ResourceTimeOffCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ResourceTimeOffRead:
+    return ResourceService(db).create_time_off(
+        resource_id=resource_id,
+        time_off_in=time_off_in,
+        current_user=current_user,
+    )
+
+
+@router.get("/resources/{resource_id}/capacity-forecast", response_model=ResourceCapacityForecastRead)
+def get_resource_capacity_forecast(
+    resource_id: UUID,
+    start_date: date,
+    end_date: date,
+    project_id: UUID | None = None,
+    program_id: UUID | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return ResourceService(db).get_resource_capacity_forecast(
+        resource_id=resource_id,
+        start_date=start_date,
+        end_date=end_date,
+        current_user=current_user,
+        project_id=project_id,
+        program_id=program_id,
+    )
+
+
 @router.get("/accounts/{account_id}/resource-calendar", response_model=ResourceCalendarRead)
 def get_resource_calendar(
     account_id: UUID,
@@ -91,6 +139,28 @@ def get_resource_calendar(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, object]:
     return ResourceService(db).get_resource_calendar(
+        account_id=account_id,
+        start_date=start_date,
+        end_date=end_date,
+        current_user=current_user,
+        resource_id=resource_id,
+        project_id=project_id,
+        program_id=program_id,
+    )
+
+
+@router.get("/accounts/{account_id}/capacity-forecast", response_model=AccountCapacityForecastRead)
+def get_account_capacity_forecast(
+    account_id: UUID,
+    start_date: date,
+    end_date: date,
+    resource_id: UUID | None = None,
+    project_id: UUID | None = None,
+    program_id: UUID | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return ResourceService(db).get_account_capacity_forecast(
         account_id=account_id,
         start_date=start_date,
         end_date=end_date,
@@ -140,4 +210,28 @@ def delete_resource_allocation(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     ResourceService(db).delete_allocation(allocation_id=allocation_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/resource-time-off/{time_off_id}", response_model=ResourceTimeOffRead)
+def update_resource_time_off(
+    time_off_id: UUID,
+    time_off_in: ResourceTimeOffUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ResourceTimeOffRead:
+    return ResourceService(db).update_time_off(
+        time_off_id=time_off_id,
+        time_off_in=time_off_in,
+        current_user=current_user,
+    )
+
+
+@router.delete("/resource-time-off/{time_off_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_resource_time_off(
+    time_off_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    ResourceService(db).delete_time_off(time_off_id=time_off_id, current_user=current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,3 +1,5 @@
+from datetime import date
+import re
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -22,6 +24,16 @@ SPRINT_WRITE_ROLES = {
     AccountMemberRole.MANAGER.value,
     AccountMemberRole.MEMBER.value,
 }
+
+TASK_DONE_KEYS = {"done", "complete", "completed", "closed"}
+STORY_POINT_LEGEND = [
+    {"points": 1, "label": "< 2 hrs"},
+    {"points": 2, "label": "1/2 day"},
+    {"points": 3, "label": "< 2 days"},
+    {"points": 5, "label": "3-4 days"},
+    {"points": 8, "label": "4-5 days"},
+    {"points": 13, "label": "> 5 days"},
+]
 
 
 class SprintService:
@@ -71,6 +83,33 @@ class SprintService:
         sprint = self.get_sprint_or_404(sprint_id)
         self.require_account_member(account_id=sprint.account_id, user_id=current_user.id)
         return self.enrich_sprint(sprint)
+
+    def get_sprint_metrics(self, *, sprint_id: UUID, current_user: User) -> dict[str, object]:
+        sprint = self.get_sprint_or_404(sprint_id)
+        self.require_account_member(account_id=sprint.account_id, user_id=current_user.id)
+        task_rows = self.sprints.list_tasks_with_status_for_sprint(sprint.id)
+        total_tasks = len(task_rows)
+        total_story_points = sum(task.story_points or 0 for task, _status_value in task_rows)
+        completed_story_points = sum(
+            task.story_points or 0
+            for task, status_value in task_rows
+            if self.is_done_task_status(status_value)
+        )
+        remaining_story_points = max(total_story_points - completed_story_points, 0)
+        completion_percent = 0
+        if total_story_points > 0:
+            completion_percent = round((completed_story_points / total_story_points) * 100)
+
+        return {
+            "sprint": self.enrich_sprint(sprint),
+            "total_tasks": total_tasks,
+            "total_story_points": total_story_points,
+            "completed_story_points": completed_story_points,
+            "remaining_story_points": remaining_story_points,
+            "completion_percent": completion_percent,
+            "days_remaining": self.days_remaining(sprint.end_date),
+            "story_point_legend": STORY_POINT_LEGEND,
+        }
 
     def update_sprint(self, *, sprint_id: UUID, sprint_in: SprintUpdate, current_user: User) -> dict[str, object]:
         sprint = self.get_sprint_or_404(sprint_id)
@@ -131,6 +170,22 @@ class SprintService:
             "value": status_value.value,
             "color": status_value.color,
         }
+
+    def days_remaining(self, end_date: date | None) -> int:
+        if end_date is None:
+            return 0
+        return max((end_date - date.today()).days, 0)
+
+    def is_done_task_status(self, status_value: OptionValue | None) -> bool:
+        return self.has_any_option_key(status_value, TASK_DONE_KEYS)
+
+    def has_any_option_key(self, option_value: OptionValue | None, keys: set[str]) -> bool:
+        if option_value is None:
+            return False
+        return bool({self.normalize_option_key(option_value.value), self.normalize_option_key(option_value.label)} & keys)
+
+    def normalize_option_key(self, value: str | None) -> str:
+        return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
 
     def get_project_or_404(self, project_id: UUID) -> Project:
         project = self.hierarchy.get_project(project_id)

@@ -39,23 +39,34 @@ class OptionService:
                 entity_type=str(option_set_definition["entity_type"]),
                 name=str(option_set_definition["name"]),
             )
-            if existing:
-                continue
-            option_set = self.option_sets.create(
+            option_set = existing[0] if existing else self.option_sets.create(
                 account_id=account_id,
                 entity_type=str(option_set_definition["entity_type"]),
                 name=str(option_set_definition["name"]),
                 is_system=True,
             )
+            existing_values = {
+                option_value.value
+                for option_value in self.option_values.list_for_option_set(option_set.id, include_inactive=True)
+            }
+            has_default = any(
+                option_value.is_default
+                for option_value in self.option_values.list_for_option_set(option_set.id, include_inactive=True)
+            )
             values = tuple(option_set_definition["values"])  # type: ignore[arg-type]
             for sort_order, label in enumerate(values):
+                value = normalize_key(str(label))
+                if value in existing_values:
+                    continue
                 self.option_values.create(
                     option_set_id=option_set.id,
                     label=str(label),
-                    value=normalize_key(str(label)),
+                    value=value,
                     sort_order=sort_order,
-                    is_default=sort_order == 0,
+                    is_default=sort_order == 0 and not has_default,
                 )
+                if sort_order == 0 and not has_default:
+                    has_default = True
 
     def list_option_sets(self, *, account_id: UUID, current_user: User) -> list[OptionSet]:
         self.require_account_member(account_id=account_id, user_id=current_user.id)

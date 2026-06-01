@@ -499,6 +499,12 @@ def test_member_can_bulk_update_tasks(client: TestClient, db_session: Session) -
         option_name="TYPE",
         value="MILESTONE",
     )
+    priority_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="PRIORITY",
+        value="HIGH",
+    )
     parent = create_task(client, project_id, "Parent")
     set_current_user_role(db_session, account_id, AccountMemberRole.MEMBER)
 
@@ -512,10 +518,12 @@ def test_member_can_bulk_update_tasks(client: TestClient, db_session: Session) -
                         "name": "Updated Task",
                         "description": "Updated description",
                         "status_id": str(status_id),
+                        "priority_id": str(priority_id),
                         "task_type_id": str(task_type_id),
                         "start_date": "2026-01-01",
                         "finish_date": "2026-01-10",
                         "duration_days": 5,
+                        "story_points": 8,
                         "percent_complete": 50,
                         "assigned_to": None,
                         "sprint_id": sprint["id"],
@@ -533,7 +541,10 @@ def test_member_can_bulk_update_tasks(client: TestClient, db_session: Session) -
     assert updated[task["id"]]["name"] == "Updated Task"
     assert updated[task["id"]]["description"] == "Updated description"
     assert updated[task["id"]]["status_id"] == str(status_id)
+    assert updated[task["id"]]["priority_id"] == str(priority_id)
+    assert updated[task["id"]]["priority"]["value"] == "HIGH"
     assert updated[task["id"]]["task_type_id"] == str(task_type_id)
+    assert updated[task["id"]]["story_points"] == 8
     assert updated[task["id"]]["sprint_id"] == sprint["id"]
     assert updated[task["id"]]["parent_task_id"] == parent["id"]
     assert updated[task["id"]]["sort_order"] == "15.00"

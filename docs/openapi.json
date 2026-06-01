@@ -300,6 +300,315 @@
         }
       }
     },
+    "/api/v1/accounts/{account_id}/settings": {
+      "get": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Get Account Settings",
+        "operationId": "get_account_settings_api_v1_accounts__account_id__settings_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSettingsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Update Account Settings",
+        "operationId": "update_account_settings_api_v1_accounts__account_id__settings_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountSettingsUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSettingsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/holidays": {
+      "get": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "List Account Holidays",
+        "operationId": "list_account_holidays_api_v1_accounts__account_id__holidays_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AccountHolidayRead"
+                  },
+                  "title": "Response List Account Holidays Api V1 Accounts  Account Id  Holidays Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Create Account Holiday",
+        "operationId": "create_account_holiday_api_v1_accounts__account_id__holidays_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountHolidayCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountHolidayRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account-holidays/{holiday_id}": {
+      "patch": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Update Account Holiday",
+        "operationId": "update_account_holiday_api_v1_account_holidays__holiday_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "holiday_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Holiday Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountHolidayUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountHolidayRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Delete Account Holiday",
+        "operationId": "delete_account_holiday_api_v1_account_holidays__holiday_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "holiday_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Holiday Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}/users": {
       "get": {
         "tags": [
@@ -1735,6 +2044,54 @@
                     "type": "string"
                   },
                   "title": "Response Delete Project Api V1 Projects  Project Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/overview": {
+      "get": {
+        "tags": [
+          "hierarchy"
+        ],
+        "summary": "Get Project Overview",
+        "operationId": "get_project_overview_api_v1_projects__project_id__overview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOverviewRead"
                 }
               }
             }
@@ -5576,6 +5933,216 @@
         }
       }
     },
+    "/api/v1/resources/{resource_id}/time-off": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "List Resource Time Off",
+        "operationId": "list_resource_time_off_api_v1_resources__resource_id__time_off_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResourceTimeOffRead"
+                  },
+                  "title": "Response List Resource Time Off Api V1 Resources  Resource Id  Time Off Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Create Resource Time Off",
+        "operationId": "create_resource_time_off_api_v1_resources__resource_id__time_off_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTimeOffCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTimeOffRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resources/{resource_id}/capacity-forecast": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Get Resource Capacity Forecast",
+        "operationId": "get_resource_capacity_forecast_api_v1_resources__resource_id__capacity_forecast_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Id"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "End Date"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Program Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceCapacityForecastRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}/resource-calendar": {
       "get": {
         "tags": [
@@ -5678,6 +6245,125 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResourceCalendarRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/capacity-forecast": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Get Account Capacity Forecast",
+        "operationId": "get_account_capacity_forecast_api_v1_accounts__account_id__capacity_forecast_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "End Date"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Program Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountCapacityForecastRead"
                 }
               }
             }
@@ -5830,6 +6516,103 @@
               "type": "string",
               "format": "uuid",
               "title": "Allocation Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resource-time-off/{time_off_id}": {
+      "patch": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Update Resource Time Off",
+        "operationId": "update_resource_time_off_api_v1_resource_time_off__time_off_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "time_off_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Time Off Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTimeOffUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTimeOffRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Delete Resource Time Off",
+        "operationId": "delete_resource_time_off_api_v1_resource_time_off__time_off_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "time_off_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Time Off Id"
             }
           }
         ],
@@ -6315,6 +7098,136 @@
                     "type": "string"
                   },
                   "title": "Response Delete Sprint Api V1 Sprints  Sprint Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sprints/{sprint_id}/metrics": {
+      "get": {
+        "tags": [
+          "sprints"
+        ],
+        "summary": "Get Sprint Metrics",
+        "operationId": "get_sprint_metrics_api_v1_sprints__sprint_id__metrics_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sprint Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SprintMetricsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/delivery/overview": {
+      "get": {
+        "tags": [
+          "delivery"
+        ],
+        "summary": "Get Delivery Overview",
+        "operationId": "get_delivery_overview_api_v1_accounts__account_id__delivery_overview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Program Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryOverviewRead"
                 }
               }
             }
@@ -7294,6 +8207,91 @@
         ],
         "title": "AccountAssumptionRead"
       },
+      "AccountCapacityForecastRead": {
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceCapacityForecastResourceRead"
+            },
+            "type": "array",
+            "title": "Resources"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/AccountCapacityForecastSummaryRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "resources",
+          "summary"
+        ],
+        "title": "AccountCapacityForecastRead"
+      },
+      "AccountCapacityForecastSummaryRead": {
+        "properties": {
+          "resource_count": {
+            "type": "integer",
+            "title": "Resource Count"
+          },
+          "overallocated_resource_count": {
+            "type": "integer",
+            "title": "Overallocated Resource Count"
+          },
+          "total_base_capacity_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Base Capacity Hours"
+          },
+          "total_time_off_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Time Off Hours"
+          },
+          "total_available_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Available Hours"
+          },
+          "total_allocated_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Allocated Hours"
+          },
+          "total_remaining_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Remaining Hours"
+          },
+          "average_utilization_percent": {
+            "type": "number",
+            "title": "Average Utilization Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource_count",
+          "overallocated_resource_count",
+          "total_base_capacity_hours",
+          "total_time_off_hours",
+          "total_available_hours",
+          "total_allocated_hours",
+          "total_remaining_hours",
+          "average_utilization_percent"
+        ],
+        "title": "AccountCapacityForecastSummaryRead"
+      },
       "AccountCreate": {
         "properties": {
           "name": {
@@ -7495,6 +8493,117 @@
           "updated_at"
         ],
         "title": "AccountDecisionRead"
+      },
+      "AccountHolidayCreate": {
+        "properties": {
+          "holiday_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Holiday Date"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "holiday_date",
+          "name"
+        ],
+        "title": "AccountHolidayCreate"
+      },
+      "AccountHolidayRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "holiday_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Holiday Date"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "holiday_date",
+          "name",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AccountHolidayRead"
+      },
+      "AccountHolidayUpdate": {
+        "properties": {
+          "holiday_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holiday Date"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "AccountHolidayUpdate"
       },
       "AccountIssueRead": {
         "properties": {
@@ -7912,6 +9021,134 @@
           "updated_at"
         ],
         "title": "AccountRiskRead"
+      },
+      "AccountSettingsRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "date_format": {
+            "type": "string",
+            "title": "Date Format"
+          },
+          "default_landing_page": {
+            "type": "string",
+            "title": "Default Landing Page"
+          },
+          "hide_delivery_section": {
+            "type": "boolean",
+            "title": "Hide Delivery Section"
+          },
+          "non_working_weekdays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Non Working Weekdays"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "date_format",
+          "default_landing_page",
+          "hide_delivery_section",
+          "non_working_weekdays",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AccountSettingsRead"
+      },
+      "AccountSettingsUpdate": {
+        "properties": {
+          "date_format": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "MM/dd/yyyy",
+                  "dd/MM/yyyy",
+                  "yyyy-MM-dd"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Format"
+          },
+          "default_landing_page": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FAVORITES",
+                  "PORTFOLIOS",
+                  "PROGRAMS",
+                  "SPRINTS"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Landing Page"
+          },
+          "hide_delivery_section": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Delivery Section"
+          },
+          "non_working_weekdays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "MONDAY",
+                    "TUESDAY",
+                    "WEDNESDAY",
+                    "THURSDAY",
+                    "FRIDAY",
+                    "SATURDAY",
+                    "SUNDAY"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Working Weekdays"
+          }
+        },
+        "type": "object",
+        "title": "AccountSettingsUpdate"
       },
       "AccountSidebarRead": {
         "properties": {
@@ -9159,6 +10396,224 @@
         },
         "type": "object",
         "title": "DecisionUpdate"
+      },
+      "DeliveryOverviewRead": {
+        "properties": {
+          "total_sprints": {
+            "type": "integer",
+            "title": "Total Sprints"
+          },
+          "active_sprints": {
+            "type": "integer",
+            "title": "Active Sprints"
+          },
+          "total_stories": {
+            "type": "integer",
+            "title": "Total Stories"
+          },
+          "done_stories": {
+            "type": "integer",
+            "title": "Done Stories"
+          },
+          "programs": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryProgramSummary"
+            },
+            "type": "array",
+            "title": "Programs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_sprints",
+          "active_sprints",
+          "total_stories",
+          "done_stories",
+          "programs"
+        ],
+        "title": "DeliveryOverviewRead"
+      },
+      "DeliveryProgramSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "total_sprints": {
+            "type": "integer",
+            "title": "Total Sprints"
+          },
+          "active_sprints": {
+            "type": "integer",
+            "title": "Active Sprints"
+          },
+          "total_stories": {
+            "type": "integer",
+            "title": "Total Stories"
+          },
+          "done_stories": {
+            "type": "integer",
+            "title": "Done Stories"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryProjectSummary"
+            },
+            "type": "array",
+            "title": "Projects"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "total_sprints",
+          "active_sprints",
+          "total_stories",
+          "done_stories",
+          "projects"
+        ],
+        "title": "DeliveryProgramSummary"
+      },
+      "DeliveryProjectSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "total_sprints": {
+            "type": "integer",
+            "title": "Total Sprints"
+          },
+          "active_sprints": {
+            "type": "integer",
+            "title": "Active Sprints"
+          },
+          "total_stories": {
+            "type": "integer",
+            "title": "Total Stories"
+          },
+          "done_stories": {
+            "type": "integer",
+            "title": "Done Stories"
+          },
+          "sprints": {
+            "items": {
+              "$ref": "#/components/schemas/DeliverySprintSummary"
+            },
+            "type": "array",
+            "title": "Sprints"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "total_sprints",
+          "active_sprints",
+          "total_stories",
+          "done_stories",
+          "sprints"
+        ],
+        "title": "DeliveryProjectSummary"
+      },
+      "DeliverySprintSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "total_stories": {
+            "type": "integer",
+            "title": "Total Stories"
+          },
+          "done_stories": {
+            "type": "integer",
+            "title": "Done Stories"
+          },
+          "total_story_points": {
+            "type": "integer",
+            "title": "Total Story Points"
+          },
+          "completed_story_points": {
+            "type": "integer",
+            "title": "Completed Story Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status_id",
+          "start_date",
+          "end_date",
+          "total_stories",
+          "done_stories",
+          "total_story_points",
+          "completed_story_points"
+        ],
+        "title": "DeliverySprintSummary"
       },
       "HTTPValidationError": {
         "properties": {
@@ -11256,6 +12711,602 @@
         ],
         "title": "ProjectDeliveryType"
       },
+      "ProjectOverviewActivitySummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "entity_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Entity Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "entity_type",
+          "entity_id",
+          "action",
+          "created_by",
+          "created_at"
+        ],
+        "title": "ProjectOverviewActivitySummary"
+      },
+      "ProjectOverviewDecisionSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "decision_number": {
+            "type": "string",
+            "title": "Decision Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposed_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Date"
+          },
+          "approved_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "decision_number",
+          "title",
+          "status",
+          "proposed_date",
+          "approved_date",
+          "created_at"
+        ],
+        "title": "ProjectOverviewDecisionSummary"
+      },
+      "ProjectOverviewHealth": {
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Schedule"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Scope"
+          },
+          "resources": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Resources"
+          },
+          "overall": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Overall"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schedule",
+          "scope",
+          "resources",
+          "overall"
+        ],
+        "title": "ProjectOverviewHealth"
+      },
+      "ProjectOverviewIssueSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "issue_number": {
+            "type": "string",
+            "title": "Issue Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_resolution_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Resolution Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "issue_number",
+          "title",
+          "priority",
+          "status",
+          "target_resolution_date",
+          "created_at"
+        ],
+        "title": "ProjectOverviewIssueSummary"
+      },
+      "ProjectOverviewProjectSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "portfolio_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Portfolio Id"
+          },
+          "program_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Program Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "target_end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target End Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "portfolio_id",
+          "program_id",
+          "name",
+          "description",
+          "status",
+          "start_date",
+          "target_end_date"
+        ],
+        "title": "ProjectOverviewProjectSummary"
+      },
+      "ProjectOverviewRead": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/ProjectOverviewProjectSummary"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ProjectOverviewStats"
+          },
+          "health": {
+            "$ref": "#/components/schemas/ProjectOverviewHealth"
+          },
+          "upcoming_milestones": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewTaskSummary"
+            },
+            "type": "array",
+            "title": "Upcoming Milestones"
+          },
+          "top_risks": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewRiskSummary"
+            },
+            "type": "array",
+            "title": "Top Risks"
+          },
+          "top_issues": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewIssueSummary"
+            },
+            "type": "array",
+            "title": "Top Issues"
+          },
+          "pending_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewDecisionSummary"
+            },
+            "type": "array",
+            "title": "Pending Decisions"
+          },
+          "recent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewActivitySummary"
+            },
+            "type": "array",
+            "title": "Recent Activity"
+          },
+          "resource_summary": {
+            "$ref": "#/components/schemas/ProjectOverviewResourceSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project",
+          "stats",
+          "health",
+          "resource_summary"
+        ],
+        "title": "ProjectOverviewRead"
+      },
+      "ProjectOverviewResourceSummary": {
+        "properties": {
+          "total_resources": {
+            "type": "integer",
+            "title": "Total Resources"
+          },
+          "total_allocated_hours": {
+            "type": "number",
+            "title": "Total Allocated Hours"
+          },
+          "overallocated_resources": {
+            "type": "integer",
+            "title": "Overallocated Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_resources",
+          "total_allocated_hours",
+          "overallocated_resources"
+        ],
+        "title": "ProjectOverviewResourceSummary"
+      },
+      "ProjectOverviewRiskSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "risk_number": {
+            "type": "string",
+            "title": "Risk Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_resolution_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Resolution Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "risk_number",
+          "title",
+          "priority",
+          "status",
+          "target_resolution_date",
+          "created_at"
+        ],
+        "title": "ProjectOverviewRiskSummary"
+      },
+      "ProjectOverviewStats": {
+        "properties": {
+          "total_tasks": {
+            "type": "integer",
+            "title": "Total Tasks"
+          },
+          "completed_tasks": {
+            "type": "integer",
+            "title": "Completed Tasks"
+          },
+          "in_progress_tasks": {
+            "type": "integer",
+            "title": "In Progress Tasks"
+          },
+          "overdue_tasks": {
+            "type": "integer",
+            "title": "Overdue Tasks"
+          },
+          "upcoming_milestones": {
+            "type": "integer",
+            "title": "Upcoming Milestones"
+          },
+          "open_risks": {
+            "type": "integer",
+            "title": "Open Risks"
+          },
+          "open_issues": {
+            "type": "integer",
+            "title": "Open Issues"
+          },
+          "pending_decisions": {
+            "type": "integer",
+            "title": "Pending Decisions"
+          },
+          "open_assumptions": {
+            "type": "integer",
+            "title": "Open Assumptions"
+          },
+          "resource_count": {
+            "type": "integer",
+            "title": "Resource Count"
+          },
+          "overallocated_resources": {
+            "type": "integer",
+            "title": "Overallocated Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_tasks",
+          "completed_tasks",
+          "in_progress_tasks",
+          "overdue_tasks",
+          "upcoming_milestones",
+          "open_risks",
+          "open_issues",
+          "pending_decisions",
+          "open_assumptions",
+          "resource_count",
+          "overallocated_resources"
+        ],
+        "title": "ProjectOverviewStats"
+      },
+      "ProjectOverviewTaskSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "finish_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "task_type",
+          "start_date",
+          "finish_date"
+        ],
+        "title": "ProjectOverviewTaskSummary"
+      },
       "ProjectRead": {
         "properties": {
           "id": {
@@ -11859,6 +13910,21 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Weekly Capacity Hours"
           },
+          "base_capacity_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Capacity Hours"
+          },
+          "time_off_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Time Off Hours"
+          },
+          "available_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Available Hours"
+          },
           "utilization_percent": {
             "type": "number",
             "title": "Utilization Percent"
@@ -11874,6 +13940,9 @@
           "allocations",
           "total_allocated_hours",
           "weekly_capacity_hours",
+          "base_capacity_hours",
+          "time_off_hours",
+          "available_hours",
           "utilization_percent",
           "overallocated"
         ],
@@ -11960,6 +14029,118 @@
           "finish_date"
         ],
         "title": "ResourceCalendarTaskSummary"
+      },
+      "ResourceCapacityForecastRead": {
+        "properties": {
+          "resource": {
+            "$ref": "#/components/schemas/ResourceCalendarResourceSummary"
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceCapacityForecastWeekRead"
+            },
+            "type": "array",
+            "title": "Weeks"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource",
+          "weeks",
+          "start_date",
+          "end_date"
+        ],
+        "title": "ResourceCapacityForecastRead"
+      },
+      "ResourceCapacityForecastResourceRead": {
+        "properties": {
+          "resource": {
+            "$ref": "#/components/schemas/ResourceCalendarResourceSummary"
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceCapacityForecastWeekRead"
+            },
+            "type": "array",
+            "title": "Weeks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource",
+          "weeks"
+        ],
+        "title": "ResourceCapacityForecastResourceRead"
+      },
+      "ResourceCapacityForecastWeekRead": {
+        "properties": {
+          "week_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Week Start"
+          },
+          "week_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Week End"
+          },
+          "base_capacity_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Capacity Hours"
+          },
+          "time_off_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Time Off Hours"
+          },
+          "available_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Available Hours"
+          },
+          "allocated_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Allocated Hours"
+          },
+          "remaining_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Remaining Hours"
+          },
+          "utilization_percent": {
+            "type": "number",
+            "title": "Utilization Percent"
+          },
+          "overallocated": {
+            "type": "boolean",
+            "title": "Overallocated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "week_start",
+          "week_end",
+          "base_capacity_hours",
+          "time_off_hours",
+          "available_hours",
+          "allocated_hours",
+          "remaining_hours",
+          "utilization_percent",
+          "overallocated"
+        ],
+        "title": "ResourceCapacityForecastWeekRead"
       },
       "ResourceCreate": {
         "properties": {
@@ -12099,6 +14280,200 @@
           "updated_at"
         ],
         "title": "ResourceRead"
+      },
+      "ResourceTimeOffCreate": {
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "hours_per_day": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours Per Day"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "title": "ResourceTimeOffCreate"
+      },
+      "ResourceTimeOffRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Resource Id"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "hours_per_day": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours Per Day"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "resource_id",
+          "start_date",
+          "end_date",
+          "reason",
+          "hours_per_day",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ResourceTimeOffRead"
+      },
+      "ResourceTimeOffUpdate": {
+        "properties": {
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "hours_per_day": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours Per Day"
+          }
+        },
+        "type": "object",
+        "title": "ResourceTimeOffUpdate"
       },
       "ResourceUpdate": {
         "properties": {
@@ -12783,6 +15158,56 @@
         ],
         "title": "SprintCreate"
       },
+      "SprintMetricsRead": {
+        "properties": {
+          "sprint": {
+            "$ref": "#/components/schemas/SprintRead"
+          },
+          "total_tasks": {
+            "type": "integer",
+            "title": "Total Tasks"
+          },
+          "total_story_points": {
+            "type": "integer",
+            "title": "Total Story Points"
+          },
+          "completed_story_points": {
+            "type": "integer",
+            "title": "Completed Story Points"
+          },
+          "remaining_story_points": {
+            "type": "integer",
+            "title": "Remaining Story Points"
+          },
+          "completion_percent": {
+            "type": "integer",
+            "title": "Completion Percent"
+          },
+          "days_remaining": {
+            "type": "integer",
+            "title": "Days Remaining"
+          },
+          "story_point_legend": {
+            "items": {
+              "$ref": "#/components/schemas/StoryPointLegendItem"
+            },
+            "type": "array",
+            "title": "Story Point Legend"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sprint",
+          "total_tasks",
+          "total_story_points",
+          "completed_story_points",
+          "remaining_story_points",
+          "completion_percent",
+          "days_remaining",
+          "story_point_legend"
+        ],
+        "title": "SprintMetricsRead"
+      },
       "SprintRead": {
         "properties": {
           "id": {
@@ -13057,6 +15482,24 @@
         ],
         "title": "StatusSummary"
       },
+      "StoryPointLegendItem": {
+        "properties": {
+          "points": {
+            "type": "integer",
+            "title": "Points"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "points",
+          "label"
+        ],
+        "title": "StoryPointLegendItem"
+      },
       "TaskAssignmentCreate": {
         "properties": {
           "user_id": {
@@ -13200,6 +15643,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "task_type_id": {
             "anyOf": [
               {
@@ -13250,6 +15705,18 @@
               }
             ],
             "title": "Duration Days"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
           },
           "percent_complete": {
             "anyOf": [
@@ -13425,6 +15892,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "start_date": {
             "anyOf": [
               {
@@ -13463,6 +15942,18 @@
               }
             ],
             "title": "Duration Days"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
           },
           "percent_complete": {
             "anyOf": [
@@ -13681,6 +16172,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -13731,6 +16234,17 @@
               }
             ],
             "title": "Duration Days"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
           },
           "percent_complete": {
             "type": "string",
@@ -13784,6 +16298,16 @@
               }
             ]
           },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sprint": {
             "anyOf": [
               {
@@ -13820,11 +16344,13 @@
           "parent_task_id",
           "task_type_id",
           "status_id",
+          "priority_id",
           "name",
           "description",
           "start_date",
           "finish_date",
           "duration_days",
+          "story_points",
           "percent_complete",
           "sort_order",
           "created_by",
@@ -13954,6 +16480,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -14004,6 +16542,17 @@
               }
             ],
             "title": "Duration Days"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
           },
           "percent_complete": {
             "type": "string",
@@ -14057,6 +16606,16 @@
               }
             ]
           },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sprint": {
             "anyOf": [
               {
@@ -14101,11 +16660,13 @@
           "parent_task_id",
           "task_type_id",
           "status_id",
+          "priority_id",
           "name",
           "description",
           "start_date",
           "finish_date",
           "duration_days",
+          "story_points",
           "percent_complete",
           "sort_order",
           "created_by",
@@ -14188,6 +16749,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "start_date": {
             "anyOf": [
               {
@@ -14226,6 +16799,18 @@
               }
             ],
             "title": "Duration Days"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
           },
           "percent_complete": {
             "anyOf": [

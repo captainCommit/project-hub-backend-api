@@ -1,5 +1,7 @@
 from app.models.account import Account
+from app.models.account_holiday import AccountHoliday
 from app.models.account_member import AccountMember, AccountMemberRole
+from app.models.account_settings import AccountSettings
 from app.models.activity_log import ActivityLog
 from app.models.assumption import Assumption
 from app.models.attachment import Attachment
@@ -17,6 +19,7 @@ from app.models.program import Program
 from app.models.project import Project, ProjectDeliveryType
 from app.models.resource import Resource
 from app.models.resource_allocation import ResourceAllocation
+from app.models.resource_time_off import ResourceTimeOff
 from app.models.risk import Risk
 from app.models.sprint import Sprint
 from app.models.task import Task
@@ -26,8 +29,10 @@ from app.models.user import User
 
 __all__ = [
     "Account",
+    "AccountHoliday",
     "AccountMember",
     "AccountMemberRole",
+    "AccountSettings",
     "ActivityLog",
     "Assumption",
     "Attachment",
@@ -47,6 +52,7 @@ __all__ = [
     "ProjectDeliveryType",
     "Resource",
     "ResourceAllocation",
+    "ResourceTimeOff",
     "Risk",
     "Sprint",
     "Task",
