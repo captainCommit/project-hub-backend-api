@@ -4,6 +4,7 @@
 .serverless
 .requirements
 node_modules
+screenshots
 .env
 tests/__pycache__
 app/__pycache__

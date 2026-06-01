@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -10,6 +10,9 @@ class UserRepository:
 
     def get_by_email(self, email: str) -> User | None:
         return self.db.scalar(select(User).where(User.email == email))
+
+    def get_by_email_normalized(self, email: str) -> User | None:
+        return self.db.scalar(select(User).where(func.lower(User.email) == email.lower()))
 
     def get_by_cognito_sub(self, cognito_sub: str) -> User | None:
         return self.db.scalar(select(User).where(User.cognito_sub == cognito_sub))
@@ -36,6 +39,13 @@ class UserRepository:
     ) -> User:
         user.email = email
         user.full_name = full_name
+        self.db.add(user)
+        self.db.flush()
+        self.db.refresh(user)
+        return user
+
+    def update_email(self, user: User, *, email: str) -> User:
+        user.email = email
         self.db.add(user)
         self.db.flush()
         self.db.refresh(user)

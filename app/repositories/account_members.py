@@ -35,6 +35,13 @@ class AccountMemberRepository:
         )
         return self.db.scalar(statement)
 
+    def update_role(self, account_member: AccountMember, *, role: AccountMemberRole) -> AccountMember:
+        account_member.role = role.value
+        self.db.add(account_member)
+        self.db.flush()
+        self.db.refresh(account_member)
+        return account_member
+
     def list_for_account(self, account_id: UUID) -> list[AccountMember]:
         statement = select(AccountMember).where(AccountMember.account_id == account_id)
         return list(self.db.scalars(statement).all())

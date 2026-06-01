@@ -701,6 +701,122 @@
         }
       }
     },
+    "/api/v1/accounts/{account_id}/users/invite": {
+      "post": {
+        "tags": [
+          "account-users"
+        ],
+        "summary": "Invite Account User",
+        "operationId": "invite_account_user_api_v1_accounts__account_id__users_invite_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountUserInviteCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountUserInviteRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/users/bulk-invite": {
+      "post": {
+        "tags": [
+          "account-users"
+        ],
+        "summary": "Bulk Invite Account Users",
+        "operationId": "bulk_invite_account_users_api_v1_accounts__account_id__users_bulk_invite_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountUserBulkInviteCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountUserBulkInviteRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}/users/search": {
       "get": {
         "tags": [
@@ -10353,6 +10469,17 @@
         ],
         "title": "AccountIssueRead"
       },
+      "AccountMemberRole": {
+        "type": "string",
+        "enum": [
+          "OWNER",
+          "ADMIN",
+          "MANAGER",
+          "MEMBER",
+          "VIEWER"
+        ],
+        "title": "AccountMemberRole"
+      },
       "AccountRead": {
         "properties": {
           "id": {
@@ -10767,6 +10894,258 @@
         },
         "type": "object",
         "title": "AccountUpdate"
+      },
+      "AccountUserBulkInviteCreate": {
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AccountUserBulkInviteItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Users"
+          },
+          "update_existing": {
+            "type": "boolean",
+            "title": "Update Existing",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "users"
+        ],
+        "title": "AccountUserBulkInviteCreate"
+      },
+      "AccountUserBulkInviteItem": {
+        "properties": {
+          "email": {
+            "title": "Email"
+          },
+          "full_name": {
+            "title": "Full Name"
+          },
+          "role": {
+            "title": "Role"
+          },
+          "update_existing": {
+            "title": "Update Existing"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "AccountUserBulkInviteItem"
+      },
+      "AccountUserBulkInviteRead": {
+        "properties": {
+          "created": {
+            "type": "integer",
+            "title": "Created"
+          },
+          "updated": {
+            "type": "integer",
+            "title": "Updated"
+          },
+          "already_exists": {
+            "type": "integer",
+            "title": "Already Exists"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/AccountUserBulkInviteResult"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created",
+          "updated",
+          "already_exists",
+          "failed",
+          "results"
+        ],
+        "title": "AccountUserBulkInviteRead"
+      },
+      "AccountUserBulkInviteResult": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountUserInviteStatus"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountMemberRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "status"
+        ],
+        "title": "AccountUserBulkInviteResult"
+      },
+      "AccountUserInviteCreate": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AccountUserInviteRole"
+          },
+          "update_existing": {
+            "type": "boolean",
+            "title": "Update Existing",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "AccountUserInviteCreate"
+      },
+      "AccountUserInviteRead": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountUserInviteStatus"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "membership_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Membership Id"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AccountMemberRole"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "status",
+          "user_id",
+          "account_id",
+          "membership_id",
+          "full_name",
+          "role"
+        ],
+        "title": "AccountUserInviteRead"
+      },
+      "AccountUserInviteRole": {
+        "type": "string",
+        "enum": [
+          "ADMIN",
+          "MANAGER",
+          "MEMBER",
+          "VIEWER"
+        ],
+        "title": "AccountUserInviteRole"
+      },
+      "AccountUserInviteStatus": {
+        "type": "string",
+        "enum": [
+          "CREATED",
+          "UPDATED",
+          "ALREADY_EXISTS",
+          "FAILED"
+        ],
+        "title": "AccountUserInviteStatus"
       },
       "AccountUserRead": {
         "properties": {

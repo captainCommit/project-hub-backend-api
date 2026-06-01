@@ -2,7 +2,7 @@ from functools import lru_cache
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
         default="http://localhost:3000",
         validation_alias="CORS_ORIGINS",
     )
-    aws_region: str = Field(default="ca-central-1", validation_alias="APP_AWS_REGION")
+    aws_region: str = Field(default="ca-central-1", validation_alias=AliasChoices("APP_AWS_REGION", "AWS_REGION"))
     s3_bucket_name: str = Field(default="", validation_alias="S3_BUCKET_NAME")
     attachment_upload_expires_seconds: int = Field(
         default=900,
@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     )
     cognito_user_pool_id: str = Field(default="", validation_alias="COGNITO_USER_POOL_ID")
     cognito_app_client_id: str = Field(default="", validation_alias="COGNITO_APP_CLIENT_ID")
+    cognito_invite_enabled: bool = Field(default=False, validation_alias="COGNITO_INVITE_ENABLED")
     auth_mode: Literal["local", "cognito"] = Field(default="local", validation_alias="AUTH_MODE")
 
     model_config = SettingsConfigDict(

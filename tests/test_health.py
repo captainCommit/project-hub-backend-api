@@ -38,6 +38,8 @@ def test_swagger_json_endpoint_includes_api_paths_and_auth_scheme() -> None:
     assert body["openapi"]
     assert body["info"]["title"] == "Project Hub API"
     assert "/api/v1/me" in body["paths"]
+    assert "/api/v1/accounts/{account_id}/users/invite" in body["paths"]
+    assert "/api/v1/accounts/{account_id}/users/bulk-invite" in body["paths"]
     assert "HTTPBearer" in body["components"]["securitySchemes"]
 
 

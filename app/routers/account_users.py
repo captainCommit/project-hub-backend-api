@@ -4,9 +4,16 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.config import Settings, get_settings
 from app.core.pagination import PaginatedResponse, PaginationParams, get_pagination_params
 from app.models.user import User
-from app.schemas.account_user import AccountUserRead
+from app.schemas.account_user import (
+    AccountUserBulkInviteCreate,
+    AccountUserBulkInviteRead,
+    AccountUserInviteCreate,
+    AccountUserInviteRead,
+    AccountUserRead,
+)
 from app.services.account_users import AccountUserService
 from app.services.auth import get_current_user
 
@@ -25,6 +32,36 @@ def list_account_users(
         account_id=account_id,
         current_user=current_user,
         pagination=pagination,
+    )
+
+
+@router.post("/{account_id}/users/invite", response_model=AccountUserInviteRead)
+def invite_account_user(
+    account_id: UUID,
+    invite_in: AccountUserInviteCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> AccountUserInviteRead:
+    return AccountUserService(db, settings=settings).invite_account_user(
+        account_id=account_id,
+        invite_in=invite_in,
+        current_user=current_user,
+    )
+
+
+@router.post("/{account_id}/users/bulk-invite", response_model=AccountUserBulkInviteRead)
+def bulk_invite_account_users(
+    account_id: UUID,
+    bulk_in: AccountUserBulkInviteCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> AccountUserBulkInviteRead:
+    return AccountUserService(db, settings=settings).bulk_invite_account_users(
+        account_id=account_id,
+        bulk_in=bulk_in,
+        current_user=current_user,
     )
 
 
