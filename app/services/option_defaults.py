@@ -25,6 +25,11 @@ DEFAULT_OPTION_SETS: tuple[dict[str, object], ...] = (
         "values": ("Work Package", "Milestone", "Activity"),
     },
     {
+        "entity_type": "TASK",
+        "name": "PRIORITY",
+        "values": ("Low", "Medium", "High", "Critical"),
+    },
+    {
         "entity_type": "RISK",
         "name": "PRIORITY",
         "values": ("Low", "Medium", "High", "Critical"),

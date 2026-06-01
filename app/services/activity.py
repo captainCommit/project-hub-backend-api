@@ -21,6 +21,7 @@ from app.models.program import Program
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.resource_allocation import ResourceAllocation
+from app.models.resource_time_off import ResourceTimeOff
 from app.models.risk import Risk
 from app.models.sprint import Sprint
 from app.models.task import Task
@@ -45,6 +46,7 @@ ACTIVITY_ENTITY_MODELS: dict[str, type[Any]] = {
     "SPRINT": Sprint,
     "RESOURCE": Resource,
     "RESOURCE_ALLOCATION": ResourceAllocation,
+    "RESOURCE_TIME_OFF": ResourceTimeOff,
 }
 
 ACTIVITY_ACTIONS = {
@@ -62,6 +64,7 @@ ACTIVITY_ACTIONS = {
     "SPRINT_CREATED",
     "SPRINT_UPDATED",
     "TASK_SPRINT_ASSIGNED",
+    "TASK_BOARD_MOVED",
     "TASK_REORDERED",
     "TASK_MOVED",
     "TASK_INDENTED",
@@ -73,6 +76,9 @@ ACTIVITY_ACTIONS = {
     "RESOURCE_ALLOCATION_CREATED",
     "RESOURCE_ALLOCATION_UPDATED",
     "RESOURCE_ALLOCATION_DELETED",
+    "RESOURCE_TIME_OFF_CREATED",
+    "RESOURCE_TIME_OFF_UPDATED",
+    "RESOURCE_TIME_OFF_DELETED",
 }
 
 

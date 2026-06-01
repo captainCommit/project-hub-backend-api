@@ -20,8 +20,10 @@ from app.schemas.hierarchy import (
     ProjectRead,
     ProjectUpdate,
 )
+from app.schemas.project_overview import ProjectOverviewRead
 from app.services.auth import get_current_user
 from app.services.hierarchy import HierarchyService
+from app.services.project_overview import ProjectOverviewService
 
 
 router = APIRouter(prefix="/api/v1", tags=["hierarchy"])
@@ -171,6 +173,15 @@ def get_project(
     current_user: User = Depends(get_current_user),
 ) -> ProjectRead:
     return HierarchyService(db).get_project(project_id=project_id, current_user=current_user)
+
+
+@router.get("/projects/{project_id}/overview", response_model=ProjectOverviewRead)
+def get_project_overview(
+    project_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProjectOverviewRead:
+    return ProjectOverviewService(db).get_project_overview(project_id=project_id, current_user=current_user)
 
 
 @router.patch("/projects/{project_id}", response_model=ProjectRead)

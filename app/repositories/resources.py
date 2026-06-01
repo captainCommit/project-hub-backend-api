@@ -9,6 +9,7 @@ from app.models.program import Program
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.resource_allocation import ResourceAllocation
+from app.models.resource_time_off import ResourceTimeOff
 from app.models.task import Task
 
 
@@ -80,11 +81,41 @@ class ResourceRepository:
         self.db.delete(allocation)
         self.db.flush()
 
+    def create_time_off(self, **values: object) -> ResourceTimeOff:
+        time_off = ResourceTimeOff(**values)
+        self.db.add(time_off)
+        self.db.flush()
+        self.db.refresh(time_off)
+        return time_off
+
+    def get_time_off(self, time_off_id: UUID) -> ResourceTimeOff | None:
+        return self.db.get(ResourceTimeOff, time_off_id)
+
+    def update_time_off(self, time_off: ResourceTimeOff, changes: dict[str, object]) -> ResourceTimeOff:
+        for field, value in changes.items():
+            setattr(time_off, field, value)
+        self.db.add(time_off)
+        self.db.flush()
+        self.db.refresh(time_off)
+        return time_off
+
+    def delete_time_off(self, time_off: ResourceTimeOff) -> None:
+        self.db.delete(time_off)
+        self.db.flush()
+
     def list_allocations_for_resource(self, resource_id: UUID) -> list[ResourceAllocation]:
         statement = (
             select(ResourceAllocation)
             .where(ResourceAllocation.resource_id == resource_id)
             .order_by(ResourceAllocation.start_date, ResourceAllocation.created_at, ResourceAllocation.id)
+        )
+        return list(self.db.scalars(statement).all())
+
+    def list_time_off_for_resource(self, resource_id: UUID) -> list[ResourceTimeOff]:
+        statement = (
+            select(ResourceTimeOff)
+            .where(ResourceTimeOff.resource_id == resource_id)
+            .order_by(ResourceTimeOff.start_date, ResourceTimeOff.created_at, ResourceTimeOff.id)
         )
         return list(self.db.scalars(statement).all())
 
@@ -120,9 +151,46 @@ class ResourceRepository:
             statement = statement.where(Project.program_id == program_id)
         return list(self.db.execute(statement).all())
 
+    def list_calendar_time_off(
+        self,
+        *,
+        account_id: UUID,
+        start_date: date,
+        end_date: date,
+        resource_ids: Iterable[UUID],
+    ) -> list[ResourceTimeOff]:
+        resource_ids = list(resource_ids)
+        if not resource_ids:
+            return []
+        statement = (
+            select(ResourceTimeOff)
+            .where(
+                ResourceTimeOff.account_id == account_id,
+                ResourceTimeOff.resource_id.in_(resource_ids),
+                ResourceTimeOff.start_date <= end_date,
+                ResourceTimeOff.end_date >= start_date,
+            )
+            .order_by(ResourceTimeOff.resource_id, ResourceTimeOff.start_date, ResourceTimeOff.id)
+        )
+        return list(self.db.scalars(statement).all())
+
     def get_resources_by_ids(self, resource_ids: Iterable[UUID]) -> dict[UUID, Resource]:
         resource_ids = list(resource_ids)
         if not resource_ids:
             return {}
         statement = select(Resource).where(Resource.id.in_(resource_ids))
         return {resource.id: resource for resource in self.db.scalars(statement).all()}
+
+    def list_resources_for_account_by_user_ids(self, *, account_id: UUID, user_ids: Iterable[UUID]) -> list[Resource]:
+        user_ids = list(user_ids)
+        if not user_ids:
+            return []
+        statement = (
+            select(Resource)
+            .where(
+                Resource.account_id == account_id,
+                Resource.user_id.in_(user_ids),
+            )
+            .order_by(Resource.name, Resource.id)
+        )
+        return list(self.db.scalars(statement).all())

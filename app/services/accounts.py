@@ -8,6 +8,7 @@ from app.models.account import Account
 from app.models.account_member import AccountMemberRole
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
+from app.repositories.account_settings import AccountSettingsRepository
 from app.repositories.accounts import AccountRepository
 from app.schemas.account import AccountCreate, AccountUpdate
 from app.services.options import OptionService
@@ -21,6 +22,7 @@ class AccountService:
         self.db = db
         self.accounts = AccountRepository(db)
         self.account_members = AccountMemberRepository(db)
+        self.account_settings = AccountSettingsRepository(db)
 
     def create_account(self, *, account_in: AccountCreate, current_user: User) -> Account:
         try:
@@ -34,6 +36,7 @@ class AccountService:
                 user_id=current_user.id,
                 role=AccountMemberRole.OWNER,
             )
+            self.account_settings.create_default(account.id)
             OptionService(self.db).seed_defaults_for_account(account.id)
             self.db.commit()
             self.db.refresh(account)

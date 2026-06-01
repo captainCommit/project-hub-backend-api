@@ -2,11 +2,12 @@ from collections.abc import Iterable
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
 from app.models.sprint import Sprint
+from app.models.task import Task
 
 
 class SprintRepository:
@@ -71,3 +72,13 @@ class SprintRepository:
             return {}
         statement = select(OptionValue).where(OptionValue.id.in_(status_ids))
         return {status.id: status for status in self.db.scalars(statement).all()}
+
+    def list_tasks_with_status_for_sprint(self, sprint_id: UUID) -> list[tuple[Task, OptionValue | None]]:
+        task_status = aliased(OptionValue)
+        statement = (
+            select(Task, task_status)
+            .outerjoin(task_status, task_status.id == Task.status_id)
+            .where(Task.sprint_id == sprint_id, Task.is_deleted.is_(False))
+            .order_by(Task.sort_order, Task.name, Task.id)
+        )
+        return list(self.db.execute(statement).all())

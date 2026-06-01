@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -499,6 +500,12 @@ def test_member_can_bulk_update_tasks(client: TestClient, db_session: Session) -
         option_name="TYPE",
         value="MILESTONE",
     )
+    priority_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="PRIORITY",
+        value="HIGH",
+    )
     parent = create_task(client, project_id, "Parent")
     set_current_user_role(db_session, account_id, AccountMemberRole.MEMBER)
 
@@ -512,10 +519,12 @@ def test_member_can_bulk_update_tasks(client: TestClient, db_session: Session) -
                         "name": "Updated Task",
                         "description": "Updated description",
                         "status_id": str(status_id),
+                        "priority_id": str(priority_id),
                         "task_type_id": str(task_type_id),
                         "start_date": "2026-01-01",
                         "finish_date": "2026-01-10",
                         "duration_days": 5,
+                        "story_points": 8,
                         "percent_complete": 50,
                         "assigned_to": None,
                         "sprint_id": sprint["id"],
@@ -533,7 +542,10 @@ def test_member_can_bulk_update_tasks(client: TestClient, db_session: Session) -
     assert updated[task["id"]]["name"] == "Updated Task"
     assert updated[task["id"]]["description"] == "Updated description"
     assert updated[task["id"]]["status_id"] == str(status_id)
+    assert updated[task["id"]]["priority_id"] == str(priority_id)
+    assert updated[task["id"]]["priority"]["value"] == "HIGH"
     assert updated[task["id"]]["task_type_id"] == str(task_type_id)
+    assert updated[task["id"]]["story_points"] == 8
     assert updated[task["id"]]["sprint_id"] == sprint["id"]
     assert updated[task["id"]]["parent_task_id"] == parent["id"]
     assert updated[task["id"]]["sort_order"] == "15.00"
@@ -992,3 +1004,269 @@ def test_cross_project_parent_rejected_for_move(client: TestClient) -> None:
 
     assert response.status_code == 400
     assert response.json()["message"] == "Parent task must belong to the same project."
+
+
+def test_project_board_returns_columns_tasks_and_uncategorized(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    in_progress_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="STATUS",
+        value="IN_PROGRESS",
+    )
+    create_task(client, project_id, "Second", status_id=str(in_progress_id), sort_order=20)
+    create_task(client, project_id, "First", status_id=str(in_progress_id), sort_order=10)
+    uncategorized = create_task(client, project_id, "No Status", sort_order=5)
+    uncategorized_record = db_session.get(Task, UUID(uncategorized["id"]))
+    assert uncategorized_record is not None
+    uncategorized_record.status_id = None
+    db_session.commit()
+
+    response = client.get(f"/api/v1/projects/{project_id}/board")
+
+    assert response.status_code == 200
+    board = response.json()
+    assert board["project_id"] == project_id
+    assert [column["value"] for column in board["columns"]] == [
+        "NOT_STARTED",
+        "IN_PROGRESS",
+        "BLOCKED",
+        "COMPLETE",
+        None,
+    ]
+    in_progress_column = next(column for column in board["columns"] if column["value"] == "IN_PROGRESS")
+    assert [task["name"] for task in in_progress_column["tasks"]] == ["First", "Second"]
+    blocked_column = next(column for column in board["columns"] if column["value"] == "BLOCKED")
+    assert blocked_column["tasks"] == []
+    uncategorized_column = next(column for column in board["columns"] if column["is_uncategorized"])
+    assert [task["name"] for task in uncategorized_column["tasks"]] == ["No Status"]
+
+
+def test_sprint_board_returns_only_sprint_tasks(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    sprint = create_sprint(client, project_id, "Sprint Board")
+    sprint_task = create_task(client, project_id, "Sprint Task", sprint_id=sprint["id"])
+    create_task(client, project_id, "Backlog Task")
+
+    response = client.get(f"/api/v1/sprints/{sprint['id']}/board")
+
+    assert response.status_code == 200
+    board = response.json()
+    assert board["project_id"] == project_id
+    assert board["sprint_id"] == sprint["id"]
+    task_ids = {task["id"] for column in board["columns"] for task in column["tasks"]}
+    assert task_ids == {sprint_task["id"]}
+
+
+def test_member_can_update_board_position_and_activity_is_logged(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    task = create_task(client, project_id, "Move on Board")
+    sprint = create_sprint(client, project_id, "Board Sprint")
+    in_progress_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="STATUS",
+        value="IN_PROGRESS",
+    )
+    set_current_user_role(db_session, account_id, AccountMemberRole.MEMBER)
+
+    response = client.patch(
+        f"/api/v1/tasks/{task['id']}/board-position",
+        json={"status_id": str(in_progress_id), "sort_order": 10, "sprint_id": sprint["id"]},
+    )
+    activity_response = client.get(f"/api/v1/entities/TASK/{task['id']}/activity")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status_id"] == str(in_progress_id)
+    assert body["sort_order"] == "10.00"
+    assert body["sprint_id"] == sprint["id"]
+    assert activity_response.status_code == 200
+    assert activity_response.json()[0]["action"] == "TASK_BOARD_MOVED"
+
+
+def test_board_position_update_validates_status_and_sprint(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    other_hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    task = create_task(client, hierarchy["project"]["id"], "Validate Board Move")
+    invalid_status_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="TYPE",
+        value="WORK_PACKAGE",
+    )
+    other_sprint = create_sprint(client, other_hierarchy["project"]["id"], "Other Sprint")
+
+    invalid_status_response = client.patch(
+        f"/api/v1/tasks/{task['id']}/board-position",
+        json={"status_id": str(invalid_status_id), "sort_order": 1, "sprint_id": None},
+    )
+    invalid_sprint_response = client.patch(
+        f"/api/v1/tasks/{task['id']}/board-position",
+        json={"status_id": None, "sort_order": 1, "sprint_id": other_sprint["id"]},
+    )
+
+    assert invalid_status_response.status_code == 400
+    assert invalid_status_response.json()["message"] == "Invalid task status."
+    assert invalid_sprint_response.status_code == 400
+    assert invalid_sprint_response.json()["message"] == "Sprint must belong to the same project."
+
+
+def test_viewer_cannot_update_board_position(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Blocked Board Move")
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.VIEWER)
+
+    response = client.patch(
+        f"/api/v1/tasks/{task['id']}/board-position",
+        json={"status_id": None, "sort_order": 10, "sprint_id": None},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Insufficient account role."
+
+
+def test_project_gantt_excludes_soft_deleted_and_includes_predecessors_resources(
+    client: TestClient,
+) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    predecessor = create_task(client, project_id, "Predecessor", start_date="2026-01-01", finish_date="2026-01-02")
+    parent = create_task(client, project_id, "Parent", sort_order=1)
+    successor = create_task(
+        client,
+        project_id,
+        "Successor",
+        parent_task_id=parent["id"],
+        start_date="2026-01-03",
+        finish_date="2026-01-04",
+        duration_days=1,
+        sort_order=2,
+    )
+    deleted = create_task(client, project_id, "Deleted Gantt Task")
+    predecessor_response = client.post(
+        f"/api/v1/tasks/{successor['id']}/predecessors",
+        json={"predecessor_task_id": predecessor["id"], "dependency_type": "FS"},
+    )
+    resource_response = client.post(
+        f"/api/v1/accounts/{account_id}/resources",
+        json={"name": "Designer", "role": "UX", "weekly_capacity_hours": 32},
+    )
+    assignment_response = client.post(
+        f"/api/v1/tasks/{successor['id']}/assignments",
+        json={"resource_name": "Vendor"},
+    )
+    allocation_response = client.post(
+        f"/api/v1/tasks/{successor['id']}/resource-allocations",
+        json={"resource_id": resource_response.json()["id"], "allocated_hours": 8},
+    )
+    delete_response = client.delete(f"/api/v1/tasks/{deleted['id']}")
+    assert predecessor_response.status_code == 201
+    assert resource_response.status_code == 201
+    assert assignment_response.status_code == 201
+    assert allocation_response.status_code == 201
+    assert delete_response.status_code == 204
+
+    response = client.get(f"/api/v1/projects/{project_id}/gantt")
+
+    assert response.status_code == 200
+    gantt = response.json()
+    assert gantt["project"]["id"] == project_id
+    tasks_by_name = {task["name"]: task for task in gantt["tasks"]}
+    assert "Deleted Gantt Task" not in tasks_by_name
+    assert tasks_by_name["Successor"]["parent_task_id"] == parent["id"]
+    assert tasks_by_name["Successor"]["predecessors"][0]["predecessor_task_id"] == predecessor["id"]
+    assert {resource["name"] for resource in tasks_by_name["Successor"]["resources"]} == {"Designer", "Vendor"}
+
+
+def test_project_audit_returns_activity(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Audit Task")
+
+    response = client.get(
+        f"/api/v1/projects/{hierarchy['project']['id']}/audit",
+        params={"paginated": True, "page": 1, "page_size": 10},
+    )
+
+    assert response.status_code == 200
+    audit = response.json()
+    assert audit["total"] >= 1
+    assert any(item["entity_type"] == "TASK" and item["entity_id"] == task["id"] for item in audit["items"])
+
+
+def test_due_tasks_return_overdue_upcoming_and_apply_filters(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    today = date.today()
+    complete_status_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="STATUS",
+        value="COMPLETE",
+    )
+    second_program_response = client.post(
+        f"/api/v1/portfolios/{hierarchy['portfolio']['id']}/programs",
+        json={"name": "Second Due Program"},
+    )
+    assert second_program_response.status_code == 201
+    second_project_response = client.post(
+        f"/api/v1/programs/{second_program_response.json()['id']}/projects",
+        json={"name": "Second Due Project"},
+    )
+    assert second_project_response.status_code == 201
+    second_project = second_project_response.json()
+
+    overdue = create_task(client, project_id, "Overdue", finish_date=str(today - timedelta(days=1)))
+    upcoming = create_task(client, project_id, "Upcoming", finish_date=str(today + timedelta(days=5)))
+    create_task(client, project_id, "Later", finish_date=str(today + timedelta(days=45)))
+    create_task(client, project_id, "Complete Status", finish_date=str(today - timedelta(days=2)), status_id=str(complete_status_id))
+    create_task(client, project_id, "Complete Percent", finish_date=str(today - timedelta(days=3)), percent_complete=100)
+    second_program_task = create_task(
+        client,
+        second_project["id"],
+        "Second Program Due",
+        finish_date=str(today + timedelta(days=3)),
+    )
+    resource_response = client.post(f"/api/v1/accounts/{account_id}/resources", json={"name": "Due Designer"})
+    assert resource_response.status_code == 201
+    allocation_response = client.post(
+        f"/api/v1/tasks/{overdue['id']}/resource-allocations",
+        json={"resource_id": resource_response.json()["id"], "allocated_hours": 4},
+    )
+    assert allocation_response.status_code == 201
+
+    response = client.get(f"/api/v1/accounts/{account_id}/tasks/due")
+    project_filter_response = client.get(f"/api/v1/accounts/{account_id}/tasks/due", params={"project_id": project_id})
+    program_filter_response = client.get(
+        f"/api/v1/accounts/{account_id}/tasks/due",
+        params={"program_id": second_program_response.json()["id"]},
+    )
+    assigned_filter_response = client.get(
+        f"/api/v1/accounts/{account_id}/tasks/due",
+        params={"assigned_to": resource_response.json()["id"]},
+    )
+    overdue_mode_response = client.get(f"/api/v1/accounts/{account_id}/tasks/due", params={"mode": "OVERDUE"})
+
+    assert response.status_code == 200
+    due = response.json()
+    assert {task["name"] for task in due["tasks"]} == {"Overdue", "Upcoming", "Second Program Due"}
+    assert {task["name"] for task in due["overdue"]} == {"Overdue"}
+    assert {task["name"] for task in due["upcoming"]} == {"Upcoming", "Second Program Due"}
+    assert next(task for task in due["tasks"] if task["name"] == "Overdue")["resources"][0]["name"] == "Due Designer"
+
+    assert project_filter_response.status_code == 200
+    assert {task["name"] for task in project_filter_response.json()["tasks"]} == {"Overdue", "Upcoming"}
+    assert program_filter_response.status_code == 200
+    assert [task["id"] for task in program_filter_response.json()["tasks"]] == [second_program_task["id"]]
+    assert assigned_filter_response.status_code == 200
+    assert [task["id"] for task in assigned_filter_response.json()["tasks"]] == [overdue["id"]]
+    assert overdue_mode_response.status_code == 200
+    assert {task["name"] for task in overdue_mode_response.json()["tasks"]} == {"Overdue"}

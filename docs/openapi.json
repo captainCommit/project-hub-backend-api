@@ -300,6 +300,315 @@
         }
       }
     },
+    "/api/v1/accounts/{account_id}/settings": {
+      "get": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Get Account Settings",
+        "operationId": "get_account_settings_api_v1_accounts__account_id__settings_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSettingsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Update Account Settings",
+        "operationId": "update_account_settings_api_v1_accounts__account_id__settings_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountSettingsUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSettingsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/holidays": {
+      "get": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "List Account Holidays",
+        "operationId": "list_account_holidays_api_v1_accounts__account_id__holidays_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AccountHolidayRead"
+                  },
+                  "title": "Response List Account Holidays Api V1 Accounts  Account Id  Holidays Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Create Account Holiday",
+        "operationId": "create_account_holiday_api_v1_accounts__account_id__holidays_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountHolidayCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountHolidayRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account-holidays/{holiday_id}": {
+      "patch": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Update Account Holiday",
+        "operationId": "update_account_holiday_api_v1_account_holidays__holiday_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "holiday_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Holiday Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountHolidayUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountHolidayRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "account-settings"
+        ],
+        "summary": "Delete Account Holiday",
+        "operationId": "delete_account_holiday_api_v1_account_holidays__holiday_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "holiday_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Holiday Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}/users": {
       "get": {
         "tags": [
@@ -964,6 +1273,105 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OptionValueRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/dashboard": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get Account Dashboard",
+        "operationId": "get_account_dashboard_api_v1_accounts__account_id__dashboard_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "portfolio_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portfolio Id"
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Program Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDashboardRead"
                 }
               }
             }
@@ -1752,6 +2160,54 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/overview": {
+      "get": {
+        "tags": [
+          "hierarchy"
+        ],
+        "summary": "Get Project Overview",
+        "operationId": "get_project_overview_api_v1_projects__project_id__overview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOverviewRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}/sidebar": {
       "get": {
         "tags": [
@@ -2142,6 +2598,275 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/board": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get Project Board",
+        "operationId": "get_project_board_api_v1_projects__project_id__board_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskBoardRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/gantt": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get Project Gantt",
+        "operationId": "get_project_gantt_api_v1_projects__project_id__gantt_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTaskGanttRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sprints/{sprint_id}/board": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get Sprint Board",
+        "operationId": "get_sprint_board_api_v1_sprints__sprint_id__board_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sprint Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskBoardRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/tasks/due": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List Due Tasks",
+        "operationId": "list_due_tasks_api_v1_accounts__account_id__tasks_due_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "OVERDUE",
+                "UPCOMING",
+                "BOTH"
+              ],
+              "type": "string",
+              "default": "BOTH",
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 30,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Program Id"
+            }
+          },
+          {
+            "name": "assigned_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assigned To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DueTasksRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/tasks/tree": {
       "get": {
         "tags": [
@@ -2499,6 +3224,64 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/board-position": {
+      "patch": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Update Task Board Position",
+        "operationId": "update_task_board_position_api_v1_tasks__task_id__board_position_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskBoardPositionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -5576,6 +6359,216 @@
         }
       }
     },
+    "/api/v1/resources/{resource_id}/time-off": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "List Resource Time Off",
+        "operationId": "list_resource_time_off_api_v1_resources__resource_id__time_off_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResourceTimeOffRead"
+                  },
+                  "title": "Response List Resource Time Off Api V1 Resources  Resource Id  Time Off Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Create Resource Time Off",
+        "operationId": "create_resource_time_off_api_v1_resources__resource_id__time_off_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTimeOffCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTimeOffRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resources/{resource_id}/capacity-forecast": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Get Resource Capacity Forecast",
+        "operationId": "get_resource_capacity_forecast_api_v1_resources__resource_id__capacity_forecast_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Id"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "End Date"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Program Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceCapacityForecastRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}/resource-calendar": {
       "get": {
         "tags": [
@@ -5678,6 +6671,296 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResourceCalendarRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/capacity-forecast": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Get Account Capacity Forecast",
+        "operationId": "get_account_capacity_forecast_api_v1_accounts__account_id__capacity_forecast_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "End Date"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Program Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountCapacityForecastRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/resource-analysis": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Get Resource Analysis",
+        "operationId": "get_resource_analysis_api_v1_accounts__account_id__resource_analysis_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "End Date"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Program Id"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAnalysisRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/resource-recommendations": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Get Task Resource Recommendations",
+        "operationId": "get_task_resource_recommendations_api_v1_tasks__task_id__resource_recommendations_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResourceRecommendationRead"
+                  },
+                  "title": "Response Get Task Resource Recommendations Api V1 Tasks  Task Id  Resource Recommendations Get"
                 }
               }
             }
@@ -5830,6 +7113,774 @@
               "type": "string",
               "format": "uuid",
               "title": "Allocation Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resource-time-off/{time_off_id}": {
+      "patch": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Update Resource Time Off",
+        "operationId": "update_resource_time_off_api_v1_resource_time_off__time_off_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "time_off_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Time Off Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTimeOffUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTimeOffRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Delete Resource Time Off",
+        "operationId": "delete_resource_time_off_api_v1_resource_time_off__time_off_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "time_off_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Time Off Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/skills": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "List Skills",
+        "operationId": "list_skills_api_v1_accounts__account_id__skills_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "include_inactive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Inactive"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SkillRead"
+                  },
+                  "title": "Response List Skills Api V1 Accounts  Account Id  Skills Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Create Skill",
+        "operationId": "create_skill_api_v1_accounts__account_id__skills_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/skills/{skill_id}": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Get Skill",
+        "operationId": "get_skill_api_v1_skills__skill_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Skill Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Update Skill",
+        "operationId": "update_skill_api_v1_skills__skill_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Skill Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Delete Skill",
+        "operationId": "delete_skill_api_v1_skills__skill_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Skill Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resources/{resource_id}/skills": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "List Resource Skills",
+        "operationId": "list_resource_skills_api_v1_resources__resource_id__skills_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResourceSkillRead"
+                  },
+                  "title": "Response List Resource Skills Api V1 Resources  Resource Id  Skills Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Create Resource Skill",
+        "operationId": "create_resource_skill_api_v1_resources__resource_id__skills_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceSkillCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSkillRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resource-skills/{resource_skill_id}": {
+      "patch": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Update Resource Skill",
+        "operationId": "update_resource_skill_api_v1_resource_skills__resource_skill_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Skill Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceSkillUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSkillRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Delete Resource Skill",
+        "operationId": "delete_resource_skill_api_v1_resource_skills__resource_skill_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Skill Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/required-skills": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "List Task Required Skills",
+        "operationId": "list_task_required_skills_api_v1_tasks__task_id__required_skills_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskRequiredSkillRead"
+                  },
+                  "title": "Response List Task Required Skills Api V1 Tasks  Task Id  Required Skills Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Create Task Required Skill",
+        "operationId": "create_task_required_skill_api_v1_tasks__task_id__required_skills_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRequiredSkillCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRequiredSkillRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/task-required-skills/{required_skill_id}": {
+      "patch": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Update Task Required Skill",
+        "operationId": "update_task_required_skill_api_v1_task_required_skills__required_skill_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "required_skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Required Skill Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRequiredSkillUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRequiredSkillRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Delete Task Required Skill",
+        "operationId": "delete_task_required_skill_api_v1_task_required_skills__required_skill_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "required_skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Required Skill Id"
             }
           }
         ],
@@ -6315,6 +8366,136 @@
                     "type": "string"
                   },
                   "title": "Response Delete Sprint Api V1 Sprints  Sprint Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sprints/{sprint_id}/metrics": {
+      "get": {
+        "tags": [
+          "sprints"
+        ],
+        "summary": "Get Sprint Metrics",
+        "operationId": "get_sprint_metrics_api_v1_sprints__sprint_id__metrics_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sprint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sprint Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SprintMetricsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/delivery/overview": {
+      "get": {
+        "tags": [
+          "delivery"
+        ],
+        "summary": "Get Delivery Overview",
+        "operationId": "get_delivery_overview_api_v1_accounts__account_id__delivery_overview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Program Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryOverviewRead"
                 }
               }
             }
@@ -6888,6 +9069,114 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/audit": {
+      "get": {
+        "tags": [
+          "activity"
+        ],
+        "summary": "List Project Audit",
+        "operationId": "list_project_audit_api_v1_projects__project_id__audit_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "paginated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Paginated"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ActivityLogRead"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/PaginatedResponse_ActivityLogRead_"
+                    }
+                  ],
+                  "title": "Response List Project Audit Api V1 Projects  Project Id  Audit Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/entities/{entity_type}/{entity_id}/attachments/presigned-upload": {
       "post": {
         "tags": [
@@ -7294,6 +9583,91 @@
         ],
         "title": "AccountAssumptionRead"
       },
+      "AccountCapacityForecastRead": {
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceCapacityForecastResourceRead"
+            },
+            "type": "array",
+            "title": "Resources"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/AccountCapacityForecastSummaryRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "resources",
+          "summary"
+        ],
+        "title": "AccountCapacityForecastRead"
+      },
+      "AccountCapacityForecastSummaryRead": {
+        "properties": {
+          "resource_count": {
+            "type": "integer",
+            "title": "Resource Count"
+          },
+          "overallocated_resource_count": {
+            "type": "integer",
+            "title": "Overallocated Resource Count"
+          },
+          "total_base_capacity_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Base Capacity Hours"
+          },
+          "total_time_off_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Time Off Hours"
+          },
+          "total_available_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Available Hours"
+          },
+          "total_allocated_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Allocated Hours"
+          },
+          "total_remaining_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Remaining Hours"
+          },
+          "average_utilization_percent": {
+            "type": "number",
+            "title": "Average Utilization Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource_count",
+          "overallocated_resource_count",
+          "total_base_capacity_hours",
+          "total_time_off_hours",
+          "total_available_hours",
+          "total_allocated_hours",
+          "total_remaining_hours",
+          "average_utilization_percent"
+        ],
+        "title": "AccountCapacityForecastSummaryRead"
+      },
       "AccountCreate": {
         "properties": {
           "name": {
@@ -7315,6 +9689,200 @@
           "slug"
         ],
         "title": "AccountCreate"
+      },
+      "AccountDashboardHealth": {
+        "properties": {
+          "overall": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Overall"
+          },
+          "schedule": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Schedule"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Scope"
+          },
+          "resources": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Resources"
+          },
+          "trend": {
+            "type": "string",
+            "enum": [
+              "IMPROVING",
+              "STABLE",
+              "DECLINING",
+              "UNKNOWN"
+            ],
+            "title": "Trend"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overall",
+          "schedule",
+          "scope",
+          "resources",
+          "trend"
+        ],
+        "title": "AccountDashboardHealth"
+      },
+      "AccountDashboardRead": {
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/AccountDashboardSummary"
+          },
+          "health": {
+            "$ref": "#/components/schemas/AccountDashboardHealth"
+          },
+          "projects_at_risk": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardProjectAtRiskSummary"
+            },
+            "type": "array",
+            "title": "Projects At Risk"
+          },
+          "top_risks": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardRiskSummary"
+            },
+            "type": "array",
+            "title": "Top Risks"
+          },
+          "top_issues": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardIssueSummary"
+            },
+            "type": "array",
+            "title": "Top Issues"
+          },
+          "overdue_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardTaskSummary"
+            },
+            "type": "array",
+            "title": "Overdue Tasks"
+          },
+          "resource_utilization": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardResourceUtilizationSummary"
+            },
+            "type": "array",
+            "title": "Resource Utilization"
+          },
+          "recent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardActivitySummary"
+            },
+            "type": "array",
+            "title": "Recent Activity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "health"
+        ],
+        "title": "AccountDashboardRead"
+      },
+      "AccountDashboardSummary": {
+        "properties": {
+          "portfolio_count": {
+            "type": "integer",
+            "title": "Portfolio Count"
+          },
+          "program_count": {
+            "type": "integer",
+            "title": "Program Count"
+          },
+          "project_count": {
+            "type": "integer",
+            "title": "Project Count"
+          },
+          "active_project_count": {
+            "type": "integer",
+            "title": "Active Project Count"
+          },
+          "completed_project_count": {
+            "type": "integer",
+            "title": "Completed Project Count"
+          },
+          "at_risk_project_count": {
+            "type": "integer",
+            "title": "At Risk Project Count"
+          },
+          "total_tasks": {
+            "type": "integer",
+            "title": "Total Tasks"
+          },
+          "completed_tasks": {
+            "type": "integer",
+            "title": "Completed Tasks"
+          },
+          "overdue_tasks": {
+            "type": "integer",
+            "title": "Overdue Tasks"
+          },
+          "open_risks": {
+            "type": "integer",
+            "title": "Open Risks"
+          },
+          "open_issues": {
+            "type": "integer",
+            "title": "Open Issues"
+          },
+          "pending_decisions": {
+            "type": "integer",
+            "title": "Pending Decisions"
+          },
+          "overallocated_resources": {
+            "type": "integer",
+            "title": "Overallocated Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "portfolio_count",
+          "program_count",
+          "project_count",
+          "active_project_count",
+          "completed_project_count",
+          "at_risk_project_count",
+          "total_tasks",
+          "completed_tasks",
+          "overdue_tasks",
+          "open_risks",
+          "open_issues",
+          "pending_decisions",
+          "overallocated_resources"
+        ],
+        "title": "AccountDashboardSummary"
       },
       "AccountDecisionRead": {
         "properties": {
@@ -7495,6 +10063,117 @@
           "updated_at"
         ],
         "title": "AccountDecisionRead"
+      },
+      "AccountHolidayCreate": {
+        "properties": {
+          "holiday_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Holiday Date"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "holiday_date",
+          "name"
+        ],
+        "title": "AccountHolidayCreate"
+      },
+      "AccountHolidayRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "holiday_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Holiday Date"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "holiday_date",
+          "name",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AccountHolidayRead"
+      },
+      "AccountHolidayUpdate": {
+        "properties": {
+          "holiday_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holiday Date"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "AccountHolidayUpdate"
       },
       "AccountIssueRead": {
         "properties": {
@@ -7912,6 +10591,134 @@
           "updated_at"
         ],
         "title": "AccountRiskRead"
+      },
+      "AccountSettingsRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "date_format": {
+            "type": "string",
+            "title": "Date Format"
+          },
+          "default_landing_page": {
+            "type": "string",
+            "title": "Default Landing Page"
+          },
+          "hide_delivery_section": {
+            "type": "boolean",
+            "title": "Hide Delivery Section"
+          },
+          "non_working_weekdays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Non Working Weekdays"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "date_format",
+          "default_landing_page",
+          "hide_delivery_section",
+          "non_working_weekdays",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AccountSettingsRead"
+      },
+      "AccountSettingsUpdate": {
+        "properties": {
+          "date_format": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "MM/dd/yyyy",
+                  "dd/MM/yyyy",
+                  "yyyy-MM-dd"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Format"
+          },
+          "default_landing_page": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FAVORITES",
+                  "PORTFOLIOS",
+                  "PROGRAMS",
+                  "SPRINTS"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Landing Page"
+          },
+          "hide_delivery_section": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Delivery Section"
+          },
+          "non_working_weekdays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "MONDAY",
+                    "TUESDAY",
+                    "WEDNESDAY",
+                    "THURSDAY",
+                    "FRIDAY",
+                    "SATURDAY",
+                    "SUNDAY"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Working Weekdays"
+          }
+        },
+        "type": "object",
+        "title": "AccountSettingsUpdate"
       },
       "AccountSidebarRead": {
         "properties": {
@@ -8604,6 +11411,511 @@
         ],
         "title": "CommentUpdate"
       },
+      "DashboardActivitySummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "entity_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Entity Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "entity_type",
+          "entity_id",
+          "action",
+          "created_by",
+          "created_at"
+        ],
+        "title": "DashboardActivitySummary"
+      },
+      "DashboardIssueSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "program_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Program Id"
+          },
+          "issue_number": {
+            "type": "string",
+            "title": "Issue Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_resolution_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Resolution Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "project": {
+            "$ref": "#/components/schemas/DashboardProjectMiniSummary"
+          },
+          "program": {
+            "$ref": "#/components/schemas/DashboardProgramSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "program_id",
+          "issue_number",
+          "title",
+          "priority",
+          "status",
+          "target_resolution_date",
+          "created_at",
+          "project",
+          "program"
+        ],
+        "title": "DashboardIssueSummary"
+      },
+      "DashboardProgramSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DashboardProgramSummary"
+      },
+      "DashboardProjectAtRiskSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "portfolio_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Portfolio Id"
+          },
+          "program_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Program Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "target_end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target End Date"
+          },
+          "health": {
+            "$ref": "#/components/schemas/AccountDashboardHealth"
+          },
+          "overdue_tasks": {
+            "type": "integer",
+            "title": "Overdue Tasks"
+          },
+          "open_risks": {
+            "type": "integer",
+            "title": "Open Risks"
+          },
+          "open_issues": {
+            "type": "integer",
+            "title": "Open Issues"
+          },
+          "overallocated_resources": {
+            "type": "integer",
+            "title": "Overallocated Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "portfolio_id",
+          "program_id",
+          "name",
+          "status",
+          "start_date",
+          "target_end_date",
+          "health",
+          "overdue_tasks",
+          "open_risks",
+          "open_issues",
+          "overallocated_resources"
+        ],
+        "title": "DashboardProjectAtRiskSummary"
+      },
+      "DashboardProjectMiniSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DashboardProjectMiniSummary"
+      },
+      "DashboardResourceSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "weekly_capacity_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Weekly Capacity Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "weekly_capacity_hours"
+        ],
+        "title": "DashboardResourceSummary"
+      },
+      "DashboardResourceUtilizationSummary": {
+        "properties": {
+          "resource": {
+            "$ref": "#/components/schemas/DashboardResourceSummary"
+          },
+          "allocated_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Allocated Hours"
+          },
+          "utilization_percent": {
+            "type": "number",
+            "title": "Utilization Percent"
+          },
+          "overallocated": {
+            "type": "boolean",
+            "title": "Overallocated"
+          },
+          "project_count": {
+            "type": "integer",
+            "title": "Project Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource",
+          "allocated_hours",
+          "utilization_percent",
+          "overallocated",
+          "project_count"
+        ],
+        "title": "DashboardResourceUtilizationSummary"
+      },
+      "DashboardRiskSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "program_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Program Id"
+          },
+          "risk_number": {
+            "type": "string",
+            "title": "Risk Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_resolution_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Resolution Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "project": {
+            "$ref": "#/components/schemas/DashboardProjectMiniSummary"
+          },
+          "program": {
+            "$ref": "#/components/schemas/DashboardProgramSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "program_id",
+          "risk_number",
+          "title",
+          "priority",
+          "status",
+          "target_resolution_date",
+          "created_at",
+          "project",
+          "program"
+        ],
+        "title": "DashboardRiskSummary"
+      },
+      "DashboardTaskSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "program_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Program Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "finish_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Finish Date"
+          },
+          "project": {
+            "$ref": "#/components/schemas/DashboardProjectMiniSummary"
+          },
+          "program": {
+            "$ref": "#/components/schemas/DashboardProgramSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "program_id",
+          "name",
+          "status",
+          "start_date",
+          "finish_date",
+          "project",
+          "program"
+        ],
+        "title": "DashboardTaskSummary"
+      },
       "DecisionCreate": {
         "properties": {
           "title": {
@@ -9159,6 +12471,401 @@
         },
         "type": "object",
         "title": "DecisionUpdate"
+      },
+      "DeliveryOverviewRead": {
+        "properties": {
+          "total_sprints": {
+            "type": "integer",
+            "title": "Total Sprints"
+          },
+          "active_sprints": {
+            "type": "integer",
+            "title": "Active Sprints"
+          },
+          "total_stories": {
+            "type": "integer",
+            "title": "Total Stories"
+          },
+          "done_stories": {
+            "type": "integer",
+            "title": "Done Stories"
+          },
+          "programs": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryProgramSummary"
+            },
+            "type": "array",
+            "title": "Programs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_sprints",
+          "active_sprints",
+          "total_stories",
+          "done_stories",
+          "programs"
+        ],
+        "title": "DeliveryOverviewRead"
+      },
+      "DeliveryProgramSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "total_sprints": {
+            "type": "integer",
+            "title": "Total Sprints"
+          },
+          "active_sprints": {
+            "type": "integer",
+            "title": "Active Sprints"
+          },
+          "total_stories": {
+            "type": "integer",
+            "title": "Total Stories"
+          },
+          "done_stories": {
+            "type": "integer",
+            "title": "Done Stories"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryProjectSummary"
+            },
+            "type": "array",
+            "title": "Projects"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "total_sprints",
+          "active_sprints",
+          "total_stories",
+          "done_stories",
+          "projects"
+        ],
+        "title": "DeliveryProgramSummary"
+      },
+      "DeliveryProjectSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "total_sprints": {
+            "type": "integer",
+            "title": "Total Sprints"
+          },
+          "active_sprints": {
+            "type": "integer",
+            "title": "Active Sprints"
+          },
+          "total_stories": {
+            "type": "integer",
+            "title": "Total Stories"
+          },
+          "done_stories": {
+            "type": "integer",
+            "title": "Done Stories"
+          },
+          "sprints": {
+            "items": {
+              "$ref": "#/components/schemas/DeliverySprintSummary"
+            },
+            "type": "array",
+            "title": "Sprints"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "total_sprints",
+          "active_sprints",
+          "total_stories",
+          "done_stories",
+          "sprints"
+        ],
+        "title": "DeliveryProjectSummary"
+      },
+      "DeliverySprintSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "total_stories": {
+            "type": "integer",
+            "title": "Total Stories"
+          },
+          "done_stories": {
+            "type": "integer",
+            "title": "Done Stories"
+          },
+          "total_story_points": {
+            "type": "integer",
+            "title": "Total Story Points"
+          },
+          "completed_story_points": {
+            "type": "integer",
+            "title": "Completed Story Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status_id",
+          "start_date",
+          "end_date",
+          "total_stories",
+          "done_stories",
+          "total_story_points",
+          "completed_story_points"
+        ],
+        "title": "DeliverySprintSummary"
+      },
+      "DueTaskRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "sprint_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sprint Id"
+          },
+          "parent_task_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Task Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "finish_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Finish Date"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "duration_days": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Days"
+          },
+          "percent_complete": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Percent Complete"
+          },
+          "sort_order": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Sort Order"
+          },
+          "due_status": {
+            "type": "string",
+            "enum": [
+              "OVERDUE",
+              "UPCOMING"
+            ],
+            "title": "Due Status"
+          },
+          "project": {
+            "$ref": "#/components/schemas/TaskProjectSummaryRead"
+          },
+          "program": {
+            "$ref": "#/components/schemas/TaskProgramSummaryRead"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/TaskResourceSummaryRead"
+            },
+            "type": "array",
+            "title": "Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "sprint_id",
+          "parent_task_id",
+          "name",
+          "finish_date",
+          "start_date",
+          "duration_days",
+          "percent_complete",
+          "sort_order",
+          "due_status",
+          "project",
+          "program",
+          "status"
+        ],
+        "title": "DueTaskRead"
+      },
+      "DueTasksRead": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "OVERDUE",
+              "UPCOMING",
+              "BOTH"
+            ],
+            "title": "Mode"
+          },
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/DueTaskRead"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "overdue": {
+            "items": {
+              "$ref": "#/components/schemas/DueTaskRead"
+            },
+            "type": "array",
+            "title": "Overdue"
+          },
+          "upcoming": {
+            "items": {
+              "$ref": "#/components/schemas/DueTaskRead"
+            },
+            "type": "array",
+            "title": "Upcoming"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "days",
+          "tasks",
+          "overdue",
+          "upcoming"
+        ],
+        "title": "DueTasksRead"
       },
       "HTTPValidationError": {
         "properties": {
@@ -11256,6 +14963,602 @@
         ],
         "title": "ProjectDeliveryType"
       },
+      "ProjectOverviewActivitySummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "entity_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Entity Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "entity_type",
+          "entity_id",
+          "action",
+          "created_by",
+          "created_at"
+        ],
+        "title": "ProjectOverviewActivitySummary"
+      },
+      "ProjectOverviewDecisionSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "decision_number": {
+            "type": "string",
+            "title": "Decision Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposed_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Date"
+          },
+          "approved_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "decision_number",
+          "title",
+          "status",
+          "proposed_date",
+          "approved_date",
+          "created_at"
+        ],
+        "title": "ProjectOverviewDecisionSummary"
+      },
+      "ProjectOverviewHealth": {
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Schedule"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Scope"
+          },
+          "resources": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Resources"
+          },
+          "overall": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "YELLOW",
+              "RED",
+              "UNKNOWN"
+            ],
+            "title": "Overall"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schedule",
+          "scope",
+          "resources",
+          "overall"
+        ],
+        "title": "ProjectOverviewHealth"
+      },
+      "ProjectOverviewIssueSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "issue_number": {
+            "type": "string",
+            "title": "Issue Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_resolution_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Resolution Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "issue_number",
+          "title",
+          "priority",
+          "status",
+          "target_resolution_date",
+          "created_at"
+        ],
+        "title": "ProjectOverviewIssueSummary"
+      },
+      "ProjectOverviewProjectSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "portfolio_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Portfolio Id"
+          },
+          "program_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Program Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "target_end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target End Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "portfolio_id",
+          "program_id",
+          "name",
+          "description",
+          "status",
+          "start_date",
+          "target_end_date"
+        ],
+        "title": "ProjectOverviewProjectSummary"
+      },
+      "ProjectOverviewRead": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/ProjectOverviewProjectSummary"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ProjectOverviewStats"
+          },
+          "health": {
+            "$ref": "#/components/schemas/ProjectOverviewHealth"
+          },
+          "upcoming_milestones": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewTaskSummary"
+            },
+            "type": "array",
+            "title": "Upcoming Milestones"
+          },
+          "top_risks": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewRiskSummary"
+            },
+            "type": "array",
+            "title": "Top Risks"
+          },
+          "top_issues": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewIssueSummary"
+            },
+            "type": "array",
+            "title": "Top Issues"
+          },
+          "pending_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewDecisionSummary"
+            },
+            "type": "array",
+            "title": "Pending Decisions"
+          },
+          "recent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOverviewActivitySummary"
+            },
+            "type": "array",
+            "title": "Recent Activity"
+          },
+          "resource_summary": {
+            "$ref": "#/components/schemas/ProjectOverviewResourceSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project",
+          "stats",
+          "health",
+          "resource_summary"
+        ],
+        "title": "ProjectOverviewRead"
+      },
+      "ProjectOverviewResourceSummary": {
+        "properties": {
+          "total_resources": {
+            "type": "integer",
+            "title": "Total Resources"
+          },
+          "total_allocated_hours": {
+            "type": "number",
+            "title": "Total Allocated Hours"
+          },
+          "overallocated_resources": {
+            "type": "integer",
+            "title": "Overallocated Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_resources",
+          "total_allocated_hours",
+          "overallocated_resources"
+        ],
+        "title": "ProjectOverviewResourceSummary"
+      },
+      "ProjectOverviewRiskSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "risk_number": {
+            "type": "string",
+            "title": "Risk Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_resolution_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Resolution Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "risk_number",
+          "title",
+          "priority",
+          "status",
+          "target_resolution_date",
+          "created_at"
+        ],
+        "title": "ProjectOverviewRiskSummary"
+      },
+      "ProjectOverviewStats": {
+        "properties": {
+          "total_tasks": {
+            "type": "integer",
+            "title": "Total Tasks"
+          },
+          "completed_tasks": {
+            "type": "integer",
+            "title": "Completed Tasks"
+          },
+          "in_progress_tasks": {
+            "type": "integer",
+            "title": "In Progress Tasks"
+          },
+          "overdue_tasks": {
+            "type": "integer",
+            "title": "Overdue Tasks"
+          },
+          "upcoming_milestones": {
+            "type": "integer",
+            "title": "Upcoming Milestones"
+          },
+          "open_risks": {
+            "type": "integer",
+            "title": "Open Risks"
+          },
+          "open_issues": {
+            "type": "integer",
+            "title": "Open Issues"
+          },
+          "pending_decisions": {
+            "type": "integer",
+            "title": "Pending Decisions"
+          },
+          "open_assumptions": {
+            "type": "integer",
+            "title": "Open Assumptions"
+          },
+          "resource_count": {
+            "type": "integer",
+            "title": "Resource Count"
+          },
+          "overallocated_resources": {
+            "type": "integer",
+            "title": "Overallocated Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_tasks",
+          "completed_tasks",
+          "in_progress_tasks",
+          "overdue_tasks",
+          "upcoming_milestones",
+          "open_risks",
+          "open_issues",
+          "pending_decisions",
+          "open_assumptions",
+          "resource_count",
+          "overallocated_resources"
+        ],
+        "title": "ProjectOverviewStats"
+      },
+      "ProjectOverviewTaskSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "finish_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "task_type",
+          "start_date",
+          "finish_date"
+        ],
+        "title": "ProjectOverviewTaskSummary"
+      },
       "ProjectRead": {
         "properties": {
           "id": {
@@ -11384,6 +15687,26 @@
           "updated_at"
         ],
         "title": "ProjectRead"
+      },
+      "ProjectTaskGanttRead": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/ProjectRead"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TaskGanttTaskRead"
+            },
+            "type": "array",
+            "title": "Tasks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project",
+          "tasks"
+        ],
+        "title": "ProjectTaskGanttRead"
       },
       "ProjectUpdate": {
         "properties": {
@@ -11706,6 +16029,401 @@
         "type": "object",
         "title": "ResourceAllocationUpdate"
       },
+      "ResourceAnalysisFutureShortageRead": {
+        "properties": {
+          "skill": {
+            "type": "string",
+            "title": "Skill"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Period Start"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Period End"
+          },
+          "required_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Required Hours"
+          },
+          "available_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Available Hours"
+          },
+          "shortage_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Shortage Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "skill",
+          "period_start",
+          "period_end",
+          "required_hours",
+          "available_hours",
+          "shortage_hours"
+        ],
+        "title": "ResourceAnalysisFutureShortageRead"
+      },
+      "ResourceAnalysisRead": {
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/ResourceAnalysisSummaryRead"
+          },
+          "overallocated_resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceAnalysisResourceRead"
+            },
+            "type": "array",
+            "title": "Overallocated Resources"
+          },
+          "underutilized_resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceAnalysisResourceRead"
+            },
+            "type": "array",
+            "title": "Underutilized Resources"
+          },
+          "unassigned_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceAnalysisUnassignedTaskRead"
+            },
+            "type": "array",
+            "title": "Unassigned Tasks"
+          },
+          "critical_unstaffed_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceAnalysisUnassignedTaskRead"
+            },
+            "type": "array",
+            "title": "Critical Unstaffed Tasks"
+          },
+          "skill_gaps": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceAnalysisSkillGapRead"
+            },
+            "type": "array",
+            "title": "Skill Gaps"
+          },
+          "future_shortages": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceAnalysisFutureShortageRead"
+            },
+            "type": "array",
+            "title": "Future Shortages"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceAnalysisSuggestionRead"
+            },
+            "type": "array",
+            "title": "Suggestions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "overallocated_resources",
+          "underutilized_resources",
+          "unassigned_tasks",
+          "skill_gaps",
+          "suggestions"
+        ],
+        "title": "ResourceAnalysisRead"
+      },
+      "ResourceAnalysisResourceRead": {
+        "properties": {
+          "resource": {
+            "$ref": "#/components/schemas/ResourceCalendarResourceSummary"
+          },
+          "allocated_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Allocated Hours"
+          },
+          "available_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Available Hours"
+          },
+          "remaining_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Remaining Hours"
+          },
+          "utilization_percent": {
+            "type": "number",
+            "title": "Utilization Percent"
+          },
+          "overallocated": {
+            "type": "boolean",
+            "title": "Overallocated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource",
+          "allocated_hours",
+          "available_hours",
+          "remaining_hours",
+          "utilization_percent"
+        ],
+        "title": "ResourceAnalysisResourceRead"
+      },
+      "ResourceAnalysisSkillGapRead": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/ResourceAnalysisTaskSummary"
+          },
+          "skill": {
+            "$ref": "#/components/schemas/ResourceAnalysisSkillSummary"
+          },
+          "missing_skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Skills"
+          },
+          "assigned_resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceCalendarResourceSummary"
+            },
+            "type": "array",
+            "title": "Assigned Resources"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task",
+          "skill",
+          "message"
+        ],
+        "title": "ResourceAnalysisSkillGapRead"
+      },
+      "ResourceAnalysisSkillSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "required_proficiency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Proficiency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category"
+        ],
+        "title": "ResourceAnalysisSkillSummary"
+      },
+      "ResourceAnalysisSuggestionRead": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceCalendarResourceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceAnalysisTaskSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceAnalysisSkillSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "message"
+        ],
+        "title": "ResourceAnalysisSuggestionRead"
+      },
+      "ResourceAnalysisSummaryRead": {
+        "properties": {
+          "resource_count": {
+            "type": "integer",
+            "title": "Resource Count"
+          },
+          "overallocated_count": {
+            "type": "integer",
+            "title": "Overallocated Count"
+          },
+          "underutilized_count": {
+            "type": "integer",
+            "title": "Underutilized Count"
+          },
+          "unassigned_task_count": {
+            "type": "integer",
+            "title": "Unassigned Task Count"
+          },
+          "skill_gap_count": {
+            "type": "integer",
+            "title": "Skill Gap Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource_count",
+          "overallocated_count",
+          "underutilized_count",
+          "unassigned_task_count",
+          "skill_gap_count"
+        ],
+        "title": "ResourceAnalysisSummaryRead"
+      },
+      "ResourceAnalysisTaskSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "finish_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Date"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project": {
+            "$ref": "#/components/schemas/ResourceCalendarProjectSummary"
+          },
+          "program": {
+            "$ref": "#/components/schemas/ResourceCalendarProgramSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "name",
+          "start_date",
+          "finish_date",
+          "project",
+          "program"
+        ],
+        "title": "ResourceAnalysisTaskSummary"
+      },
+      "ResourceAnalysisUnassignedTaskRead": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/ResourceAnalysisTaskSummary"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task"
+        ],
+        "title": "ResourceAnalysisUnassignedTaskRead"
+      },
       "ResourceCalendarAllocationRead": {
         "properties": {
           "id": {
@@ -11859,6 +16577,21 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Weekly Capacity Hours"
           },
+          "base_capacity_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Capacity Hours"
+          },
+          "time_off_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Time Off Hours"
+          },
+          "available_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Available Hours"
+          },
           "utilization_percent": {
             "type": "number",
             "title": "Utilization Percent"
@@ -11874,6 +16607,9 @@
           "allocations",
           "total_allocated_hours",
           "weekly_capacity_hours",
+          "base_capacity_hours",
+          "time_off_hours",
+          "available_hours",
           "utilization_percent",
           "overallocated"
         ],
@@ -11960,6 +16696,118 @@
           "finish_date"
         ],
         "title": "ResourceCalendarTaskSummary"
+      },
+      "ResourceCapacityForecastRead": {
+        "properties": {
+          "resource": {
+            "$ref": "#/components/schemas/ResourceCalendarResourceSummary"
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceCapacityForecastWeekRead"
+            },
+            "type": "array",
+            "title": "Weeks"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource",
+          "weeks",
+          "start_date",
+          "end_date"
+        ],
+        "title": "ResourceCapacityForecastRead"
+      },
+      "ResourceCapacityForecastResourceRead": {
+        "properties": {
+          "resource": {
+            "$ref": "#/components/schemas/ResourceCalendarResourceSummary"
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceCapacityForecastWeekRead"
+            },
+            "type": "array",
+            "title": "Weeks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource",
+          "weeks"
+        ],
+        "title": "ResourceCapacityForecastResourceRead"
+      },
+      "ResourceCapacityForecastWeekRead": {
+        "properties": {
+          "week_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Week Start"
+          },
+          "week_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Week End"
+          },
+          "base_capacity_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Capacity Hours"
+          },
+          "time_off_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Time Off Hours"
+          },
+          "available_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Available Hours"
+          },
+          "allocated_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Allocated Hours"
+          },
+          "remaining_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Remaining Hours"
+          },
+          "utilization_percent": {
+            "type": "number",
+            "title": "Utilization Percent"
+          },
+          "overallocated": {
+            "type": "boolean",
+            "title": "Overallocated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "week_start",
+          "week_end",
+          "base_capacity_hours",
+          "time_off_hours",
+          "available_hours",
+          "allocated_hours",
+          "remaining_hours",
+          "utilization_percent",
+          "overallocated"
+        ],
+        "title": "ResourceCapacityForecastWeekRead"
       },
       "ResourceCreate": {
         "properties": {
@@ -12099,6 +16947,341 @@
           "updated_at"
         ],
         "title": "ResourceRead"
+      },
+      "ResourceRecommendationRead": {
+        "properties": {
+          "resource": {
+            "$ref": "#/components/schemas/ResourceCalendarResourceSummary"
+          },
+          "score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Score"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ],
+            "title": "Confidence"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource",
+          "score",
+          "confidence"
+        ],
+        "title": "ResourceRecommendationRead"
+      },
+      "ResourceSkillCreate": {
+        "properties": {
+          "skill_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Skill Id"
+          },
+          "proficiency": {
+            "$ref": "#/components/schemas/SkillProficiency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "skill_id",
+          "proficiency"
+        ],
+        "title": "ResourceSkillCreate"
+      },
+      "ResourceSkillRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Resource Id"
+          },
+          "skill_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Skill Id"
+          },
+          "proficiency": {
+            "$ref": "#/components/schemas/SkillProficiency"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "skill": {
+            "$ref": "#/components/schemas/SkillRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "resource_id",
+          "skill_id",
+          "proficiency",
+          "created_at",
+          "updated_at",
+          "skill"
+        ],
+        "title": "ResourceSkillRead"
+      },
+      "ResourceSkillUpdate": {
+        "properties": {
+          "skill_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
+          "proficiency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillProficiency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ResourceSkillUpdate"
+      },
+      "ResourceTimeOffCreate": {
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "hours_per_day": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours Per Day"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "title": "ResourceTimeOffCreate"
+      },
+      "ResourceTimeOffRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Resource Id"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "hours_per_day": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours Per Day"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "resource_id",
+          "start_date",
+          "end_date",
+          "reason",
+          "hours_per_day",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ResourceTimeOffRead"
+      },
+      "ResourceTimeOffUpdate": {
+        "properties": {
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "hours_per_day": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours Per Day"
+          }
+        },
+        "type": "object",
+        "title": "ResourceTimeOffUpdate"
       },
       "ResourceUpdate": {
         "properties": {
@@ -12542,7 +17725,8 @@
               "ASSUMPTION",
               "DECISION",
               "SPRINT",
-              "RESOURCE"
+              "RESOURCE",
+              "SKILL"
             ],
             "title": "Entity Type"
           },
@@ -12721,6 +17905,139 @@
         ],
         "title": "SidebarProject"
       },
+      "SkillCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "SkillCreate"
+      },
+      "SkillProficiency": {
+        "type": "string",
+        "enum": [
+          "BEGINNER",
+          "INTERMEDIATE",
+          "ADVANCED",
+          "EXPERT"
+        ],
+        "title": "SkillProficiency"
+      },
+      "SkillRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "name",
+          "category",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SkillRead"
+      },
+      "SkillUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "SkillUpdate"
+      },
       "SprintCreate": {
         "properties": {
           "name": {
@@ -12782,6 +18099,56 @@
           "name"
         ],
         "title": "SprintCreate"
+      },
+      "SprintMetricsRead": {
+        "properties": {
+          "sprint": {
+            "$ref": "#/components/schemas/SprintRead"
+          },
+          "total_tasks": {
+            "type": "integer",
+            "title": "Total Tasks"
+          },
+          "total_story_points": {
+            "type": "integer",
+            "title": "Total Story Points"
+          },
+          "completed_story_points": {
+            "type": "integer",
+            "title": "Completed Story Points"
+          },
+          "remaining_story_points": {
+            "type": "integer",
+            "title": "Remaining Story Points"
+          },
+          "completion_percent": {
+            "type": "integer",
+            "title": "Completion Percent"
+          },
+          "days_remaining": {
+            "type": "integer",
+            "title": "Days Remaining"
+          },
+          "story_point_legend": {
+            "items": {
+              "$ref": "#/components/schemas/StoryPointLegendItem"
+            },
+            "type": "array",
+            "title": "Story Point Legend"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sprint",
+          "total_tasks",
+          "total_story_points",
+          "completed_story_points",
+          "remaining_story_points",
+          "completion_percent",
+          "days_remaining",
+          "story_point_legend"
+        ],
+        "title": "SprintMetricsRead"
       },
       "SprintRead": {
         "properties": {
@@ -13057,6 +18424,24 @@
         ],
         "title": "StatusSummary"
       },
+      "StoryPointLegendItem": {
+        "properties": {
+          "points": {
+            "type": "integer",
+            "title": "Points"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "points",
+          "label"
+        ],
+        "title": "StoryPointLegendItem"
+      },
       "TaskAssignmentCreate": {
         "properties": {
           "user_id": {
@@ -13144,6 +18529,174 @@
         ],
         "title": "TaskAssignmentRead"
       },
+      "TaskBoardColumnRead": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "is_uncategorized": {
+            "type": "boolean",
+            "title": "Is Uncategorized",
+            "default": false
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TaskRead"
+            },
+            "type": "array",
+            "title": "Tasks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status_id",
+          "label",
+          "value",
+          "color",
+          "sort_order"
+        ],
+        "title": "TaskBoardColumnRead"
+      },
+      "TaskBoardPositionUpdate": {
+        "properties": {
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "sprint_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sprint Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status_id",
+          "sort_order",
+          "sprint_id"
+        ],
+        "title": "TaskBoardPositionUpdate"
+      },
+      "TaskBoardRead": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "sprint_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sprint Id"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/TaskBoardColumnRead"
+            },
+            "type": "array",
+            "title": "Columns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "columns"
+        ],
+        "title": "TaskBoardRead"
+      },
       "TaskBulkDeleteRequest": {
         "properties": {
           "task_ids": {
@@ -13200,6 +18753,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "task_type_id": {
             "anyOf": [
               {
@@ -13250,6 +18815,18 @@
               }
             ],
             "title": "Duration Days"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
           },
           "percent_complete": {
             "anyOf": [
@@ -13425,6 +19002,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "start_date": {
             "anyOf": [
               {
@@ -13464,6 +19053,18 @@
             ],
             "title": "Duration Days"
           },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
+          },
           "percent_complete": {
             "anyOf": [
               {
@@ -13498,6 +19099,114 @@
           "name"
         ],
         "title": "TaskCreate"
+      },
+      "TaskGanttTaskRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "parent_task_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Task Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "finish_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Date"
+          },
+          "duration_days": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Days"
+          },
+          "percent_complete": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Percent Complete"
+          },
+          "sort_order": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Sort Order"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/TaskResourceSummaryRead"
+            },
+            "type": "array",
+            "title": "Resources"
+          },
+          "predecessors": {
+            "items": {
+              "$ref": "#/components/schemas/TaskPredecessorRead"
+            },
+            "type": "array",
+            "title": "Predecessors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "parent_task_id",
+          "name",
+          "task_type",
+          "start_date",
+          "finish_date",
+          "duration_days",
+          "percent_complete",
+          "sort_order"
+        ],
+        "title": "TaskGanttTaskRead"
       },
       "TaskMoveRequest": {
         "properties": {
@@ -13616,6 +19325,44 @@
         ],
         "title": "TaskPredecessorRead"
       },
+      "TaskProgramSummaryRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "TaskProgramSummaryRead"
+      },
+      "TaskProjectSummaryRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "TaskProjectSummaryRead"
+      },
       "TaskRead": {
         "properties": {
           "id": {
@@ -13681,6 +19428,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -13731,6 +19490,17 @@
               }
             ],
             "title": "Duration Days"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
           },
           "percent_complete": {
             "type": "string",
@@ -13784,6 +19554,16 @@
               }
             ]
           },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sprint": {
             "anyOf": [
               {
@@ -13820,11 +19600,13 @@
           "parent_task_id",
           "task_type_id",
           "status_id",
+          "priority_id",
           "name",
           "description",
           "start_date",
           "finish_date",
           "duration_days",
+          "story_points",
           "percent_complete",
           "sort_order",
           "created_by",
@@ -13888,6 +19670,187 @@
           "tasks"
         ],
         "title": "TaskReorderRequest"
+      },
+      "TaskRequiredSkillCreate": {
+        "properties": {
+          "skill_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Skill Id"
+          },
+          "required_proficiency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillProficiency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "skill_id"
+        ],
+        "title": "TaskRequiredSkillCreate"
+      },
+      "TaskRequiredSkillRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "skill_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Skill Id"
+          },
+          "required_proficiency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillProficiency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "skill": {
+            "$ref": "#/components/schemas/SkillRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "task_id",
+          "skill_id",
+          "required_proficiency",
+          "created_at",
+          "updated_at",
+          "skill"
+        ],
+        "title": "TaskRequiredSkillRead"
+      },
+      "TaskRequiredSkillUpdate": {
+        "properties": {
+          "skill_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
+          "required_proficiency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillProficiency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "TaskRequiredSkillUpdate"
+      },
+      "TaskResourceSummaryRead": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "allocated_hours": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocated Hours"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ALLOCATION",
+              "ASSIGNMENT"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "source"
+        ],
+        "title": "TaskResourceSummaryRead"
       },
       "TaskTreeRead": {
         "properties": {
@@ -13954,6 +19917,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -14004,6 +19979,17 @@
               }
             ],
             "title": "Duration Days"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
           },
           "percent_complete": {
             "type": "string",
@@ -14057,6 +20043,16 @@
               }
             ]
           },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sprint": {
             "anyOf": [
               {
@@ -14101,11 +20097,13 @@
           "parent_task_id",
           "task_type_id",
           "status_id",
+          "priority_id",
           "name",
           "description",
           "start_date",
           "finish_date",
           "duration_days",
+          "story_points",
           "percent_complete",
           "sort_order",
           "created_by",
@@ -14188,6 +20186,18 @@
             ],
             "title": "Status Id"
           },
+          "priority_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Id"
+          },
           "start_date": {
             "anyOf": [
               {
@@ -14226,6 +20236,18 @@
               }
             ],
             "title": "Duration Days"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Points"
           },
           "percent_complete": {
             "anyOf": [

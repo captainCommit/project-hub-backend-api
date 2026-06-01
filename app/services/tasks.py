@@ -1,4 +1,6 @@
+from datetime import date, timedelta
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -22,6 +24,7 @@ from app.schemas.tasks import (
     TaskAssignmentCreate,
     TaskBulkDeleteRequest,
     TaskBulkUpdateRequest,
+    TaskBoardPositionUpdate,
     TaskCreate,
     TaskMoveRequest,
     TaskPredecessorCreate,
@@ -84,6 +87,164 @@ class TaskService:
         )
         return self.enrich_tasks(tasks)
 
+    def get_project_board(self, *, project_id: UUID, current_user: User) -> dict[str, object]:
+        project = self.get_project_or_404(project_id)
+        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        return self.build_board(project_id=project.id, account_id=project.account_id)
+
+    def get_sprint_board(self, *, sprint_id: UUID, current_user: User) -> dict[str, object]:
+        sprint = self.get_sprint_or_404(sprint_id)
+        self.require_account_member(account_id=sprint.account_id, user_id=current_user.id)
+        return self.build_board(project_id=sprint.project_id, account_id=sprint.account_id, sprint_id=sprint.id)
+
+    def update_board_position(
+        self,
+        *,
+        task_id: UUID,
+        position_in: TaskBoardPositionUpdate,
+        current_user: User,
+    ) -> dict[str, object]:
+        task = self.get_task_or_404(task_id)
+        self.require_account_role(
+            account_id=task.account_id,
+            user_id=current_user.id,
+            allowed_roles=TASK_WRITE_ROLES,
+        )
+        project = self.get_project_or_404(task.project_id)
+        status_id = None
+        if position_in.status_id is not None:
+            status_id = self.validate_task_option_id(
+                account_id=task.account_id,
+                option_name="STATUS",
+                option_value_id=position_in.status_id,
+                detail="Invalid task status.",
+            )
+        sprint_id = self.validate_sprint(project=project, sprint_id=position_in.sprint_id)
+        changes = {
+            "status_id": status_id,
+            "sort_order": position_in.sort_order,
+            "sprint_id": sprint_id,
+        }
+        old_values = {field: getattr(task, field) for field in changes}
+        try:
+            task = self.tasks.update_task(task, changes)
+            ActivityLogService(self.db).record(
+                account_id=task.account_id,
+                entity_type="TASK",
+                entity_id=task.id,
+                action="TASK_BOARD_MOVED",
+                old_values=old_values,
+                new_values={field: getattr(task, field) for field in changes},
+                created_by=current_user.id,
+            )
+            self.db.commit()
+            self.db.refresh(task)
+            return self.enrich_task(task)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def get_project_gantt(self, *, project_id: UUID, current_user: User) -> dict[str, object]:
+        project = self.get_project_or_404(project_id)
+        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        tasks = self.tasks.list_tasks_for_gantt(project.id)
+        option_ids = {task.task_type_id for task in tasks if task.task_type_id is not None}
+        options = self.tasks.get_option_values_by_ids(option_ids)
+        predecessors = self.tasks.list_predecessors_for_tasks([task.id for task in tasks])
+        resources = self.resource_summaries_for_tasks(tasks)
+        return {
+            "project": project,
+            "tasks": [
+                {
+                    "id": task.id,
+                    "parent_task_id": task.parent_task_id,
+                    "name": task.name,
+                    "task_type": self.option_summary(task.task_type_id, options),
+                    "start_date": task.start_date,
+                    "finish_date": task.finish_date,
+                    "duration_days": task.duration_days,
+                    "percent_complete": task.percent_complete,
+                    "sort_order": task.sort_order,
+                    "resources": resources.get(task.id, []),
+                    "predecessors": predecessors.get(task.id, []),
+                }
+                for task in tasks
+            ],
+        }
+
+    def list_due_tasks(
+        self,
+        *,
+        account_id: UUID,
+        current_user: User,
+        mode: Literal["OVERDUE", "UPCOMING", "BOTH"] = "BOTH",
+        days: int = 30,
+        project_id: UUID | None = None,
+        program_id: UUID | None = None,
+        assigned_to: UUID | None = None,
+    ) -> dict[str, object]:
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        if days < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="days must be greater than or equal to 0.")
+        if project_id is not None:
+            project = self.get_project_or_404(project_id)
+            if project.account_id != account_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project must belong to the account.")
+        if program_id is not None:
+            program = self.hierarchy.get_program(program_id)
+            if program is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found.")
+            if program.account_id != account_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Program must belong to the account.")
+
+        today = date.today()
+        horizon = today + timedelta(days=days)
+        include_overdue = mode in {"OVERDUE", "BOTH"}
+        include_upcoming = mode in {"UPCOMING", "BOTH"}
+        rows = self.tasks.list_due_tasks(
+            account_id=account_id,
+            today=today,
+            horizon=horizon,
+            include_overdue=include_overdue,
+            include_upcoming=include_upcoming,
+            project_id=project_id,
+            program_id=program_id,
+            assigned_to=assigned_to,
+        )
+        tasks = [task for task, _project, _program in rows]
+        option_ids = {task.status_id for task in tasks if task.status_id is not None}
+        options = self.tasks.get_option_values_by_ids(option_ids)
+        resources = self.resource_summaries_for_tasks(tasks)
+        due_tasks = [
+            {
+                "id": task.id,
+                "project_id": task.project_id,
+                "sprint_id": task.sprint_id,
+                "parent_task_id": task.parent_task_id,
+                "name": task.name,
+                "finish_date": task.finish_date,
+                "start_date": task.start_date,
+                "duration_days": task.duration_days,
+                "percent_complete": task.percent_complete,
+                "sort_order": task.sort_order,
+                "due_status": "OVERDUE" if task.finish_date and task.finish_date < today else "UPCOMING",
+                "project": {"id": project.id, "name": project.name},
+                "program": {"id": program.id, "name": program.name},
+                "status": self.option_summary(task.status_id, options),
+                "resources": resources.get(task.id, []),
+            }
+            for task, project, program in rows
+        ]
+        overdue = [task for task in due_tasks if task["due_status"] == "OVERDUE"]
+        upcoming = [task for task in due_tasks if task["due_status"] == "UPCOMING"]
+        return {
+            "mode": mode,
+            "days": days,
+            "tasks": due_tasks,
+            "overdue": overdue,
+            "upcoming": upcoming,
+        }
+
     def get_task(self, *, task_id: UUID, current_user: User) -> dict[str, object]:
         task = self.get_task_or_404(task_id)
         self.require_account_member(account_id=task.account_id, user_id=current_user.id)
@@ -110,6 +271,14 @@ class TaskService:
             option_value_id=task_in.task_type_id,
             detail="Invalid task type.",
         )
+        priority_id = None
+        if task_in.priority_id is not None:
+            priority_id = self.validate_task_option_id(
+                account_id=project.account_id,
+                option_name="PRIORITY",
+                option_value_id=task_in.priority_id,
+                detail="Invalid task priority.",
+            )
         task = self.tasks.create_task(
             account_id=project.account_id,
             project_id=project.id,
@@ -117,11 +286,13 @@ class TaskService:
             parent_task_id=task_in.parent_task_id,
             task_type_id=task_type_id,
             status_id=status_id,
+            priority_id=priority_id,
             name=task_in.name,
             description=task_in.description,
             start_date=task_in.start_date,
             finish_date=task_in.finish_date,
             duration_days=task_in.duration_days,
+            story_points=task_in.story_points,
             percent_complete=task_in.percent_complete,
             sort_order=task_in.sort_order,
             created_by=current_user.id,
@@ -595,6 +766,52 @@ class TaskService:
                 roots.append(task)
         return roots
 
+    def build_board(
+        self,
+        *,
+        project_id: UUID,
+        account_id: UUID,
+        sprint_id: UUID | None = None,
+    ) -> dict[str, object]:
+        status_options = self.tasks.list_active_task_status_options(account_id)
+        board_tasks = self.tasks.list_tasks_for_board(project_id=project_id, sprint_id=sprint_id)
+        enriched_tasks = self.enrich_tasks(board_tasks)
+        tasks_by_status: dict[UUID | None, list[dict[str, object]]] = {option.id: [] for option in status_options}
+        tasks_by_status[None] = []
+        for task in enriched_tasks:
+            status_id = task["status_id"]
+            if status_id in tasks_by_status:
+                tasks_by_status[status_id].append(task)
+            else:
+                tasks_by_status[None].append(task)
+
+        columns = [
+            {
+                "id": option.id,
+                "status_id": option.id,
+                "label": option.label,
+                "value": option.value,
+                "color": option.color,
+                "sort_order": option.sort_order,
+                "is_uncategorized": False,
+                "tasks": tasks_by_status.get(option.id, []),
+            }
+            for option in status_options
+        ]
+        columns.append(
+            {
+                "id": None,
+                "status_id": None,
+                "label": "Uncategorized",
+                "value": None,
+                "color": None,
+                "sort_order": None,
+                "is_uncategorized": True,
+                "tasks": tasks_by_status.get(None, []),
+            }
+        )
+        return {"project_id": project_id, "sprint_id": sprint_id, "columns": columns}
+
     def prepare_task_update_changes(self, *, task: Task, project: Project, changes: dict[str, object]) -> None:
         if "parent_task_id" in changes:
             self.assert_valid_parent(
@@ -617,6 +834,13 @@ class TaskService:
                 option_name="TYPE",
                 option_value_id=changes["task_type_id"],  # type: ignore[arg-type]
                 detail="Invalid task type.",
+            )
+        if "priority_id" in changes and changes["priority_id"] is not None:
+            changes["priority_id"] = self.validate_task_option_id(
+                account_id=task.account_id,
+                option_name="PRIORITY",
+                option_value_id=changes["priority_id"],  # type: ignore[arg-type]
+                detail="Invalid task priority.",
             )
 
     def replace_task_user_assignment(self, *, task: Task, assigned_to: object) -> object:
@@ -785,7 +1009,7 @@ class TaskService:
         option_ids = {
             option_id
             for task in tasks
-            for option_id in (task.status_id, task.task_type_id)
+            for option_id in (task.status_id, task.task_type_id, task.priority_id)
             if option_id is not None
         }
         options = self.tasks.get_option_values_by_ids(option_ids)
@@ -797,12 +1021,71 @@ class TaskService:
                 **task.__dict__,
                 "status": self.option_summary(task.status_id, options),
                 "task_type": self.option_summary(task.task_type_id, options),
+                "priority": self.option_summary(task.priority_id, options),
                 "sprint": self.sprint_summary(task.sprint_id, sprints),
                 "assignments": assignments.get(task.id, []),
                 "predecessors": predecessors.get(task.id, []),
             }
             for task in tasks
         ]
+
+    def resource_summaries_for_tasks(self, tasks: list[Task]) -> dict[UUID, list[dict[str, object]]]:
+        task_ids = [task.id for task in tasks]
+        assignments_by_task = self.tasks.list_assignments_for_tasks(task_ids)
+        allocations_by_task = self.tasks.list_resource_allocations_for_tasks(task_ids)
+        user_ids = {
+            assignment.user_id
+            for assignments in assignments_by_task.values()
+            for assignment in assignments
+            if assignment.user_id is not None
+        }
+        users = self.tasks.get_users_by_ids(user_ids)
+
+        summaries: dict[UUID, list[dict[str, object]]] = {task.id: [] for task in tasks}
+        seen_keys: dict[UUID, set[tuple[str, UUID | str]]] = {task.id: set() for task in tasks}
+        for task_id, allocations in allocations_by_task.items():
+            for allocation, resource in allocations:
+                key = ("ALLOCATION", resource.id)
+                if key in seen_keys.setdefault(task_id, set()):
+                    continue
+                seen_keys[task_id].add(key)
+                summaries.setdefault(task_id, []).append(
+                    {
+                        "id": resource.id,
+                        "user_id": resource.user_id,
+                        "name": resource.name,
+                        "role": resource.role,
+                        "allocated_hours": allocation.allocated_hours,
+                        "source": "ALLOCATION",
+                    }
+                )
+        for task_id, assignments in assignments_by_task.items():
+            for assignment in assignments:
+                if assignment.user_id is not None:
+                    user = users.get(assignment.user_id)
+                    name = user.full_name or user.email if user is not None else str(assignment.user_id)
+                    key: tuple[str, UUID | str] = ("ASSIGNMENT", assignment.user_id)
+                    resource_id = assignment.user_id
+                    user_id = assignment.user_id
+                else:
+                    name = assignment.resource_name or "Unassigned Resource"
+                    key = ("ASSIGNMENT", name)
+                    resource_id = None
+                    user_id = None
+                if key in seen_keys.setdefault(task_id, set()):
+                    continue
+                seen_keys[task_id].add(key)
+                summaries.setdefault(task_id, []).append(
+                    {
+                        "id": resource_id,
+                        "user_id": user_id,
+                        "name": name,
+                        "role": None,
+                        "allocated_hours": None,
+                        "source": "ASSIGNMENT",
+                    }
+                )
+        return summaries
 
     def option_summary(
         self,
@@ -836,6 +1119,12 @@ class TaskService:
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
         return project
+
+    def get_sprint_or_404(self, sprint_id: UUID) -> Sprint:
+        sprint = self.tasks.get_sprint(sprint_id)
+        if sprint is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sprint not found.")
+        return sprint
 
     def get_task_or_404(self, task_id: UUID) -> Task:
         task = self.tasks.get_task(task_id)

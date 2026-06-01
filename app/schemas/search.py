@@ -14,6 +14,7 @@ SearchEntityType = Literal[
     "DECISION",
     "SPRINT",
     "RESOURCE",
+    "SKILL",
 ]
 
 
