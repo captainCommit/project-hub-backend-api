@@ -9731,6 +9731,16 @@
               "UNKNOWN"
             ],
             "title": "Resources"
+          },
+          "trend": {
+            "type": "string",
+            "enum": [
+              "IMPROVING",
+              "STABLE",
+              "DECLINING",
+              "UNKNOWN"
+            ],
+            "title": "Trend"
           }
         },
         "type": "object",
@@ -9738,7 +9748,8 @@
           "overall",
           "schedule",
           "scope",
-          "resources"
+          "resources",
+          "trend"
         ],
         "title": "AccountDashboardHealth"
       },
@@ -16018,6 +16029,49 @@
         "type": "object",
         "title": "ResourceAllocationUpdate"
       },
+      "ResourceAnalysisFutureShortageRead": {
+        "properties": {
+          "skill": {
+            "type": "string",
+            "title": "Skill"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Period Start"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Period End"
+          },
+          "required_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Required Hours"
+          },
+          "available_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Available Hours"
+          },
+          "shortage_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Shortage Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "skill",
+          "period_start",
+          "period_end",
+          "required_hours",
+          "available_hours",
+          "shortage_hours"
+        ],
+        "title": "ResourceAnalysisFutureShortageRead"
+      },
       "ResourceAnalysisRead": {
         "properties": {
           "summary": {
@@ -16044,12 +16098,26 @@
             "type": "array",
             "title": "Unassigned Tasks"
           },
+          "critical_unstaffed_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceAnalysisUnassignedTaskRead"
+            },
+            "type": "array",
+            "title": "Critical Unstaffed Tasks"
+          },
           "skill_gaps": {
             "items": {
               "$ref": "#/components/schemas/ResourceAnalysisSkillGapRead"
             },
             "type": "array",
             "title": "Skill Gaps"
+          },
+          "future_shortages": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceAnalysisFutureShortageRead"
+            },
+            "type": "array",
+            "title": "Future Shortages"
           },
           "suggestions": {
             "items": {
@@ -16117,6 +16185,13 @@
           },
           "skill": {
             "$ref": "#/components/schemas/ResourceAnalysisSkillSummary"
+          },
+          "missing_skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Skills"
           },
           "assigned_resources": {
             "items": {
@@ -16300,6 +16375,16 @@
               }
             ],
             "title": "Finish Date"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "project": {
             "$ref": "#/components/schemas/ResourceCalendarProjectSummary"
@@ -16874,6 +16959,15 @@
             "minimum": 0.0,
             "title": "Score"
           },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ],
+            "title": "Confidence"
+          },
           "reasons": {
             "items": {
               "type": "string"
@@ -16892,7 +16986,8 @@
         "type": "object",
         "required": [
           "resource",
-          "score"
+          "score",
+          "confidence"
         ],
         "title": "ResourceRecommendationRead"
       },

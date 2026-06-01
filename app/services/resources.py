@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+import re
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.account_member import AccountMemberRole
 from app.models.account_settings import DEFAULT_NON_WORKING_WEEKDAYS
+from app.models.option_value import OptionValue
 from app.models.program import Program
 from app.models.project import Project
 from app.models.resource import Resource
@@ -51,6 +53,10 @@ RESOURCE_ALLOCATION_WRITE_ROLES = {
 
 RESOURCE_TIME_OFF_WRITE_ROLES = RESOURCE_WRITE_ROLES
 HOURS_QUANTIZER = Decimal("0.01")
+HIGH_PRIORITY_KEYS = {"high", "critical"}
+LIMITED_AVAILABLE_HOURS_WARNING_THRESHOLD = Decimal("8")
+HIGH_UTILIZATION_WARNING_PERCENT = 80.0
+DEFAULT_TASK_DEMAND_HOURS = Decimal("8")
 PROFICIENCY_RANK = {
     "BEGINNER": 1,
     "INTERMEDIATE": 2,
@@ -628,7 +634,14 @@ class ResourceService:
             resource_id=resource_id,
         )
         unassigned_tasks = self.resource_analysis_unassigned_tasks(task_contexts)
+        critical_unstaffed_tasks = self.resource_analysis_critical_unstaffed_tasks(task_contexts)
         skill_gaps = self.resource_analysis_skill_gaps(task_contexts)
+        future_shortages = self.resource_analysis_future_shortages(
+            start_date=start_date,
+            end_date=end_date,
+            forecast_resources=forecast_resources,
+            task_contexts=task_contexts,
+        )
         suggestions = self.resource_analysis_suggestions(
             overallocated_resources=overallocated_resources,
             underutilized_resources=underutilized_resources,
@@ -647,7 +660,9 @@ class ResourceService:
             "overallocated_resources": overallocated_resources,
             "underutilized_resources": underutilized_resources,
             "unassigned_tasks": unassigned_tasks,
+            "critical_unstaffed_tasks": critical_unstaffed_tasks,
             "skill_gaps": skill_gaps,
+            "future_shortages": future_shortages,
             "suggestions": suggestions,
         }
 
@@ -869,6 +884,9 @@ class ResourceService:
         assignments_by_task = self.tasks.list_assignments_for_tasks(task_ids)
         allocations_by_task = self.tasks.list_resource_allocations_for_tasks(task_ids)
         required_skills_by_task = self.skills.list_task_required_skills_for_tasks(task_ids)
+        priority_values = self.tasks.get_option_values_by_ids(
+            {task.priority_id for task in tasks if task.priority_id is not None}
+        )
         user_ids = {
             assignment.user_id
             for assignments in assignments_by_task.values()
@@ -900,9 +918,11 @@ class ResourceService:
                     "project": project,
                     "program": program,
                     "assignments": assignments,
+                    "all_allocations": allocations_by_task.get(task.id, []),
                     "allocations": allocations,
                     "assigned_resources": assigned_resources,
                     "required_skills": required_skills_by_task.get(task.id, []),
+                    "priority": priority_values.get(task.priority_id) if task.priority_id is not None else None,
                 }
             )
         return contexts
@@ -945,7 +965,12 @@ class ResourceService:
                 continue
             unassigned_tasks.append(
                 {
-                    "task": self.resource_analysis_task_summary(task=task, project=project, program=program),
+                    "task": self.resource_analysis_task_summary(
+                        task=task,
+                        project=project,
+                        program=program,
+                        priority_value=context.get("priority") if isinstance(context.get("priority"), OptionValue) else None,
+                    ),
                     "reasons": ["Task has no assignment or resource allocation in the date range."],
                 }
             )
@@ -969,6 +994,7 @@ class ResourceService:
             assigned_resources = [
                 resource for resource in context["assigned_resources"] if isinstance(resource, Resource)
             ]
+            missing_skill_entries: list[tuple[TaskRequiredSkill, Skill]] = []
             for required_skill, skill in context["required_skills"]:
                 if self.any_resource_matches_required_skill(
                     assigned_resources=assigned_resources,
@@ -976,15 +1002,161 @@ class ResourceService:
                     skills_by_resource=skills_by_resource,
                 ):
                     continue
+                missing_skill_entries.append((required_skill, skill))
+            missing_skill_names = [skill.name for _required_skill, skill in missing_skill_entries]
+            for required_skill, skill in missing_skill_entries:
                 gaps.append(
                     {
-                        "task": self.resource_analysis_task_summary(task=task, project=project, program=program),
+                        "task": self.resource_analysis_task_summary(
+                            task=task,
+                            project=project,
+                            program=program,
+                            priority_value=context.get("priority") if isinstance(context.get("priority"), OptionValue) else None,
+                        ),
                         "skill": self.resource_analysis_skill_summary(required_skill=required_skill, skill=skill),
+                        "missing_skills": missing_skill_names,
                         "assigned_resources": [self.resource_summary(resource) for resource in assigned_resources],
-                        "message": f"No assigned or allocated resource matches required skill: {skill.name}.",
+                        "message": (
+                            f"Missing required skills: {', '.join(missing_skill_names)}."
+                            if len(missing_skill_names) > 1
+                            else f"No assigned or allocated resource matches required skill: {skill.name}."
+                        ),
                     }
                 )
         return gaps
+
+    def resource_analysis_critical_unstaffed_tasks(self, task_contexts: list[dict[str, object]]) -> list[dict[str, object]]:
+        critical_tasks: list[dict[str, object]] = []
+        for context in task_contexts:
+            assignments = context["assignments"]
+            all_allocations = context.get("all_allocations", context["allocations"])
+            if assignments or all_allocations:
+                continue
+            priority_value = context.get("priority")
+            if not isinstance(priority_value, OptionValue) or not self.is_high_or_critical_priority(priority_value):
+                continue
+            task = context["task"]
+            project = context["project"]
+            program = context["program"]
+            if not isinstance(task, Task) or not isinstance(project, Project) or not isinstance(program, Program):
+                continue
+            critical_tasks.append(
+                {
+                    "task": self.resource_analysis_task_summary(
+                        task=task,
+                        project=project,
+                        program=program,
+                        priority_value=priority_value,
+                    ),
+                    "reasons": ["High or critical priority task has no assignment or resource allocation in the date range."],
+                }
+            )
+        return critical_tasks
+
+    def resource_analysis_future_shortages(
+        self,
+        *,
+        start_date: date,
+        end_date: date,
+        forecast_resources: list[dict[str, object]],
+        task_contexts: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        week_buckets = self.split_into_week_buckets(start_date=start_date, end_date=end_date)
+        resource_ids = [
+            forecast_resource["resource"]["id"]  # type: ignore[index]
+            for forecast_resource in forecast_resources
+            if isinstance(forecast_resource.get("resource"), dict)
+            and isinstance(forecast_resource["resource"].get("id"), UUID)  # type: ignore[index, union-attr]
+        ]
+        resource_skills_by_resource = self.skills.list_resource_skills_for_resources(resource_ids)
+
+        skill_names: dict[UUID, str] = {}
+        available_by_skill_period: dict[tuple[UUID, date, date], Decimal] = {}
+        for forecast_resource in forecast_resources:
+            resource_summary = forecast_resource.get("resource")
+            if not isinstance(resource_summary, dict):
+                continue
+            resource_id = resource_summary.get("id")
+            if not isinstance(resource_id, UUID):
+                continue
+            resource_skills = resource_skills_by_resource.get(resource_id, [])
+            if not resource_skills:
+                continue
+            for week in forecast_resource["weeks"]:  # type: ignore[index]
+                remaining_hours = week["remaining_hours"]
+                remaining = remaining_hours if isinstance(remaining_hours, Decimal) else Decimal(str(remaining_hours or 0))
+                if remaining <= 0:
+                    continue
+                for _resource_skill, skill in resource_skills:
+                    skill_names[skill.id] = skill.name
+                    key = (skill.id, week["week_start"], week["week_end"])
+                    available_by_skill_period[key] = available_by_skill_period.get(key, Decimal("0")) + remaining
+
+        required_by_skill_period: dict[tuple[UUID, date, date], Decimal] = {}
+        for context in task_contexts:
+            task = context["task"]
+            if not isinstance(task, Task):
+                continue
+            for required_skill, skill in context["required_skills"]:
+                skill_names[skill.id] = skill.name
+                for period_start, period_end in week_buckets:
+                    if not self.task_overlaps_period(task=task, period_start=period_start, period_end=period_end):
+                        continue
+                    required_hours = self.resource_analysis_required_hours_for_period(
+                        task=task,
+                        period_start=period_start,
+                        period_end=period_end,
+                    )
+                    if required_hours <= 0:
+                        continue
+                    key = (required_skill.skill_id, period_start, period_end)
+                    required_by_skill_period[key] = required_by_skill_period.get(key, Decimal("0")) + required_hours
+
+        shortages: list[dict[str, object]] = []
+        for key, required_hours in required_by_skill_period.items():
+            skill_id, period_start, period_end = key
+            available_hours = available_by_skill_period.get(key, Decimal("0"))
+            if required_hours <= available_hours:
+                continue
+            shortage_hours = required_hours - available_hours
+            shortages.append(
+                {
+                    "skill": skill_names.get(skill_id, str(skill_id)),
+                    "period_start": period_start,
+                    "period_end": period_end,
+                    "required_hours": self.quantize_hours(required_hours),
+                    "available_hours": self.quantize_hours(available_hours),
+                    "shortage_hours": self.quantize_hours(shortage_hours),
+                }
+            )
+        return sorted(shortages, key=lambda entry: (entry["period_start"], entry["skill"]))
+
+    def task_overlaps_period(self, *, task: Task, period_start: date, period_end: date) -> bool:
+        return (task.start_date is None or task.start_date <= period_end) and (
+            task.finish_date is None or task.finish_date >= period_start
+        )
+
+    def resource_analysis_required_hours_for_period(
+        self,
+        *,
+        task: Task,
+        period_start: date,
+        period_end: date,
+    ) -> Decimal:
+        if task.start_date is None and task.finish_date is None:
+            return DEFAULT_TASK_DEMAND_HOURS
+        task_start = task.start_date or task.finish_date or period_start
+        task_end = task.finish_date or task.start_date or period_end
+        overlap_start = max(task_start, period_start)
+        overlap_end = min(task_end, period_end)
+        working_days = self.working_day_count_in_range(start_date=overlap_start, end_date=overlap_end)
+        if working_days <= 0:
+            return Decimal("0")
+        if task.duration_days is not None and task.duration_days > 0:
+            planned_days = min(Decimal(working_days), task.duration_days)
+        else:
+            planned_days = Decimal(working_days)
+        return self.quantize_hours(planned_days * DEFAULT_TASK_DEMAND_HOURS)
 
     def resource_analysis_suggestions(
         self,
@@ -1048,6 +1220,7 @@ class ResourceService:
         resource_summary = forecast_resource["resource"]
         resource_id = resource_summary["id"]  # type: ignore[index]
         allocated_hours, available_hours = self.forecast_totals(forecast_resource)
+        time_off_hours = self.forecast_time_off_total(forecast_resource)
         remaining_hours = available_hours - allocated_hours
         utilization_percent = self.calculate_utilization_percent(
             allocated_hours=allocated_hours,
@@ -1064,6 +1237,8 @@ class ResourceService:
         reasons.extend(skill_reasons)
         warnings.extend(skill_warnings)
 
+        if remaining_hours <= LIMITED_AVAILABLE_HOURS_WARNING_THRESHOLD:
+            warnings.append("Resource has limited available hours")
         if remaining_hours > 0:
             availability_score = 30
             reasons.append(f"Has {self.format_hours(remaining_hours)} available hours")
@@ -1073,12 +1248,19 @@ class ResourceService:
 
         utilization_score = self.recommendation_utilization_score(utilization_percent)
         reasons.append(f"Currently {self.format_percent(utilization_percent)} utilized")
+        if utilization_percent >= HIGH_UTILIZATION_WARNING_PERCENT:
+            warnings.append("Resource already highly utilized")
         if allocated_hours > available_hours:
             warnings.append("Currently overallocated")
+        if time_off_hours > 0:
+            warnings.append("Resource has time off during the task window")
+
+        score = min(100, skill_score + availability_score + utilization_score)
 
         return {
             "resource": resource_summary,
-            "score": min(100, skill_score + availability_score + utilization_score),
+            "score": score,
+            "confidence": self.recommendation_confidence(score),
             "reasons": reasons,
             "warnings": warnings,
         }
@@ -1105,7 +1287,16 @@ class ResourceService:
                 continue
             matched_count += 1
             reasons.append(f"Matches required skill: {skill.name}")
+        if 0 < matched_count < len(required_skills):
+            warnings.append("Resource only partially matches required skills")
         return round(50 * matched_count / len(required_skills)), reasons, warnings
+
+    def recommendation_confidence(self, score: int) -> str:
+        if score >= 90:
+            return "HIGH"
+        if score >= 70:
+            return "MEDIUM"
+        return "LOW"
 
     def matching_resource_skill(
         self,
@@ -1135,13 +1326,28 @@ class ResourceService:
             available_hours += week["available_hours"]
         return allocated_hours, available_hours
 
-    def resource_analysis_task_summary(self, *, task: Task, project: Project, program: Program) -> dict[str, object]:
+    def forecast_time_off_total(self, forecast_resource: dict[str, object]) -> Decimal:
+        time_off_hours = Decimal("0")
+        for week in forecast_resource["weeks"]:  # type: ignore[index]
+            week_time_off = week["time_off_hours"]
+            time_off_hours += week_time_off if isinstance(week_time_off, Decimal) else Decimal(str(week_time_off or 0))
+        return time_off_hours
+
+    def resource_analysis_task_summary(
+        self,
+        *,
+        task: Task,
+        project: Project,
+        program: Program,
+        priority_value: OptionValue | None = None,
+    ) -> dict[str, object]:
         return {
             "id": task.id,
             "project_id": task.project_id,
             "name": task.name,
             "start_date": task.start_date,
             "finish_date": task.finish_date,
+            "priority": self.option_summary(priority_value),
             "project": {"id": project.id, "name": project.name},
             "program": {"id": program.id, "name": program.name},
         }
@@ -1179,6 +1385,30 @@ class ResourceService:
             required_skill.required_proficiency,
             0,
         )
+
+    def option_summary(self, option_value: OptionValue | None) -> dict[str, object] | None:
+        if option_value is None:
+            return None
+        return {
+            "id": option_value.id,
+            "label": option_value.label,
+            "value": option_value.value,
+            "color": option_value.color,
+        }
+
+    def is_high_or_critical_priority(self, option_value: OptionValue | None) -> bool:
+        if option_value is None:
+            return False
+        return bool(
+            {
+                self.normalize_option_key(option_value.value),
+                self.normalize_option_key(option_value.label),
+            }
+            & HIGH_PRIORITY_KEYS
+        )
+
+    def normalize_option_key(self, value: str | None) -> str:
+        return re.sub(r"[^a-z0-9]+", "", (value or "").strip().lower())
 
     def format_hours(self, hours: Decimal) -> str:
         quantized = self.quantize_hours(hours)

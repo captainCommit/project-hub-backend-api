@@ -9,6 +9,7 @@ from app.schemas.hierarchy import StatusSummary
 
 
 HealthStatus = Literal["GREEN", "YELLOW", "RED", "UNKNOWN"]
+HealthTrend = Literal["IMPROVING", "STABLE", "DECLINING", "UNKNOWN"]
 
 
 class AccountDashboardSummary(BaseModel):
@@ -32,6 +33,7 @@ class AccountDashboardHealth(BaseModel):
     schedule: HealthStatus
     scope: HealthStatus
     resources: HealthStatus
+    trend: HealthTrend
 
 
 class DashboardProgramSummary(BaseModel):

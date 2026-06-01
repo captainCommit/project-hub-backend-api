@@ -1,8 +1,11 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.schemas.hierarchy import StatusSummary
 
 
 class ResourceCreate(BaseModel):
@@ -231,6 +234,7 @@ class ResourceAnalysisTaskSummary(BaseModel):
     name: str
     start_date: date | None
     finish_date: date | None
+    priority: StatusSummary | None = None
     project: ResourceCalendarProjectSummary
     program: ResourceCalendarProgramSummary
 
@@ -250,8 +254,18 @@ class ResourceAnalysisUnassignedTaskRead(BaseModel):
 class ResourceAnalysisSkillGapRead(BaseModel):
     task: ResourceAnalysisTaskSummary
     skill: ResourceAnalysisSkillSummary
+    missing_skills: list[str] = Field(default_factory=list)
     assigned_resources: list[ResourceCalendarResourceSummary] = Field(default_factory=list)
     message: str
+
+
+class ResourceAnalysisFutureShortageRead(BaseModel):
+    skill: str
+    period_start: date
+    period_end: date
+    required_hours: Decimal
+    available_hours: Decimal
+    shortage_hours: Decimal
 
 
 class ResourceAnalysisSuggestionRead(BaseModel):
@@ -267,12 +281,15 @@ class ResourceAnalysisRead(BaseModel):
     overallocated_resources: list[ResourceAnalysisResourceRead]
     underutilized_resources: list[ResourceAnalysisResourceRead]
     unassigned_tasks: list[ResourceAnalysisUnassignedTaskRead]
+    critical_unstaffed_tasks: list[ResourceAnalysisUnassignedTaskRead] = Field(default_factory=list)
     skill_gaps: list[ResourceAnalysisSkillGapRead]
+    future_shortages: list[ResourceAnalysisFutureShortageRead] = Field(default_factory=list)
     suggestions: list[ResourceAnalysisSuggestionRead]
 
 
 class ResourceRecommendationRead(BaseModel):
     resource: ResourceCalendarResourceSummary
     score: int = Field(ge=0, le=100)
+    confidence: Literal["HIGH", "MEDIUM", "LOW"]
     reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

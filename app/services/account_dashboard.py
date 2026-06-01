@@ -1,6 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -9,10 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.models.activity_log import ActivityLog
 from app.models.account_member import AccountMemberRole
+from app.models.issue import Issue
 from app.models.option_value import OptionValue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
+from app.models.risk import Risk
+from app.models.task import Task
 from app.models.user import User
 from app.repositories.account_dashboard import (
     AccountDashboardRepository,
@@ -126,6 +129,10 @@ class AccountDashboardService:
             high_priority_open_issues=len(high_priority_open_issues),
             resource_count=len(resource_utilization),
             overallocated_resources=overallocated_resources,
+            task_rows=task_rows,
+            risk_rows=risk_rows,
+            issue_rows=issue_rows,
+            today=today,
         )
 
         summary = {
@@ -268,8 +275,12 @@ class AccountDashboardService:
         high_priority_open_issues: int,
         resource_count: int,
         overallocated_resources: int,
+        task_rows: list[DashboardTaskRow] | None = None,
+        risk_rows: list[DashboardRiskRow] | None = None,
+        issue_rows: list[DashboardIssueRow] | None = None,
+        today: date | None = None,
     ) -> dict[str, str]:
-        return self.overview_helpers.build_health(
+        health = self.overview_helpers.build_health(
             stats={
                 "total_tasks": int(task_stats["total_tasks"]),
                 "completed_tasks": int(task_stats["completed_tasks"]),
@@ -282,6 +293,72 @@ class AccountDashboardService:
             },
             has_task_dates=bool(task_stats["has_task_dates"]),
             high_priority_open_issues=high_priority_open_issues,
+        )
+        health["trend"] = self.dashboard_health_trend(
+            task_rows=task_rows or [],
+            risk_rows=risk_rows or [],
+            issue_rows=issue_rows or [],
+            today=today or self.dashboard.today(),
+        )
+        return health
+
+    def dashboard_health_trend(
+        self,
+        *,
+        task_rows: list[DashboardTaskRow],
+        risk_rows: list[DashboardRiskRow],
+        issue_rows: list[DashboardIssueRow],
+        today: date,
+    ) -> str:
+        if not task_rows and not risk_rows and not issue_rows:
+            return "UNKNOWN"
+
+        recent_window_start = today - timedelta(days=7)
+        recent_pressure = 0
+        recent_relief = 0
+
+        for task, _project, _program, status_value, _task_type_value in task_rows:
+            if task.finish_date is None or task.finish_date >= today:
+                continue
+            if not self.is_recently_changed(task, recent_window_start=recent_window_start):
+                continue
+            if self.overview_helpers.is_completed_task_status(status_value):
+                recent_relief += 1
+            else:
+                recent_pressure += 1
+
+        for risk, _project, _program, status_value, priority_value in risk_rows:
+            if not self.overview_helpers.is_high_priority(priority_value):
+                continue
+            if not self.is_recently_changed(risk, recent_window_start=recent_window_start):
+                continue
+            if self.overview_helpers.is_open_status(status_value):
+                recent_pressure += 1
+            else:
+                recent_relief += 1
+
+        for issue, _project, _program, status_value, priority_value in issue_rows:
+            if not self.overview_helpers.is_high_priority(priority_value):
+                continue
+            if not self.is_recently_changed(issue, recent_window_start=recent_window_start):
+                continue
+            if self.overview_helpers.is_open_status(status_value):
+                recent_pressure += 1
+            else:
+                recent_relief += 1
+
+        if recent_pressure > recent_relief:
+            return "DECLINING"
+        if recent_relief > recent_pressure:
+            return "IMPROVING"
+        return "STABLE"
+
+    def is_recently_changed(self, item: Task | Risk | Issue, *, recent_window_start: date) -> bool:
+        updated_at = getattr(item, "updated_at", None)
+        created_at = getattr(item, "created_at", None)
+        return bool(
+            (updated_at is not None and updated_at.date() >= recent_window_start)
+            or (created_at is not None and created_at.date() >= recent_window_start)
         )
 
     def projects_at_risk(
@@ -336,6 +413,10 @@ class AccountDashboardService:
                 high_priority_open_issues=len(high_priority_open_project_issues),
                 resource_count=len(project_resource_rows),
                 overallocated_resources=overallocated_project_resources,
+                task_rows=task_rows_by_project.get(project.id, []),
+                risk_rows=risk_rows_by_project.get(project.id, []),
+                issue_rows=issue_rows_by_project.get(project.id, []),
+                today=today,
             )
             project_status = self.status_for_project(project, project_statuses)
             if project_health["overall"] not in {"RED", "YELLOW"} and not self.is_at_risk_project_status(project_status):

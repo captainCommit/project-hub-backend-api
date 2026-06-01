@@ -190,6 +190,7 @@ def test_account_member_can_view_dashboard(client: TestClient, db_session: Sessi
         "schedule": "UNKNOWN",
         "scope": "GREEN",
         "resources": "UNKNOWN",
+        "trend": "UNKNOWN",
     }
 
 
@@ -341,10 +342,44 @@ def test_dashboard_health_calculation_and_projects_at_risk(client: TestClient, d
 
     assert body["health"]["schedule"] == "RED"
     assert body["health"]["overall"] == "RED"
+    assert body["health"]["trend"] == "DECLINING"
     assert body["summary"]["at_risk_project_count"] == 1
     assert body["projects_at_risk"][0]["id"] == project_id
     assert body["projects_at_risk"][0]["health"]["overall"] == "RED"
+    assert body["projects_at_risk"][0]["health"]["trend"] == "DECLINING"
     assert body["projects_at_risk"][0]["overdue_tasks"] == 1
+
+
+def test_dashboard_health_trend_reports_stable_and_improving(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    complete_status_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="TASK",
+        option_name="STATUS",
+        value="COMPLETE",
+    )
+
+    create_task(client, project_id, "Future stable task", finish_date=date.today() + timedelta(days=5))
+    stable_body = get_dashboard(client, account_id)
+
+    assert stable_body["health"]["trend"] == "STABLE"
+
+    create_task(
+        client,
+        project_id,
+        "Recently completed late task",
+        status_id=complete_status_id,
+        finish_date=date.today() - timedelta(days=1),
+    )
+    improving_body = get_dashboard(client, account_id)
+
+    assert improving_body["health"]["trend"] == "IMPROVING"
 
 
 def test_dashboard_recent_activity_returned(client: TestClient) -> None:

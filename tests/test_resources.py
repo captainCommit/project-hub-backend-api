@@ -15,6 +15,8 @@ from app.models.account import Account
 from app.models.account_holiday import AccountHoliday
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.activity_log import ActivityLog
+from app.models.option_set import OptionSet
+from app.models.option_value import OptionValue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
@@ -211,6 +213,28 @@ def set_current_user_role(db_session: Session, account_id: str | UUID, role: Acc
     assert membership is not None
     membership.role = role.value
     db_session.commit()
+
+
+def get_option_id(
+    db_session: Session,
+    *,
+    account_id: str | UUID,
+    entity_type: str,
+    option_name: str,
+    value: str,
+) -> UUID:
+    option_id = db_session.scalar(
+        select(OptionValue.id)
+        .join(OptionSet, OptionSet.id == OptionValue.option_set_id)
+        .where(
+            OptionSet.account_id == UUID(str(account_id)),
+            OptionSet.entity_type == entity_type,
+            OptionSet.name == option_name,
+            OptionValue.value == value,
+        )
+    )
+    assert option_id is not None
+    return option_id
 
 
 def add_account_user(db_session: Session, *, account_id: str | UUID, email: str = "member@example.com") -> User:
@@ -1166,10 +1190,20 @@ def test_resource_can_be_found_in_global_search(client: TestClient) -> None:
     assert results[0]["title"] == "Capacity Planner"
 
 
-def test_resource_analysis_identifies_capacity_assignment_and_skill_problems(client: TestClient) -> None:
+def test_resource_analysis_identifies_capacity_assignment_and_skill_problems(
+    client: TestClient,
+    db_session: Session,
+) -> None:
     hierarchy = create_work_hierarchy(client)
     account_id = hierarchy["account"]["id"]
     project_id = hierarchy["project"]["id"]
+    high_priority_id = get_option_id(
+        db_session,
+        account_id=account_id,
+        entity_type="TASK",
+        option_name="PRIORITY",
+        value="HIGH",
+    )
     overloaded = create_resource(client, account_id, "Overloaded Engineer", weekly_capacity_hours=40)
     underutilized = create_resource(client, account_id, "Available Engineer", weekly_capacity_hours=40)
     overloaded_task = create_task(
@@ -1188,6 +1222,7 @@ def test_resource_analysis_identifies_capacity_assignment_and_skill_problems(cli
         end_date="2026-06-05",
     )
     skill = create_skill(client, account_id, "AWS")
+    create_resource_skill(client, underutilized["id"], skill["id"], "ADVANCED")
     create_required_skill(client, overloaded_task["id"], skill["id"], "ADVANCED")
     unassigned_task = create_task(
         client,
@@ -1195,6 +1230,7 @@ def test_resource_analysis_identifies_capacity_assignment_and_skill_problems(cli
         "Unassigned Work",
         start_date="2026-06-01",
         finish_date="2026-06-05",
+        priority_id=str(high_priority_id),
     )
 
     response = client.get(
@@ -1217,8 +1253,12 @@ def test_resource_analysis_identifies_capacity_assignment_and_skill_problems(cli
     assert body["underutilized_resources"][0]["resource"]["id"] == underutilized["id"]
     assert body["underutilized_resources"][0]["utilization_percent"] == 0.0
     assert body["unassigned_tasks"][0]["task"]["id"] == unassigned_task["id"]
+    assert body["critical_unstaffed_tasks"][0]["task"]["id"] == unassigned_task["id"]
+    assert body["critical_unstaffed_tasks"][0]["task"]["priority"]["value"] == "HIGH"
     assert body["skill_gaps"][0]["task"]["id"] == overloaded_task["id"]
     assert body["skill_gaps"][0]["skill"]["name"] == "AWS"
+    assert body["skill_gaps"][0]["missing_skills"] == ["AWS"]
+    assert body["future_shortages"] == []
     assert {suggestion["type"] for suggestion in body["suggestions"]} == {
         "OVERALLOCATION",
         "UNDERUTILIZATION",
@@ -1295,6 +1335,39 @@ def test_resource_analysis_filters_work(client: TestClient) -> None:
     assert resource_response.json()["underutilized_resources"][0]["resource"]["id"] == first_resource["id"]
 
 
+def test_resource_analysis_reports_future_skill_shortages(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    aws = create_skill(client, account_id, "AWS")
+    task = create_task(
+        client,
+        project_id,
+        "AWS Demand",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+    create_required_skill(client, task["id"], aws["id"], "INTERMEDIATE")
+
+    response = client.get(
+        f"/api/v1/accounts/{account_id}/resource-analysis",
+        params={"start_date": "2026-06-01", "end_date": "2026-06-05"},
+    )
+
+    assert response.status_code == 200
+    shortages = response.json()["future_shortages"]
+    assert shortages == [
+        {
+            "skill": "AWS",
+            "period_start": "2026-06-01",
+            "period_end": "2026-06-05",
+            "required_hours": "40.00",
+            "available_hours": "0.00",
+            "shortage_hours": "40.00",
+        }
+    ]
+
+
 def test_resource_analysis_allows_account_members_and_blocks_non_members(
     client: TestClient,
     db_session: Session,
@@ -1350,7 +1423,7 @@ def test_task_resource_recommendations_rank_skilled_available_resources_higher_a
         client,
         busy_task["id"],
         busy_skilled["id"],
-        allocated_hours=40,
+        allocated_hours=35,
         start_date="2026-06-01",
         end_date="2026-06-05",
     )
@@ -1361,6 +1434,7 @@ def test_task_resource_recommendations_rank_skilled_available_resources_higher_a
     recommendations = response.json()
     assert recommendations[0]["resource"]["id"] == skilled_available["id"]
     assert recommendations[0]["score"] == 100
+    assert recommendations[0]["confidence"] == "HIGH"
     assert "Matches required skill: AWS" in recommendations[0]["reasons"]
     assert "Has 40 available hours" in recommendations[0]["reasons"]
     assert "Currently 0% utilized" in recommendations[0]["reasons"]
@@ -1370,6 +1444,60 @@ def test_task_resource_recommendations_rank_skilled_available_resources_higher_a
         for recommendation in recommendations
         if recommendation["resource"]["id"] == unskilled_available["id"]
     )
+    by_resource_id = {recommendation["resource"]["id"]: recommendation for recommendation in recommendations}
+    assert by_resource_id[unskilled_available["id"]]["confidence"] == "LOW"
+    assert by_resource_id[busy_skilled["id"]]["confidence"] == "MEDIUM"
+    assert "Missing required skill: AWS" in by_resource_id[unskilled_available["id"]]["warnings"]
+    assert "Resource already highly utilized" in by_resource_id[busy_skilled["id"]]["warnings"]
+    assert "Resource has limited available hours" in by_resource_id[busy_skilled["id"]]["warnings"]
+
+
+def test_resource_recommendations_include_partial_skill_limited_hours_and_time_off_warnings(
+    client: TestClient,
+) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    task = create_task(
+        client,
+        project_id,
+        "Partial Recommendation Task",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+    aws = create_skill(client, account_id, "AWS")
+    terraform = create_skill(client, account_id, "Terraform")
+    create_required_skill(client, task["id"], aws["id"], "INTERMEDIATE")
+    create_required_skill(client, task["id"], terraform["id"], "INTERMEDIATE")
+    partial = create_resource(client, account_id, "Partial Match", weekly_capacity_hours=40)
+    create_resource_skill(client, partial["id"], aws["id"], "ADVANCED")
+    busy_task = create_task(
+        client,
+        project_id,
+        "Partial Busy Work",
+        start_date="2026-06-01",
+        finish_date="2026-06-05",
+    )
+    create_allocation(
+        client,
+        busy_task["id"],
+        partial["id"],
+        allocated_hours=34,
+        start_date="2026-06-01",
+        end_date="2026-06-05",
+    )
+    create_time_off(client, partial["id"], start_date="2026-06-05", end_date="2026-06-05")
+
+    response = client.get(f"/api/v1/tasks/{task['id']}/resource-recommendations")
+
+    assert response.status_code == 200
+    recommendation = response.json()[0]
+    assert recommendation["resource"]["id"] == partial["id"]
+    assert recommendation["confidence"] == "LOW"
+    assert "Resource only partially matches required skills" in recommendation["warnings"]
+    assert "Missing required skill: Terraform" in recommendation["warnings"]
+    assert "Resource has limited available hours" in recommendation["warnings"]
+    assert "Resource has time off during the task window" in recommendation["warnings"]
 
 
 def test_resource_analysis_and_recommendations_do_not_mutate_database(
