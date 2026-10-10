@@ -18,14 +18,16 @@ provider:
   environment:
     APP_NAME: ${env:APP_NAME, 'Project Hub API'}
     ENVIRONMENT: ${env:ENVIRONMENT, self:provider.stage}
-    DATABASE_URL: ${env:DATABASE_URL}
+    # No password: the Lambda signs in as project_hub_app with an IAM token (DATABASE_IAM_AUTH).
+    DATABASE_URL: ${env:APP_DATABASE_URL}
+    DATABASE_IAM_AUTH: "true"
     AUTH_MODE: ${env:AUTH_MODE, 'cognito'}
     APP_AWS_REGION: ${self:provider.region}
     COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID, ''}
     COGNITO_APP_CLIENT_ID: ${env:COGNITO_APP_CLIENT_ID, ''}
     COGNITO_ADDITIONAL_CLIENT_IDS: ${env:COGNITO_ADDITIONAL_CLIENT_IDS, ''}
     COGNITO_DOMAIN: ${env:COGNITO_DOMAIN, ''}
-    COGNITO_APP_CLIENT_SECRET: ${env:COGNITO_APP_CLIENT_SECRET, ''}
+    COGNITO_APP_CLIENT_SECRET_PARAM: /project-hub/${sls:stage}/cognito-app-client-secret
     S3_BUCKET_NAME:
       Ref: AttachmentsBucket
   iam:
@@ -38,6 +40,14 @@ provider:
             - s3:DeleteObject
           Resource:
             - Fn::Join: ["", [{ "Fn::GetAtt": [AttachmentsBucket, Arn] }, "/*"]]
+        - Effect: Allow
+          Action: rds-db:connect
+          Resource:
+            - Fn::Sub: arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/project_hub_app
+        - Effect: Allow
+          Action: ssm:GetParameter
+          Resource:
+            - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/project-hub/${sls:stage}/*
 
 functions:
   api:

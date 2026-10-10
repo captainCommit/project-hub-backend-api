@@ -30,8 +30,8 @@ Stack outputs: `AppUrl`, `CloudFrontDistributionId`, `UiBucketName`, `Attachment
 
 | Repo | Workflow | Trigger | Does |
 | --- | --- | --- | --- |
-| project-hub-backend-api | `deploy-dev.yml` | push to `dev`, manual | tests → `alembic upgrade head` → `serverless deploy --stage dev` |
-| project-hub-backend-api | `tests.yml` | push/PR to `main` | tests |
+| project-hub-backend-api | `deploy-dev.yml` | push to `dev`, manual | `tests.yml` → `alembic upgrade head` → `serverless deploy --stage dev` |
+| project-hub-backend-api | `tests.yml` | push to `main`, PR to `dev`/`main`, called by `deploy-dev.yml` | migrations on a fresh Postgres 18 → tests |
 | project-hub-ui | `deploy-dev.yml` | push to `master`, manual | build → S3 sync → CloudFront invalidation |
 
 Both sign in to AWS with GitHub OIDC roles; no AWS keys are stored in GitHub. Migrations run before
@@ -57,8 +57,10 @@ the new code goes live, so each migration must work with the version that is sti
    | Variable | `COGNITO_APP_CLIENT_ID` | `5cfgg1smmi3h7bhmv19tu6hom0` |
    | Variable | `COGNITO_ADDITIONAL_CLIENT_IDS` | (empty) |
    | Variable | `COGNITO_DOMAIN` | `https://projecthub-auth.auth.ca-central-1.amazoncognito.com` |
-   | Secret | `DATABASE_URL` | the `DATABASE_URL` from your local `.env` |
-   | Secret | `COGNITO_APP_CLIENT_SECRET` | from your local `.env` |
+   | Variable | `APP_DATABASE_URL` | set by `scripts/setup-db-iam-auth.sh` (no password) |
+   | Secret | `DATABASE_URL` | the admin `DATABASE_URL` from your local `.env`; used only by the migration step |
+
+   The Cognito client secret is not in GitHub: the Lambda reads it from SSM (see [Database](#database)).
 
 3. **GitHub, project-hub-ui** → Settings → Environments → `dev`:
 
@@ -83,9 +85,25 @@ the new code goes live, so each migration must work with the version that is sti
 
 ## Database
 
-RDS `project-hub-db` (Postgres 18, db.t4g.micro) is publicly reachable on 5432 with SSL required,
-because the Lambda does not run inside a VPC. Protect it with the long random master password; keep
-`DATABASE_URL` only in `.env` and the GitHub secret.
+RDS `project-hub-db` (Postgres 18, db.t4g.micro) is publicly reachable on 5432 because the Lambda
+does not run inside a VPC (no NAT gateway). It is protected by:
+
+- **SSL with certificate checks.** RDS rejects unencrypted connections (`rds.force_ssl=1`), and every
+  connection to an `*.rds.amazonaws.com` host uses `sslmode=verify-full` against the bundled
+  `app/certs/rds-global-bundle.pem`, so a spoofed server is refused.
+- **No password in the Lambda.** It signs in as `project_hub_app` (read/write on app tables, no DDL)
+  with a 15-minute IAM token minted per connection (`DATABASE_IAM_AUTH=true`, `rds-db:connect` on the
+  Lambda role). The admin password exists only in `.env` and the GitHub `DATABASE_URL` secret, which
+  only the migration step sees.
+- **Cognito client secret in SSM.** The Lambda reads the SecureString
+  `/project-hub/<stage>/cognito-app-client-secret` at startup (`COGNITO_APP_CLIENT_SECRET_PARAM`).
+  Locally, `COGNITO_APP_CLIENT_SECRET` in `.env` still works and takes precedence.
+
+One-time setup (before the first deploy that uses IAM auth):
+
+```bash
+bash scripts/setup-db-iam-auth.sh
+```
 
 Run a migration by hand only when needed (the deploy workflow normally does it):
 

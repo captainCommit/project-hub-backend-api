@@ -15,24 +15,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Real Postgres: migrations are applied from scratch, then the test suite runs.
   test:
-    runs-on: ubuntu-latest
-    env:
-      ENVIRONMENT: local
-      AUTH_MODE: local
-      # Tests use their own in-memory SQLite; this only satisfies settings at import time.
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/project_hub
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-
-      - run: pip install -r requirements.txt
-
-      - run: python -m pytest -q
+    uses: ./.github/workflows/tests.yml
 
   deploy:
     needs: test
@@ -44,12 +29,12 @@ jobs:
       ENVIRONMENT: dev
       AUTH_MODE: cognito
       APP_AWS_REGION: ca-central-1
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Passwordless URL for the Lambda; it signs in with an IAM token.
+      APP_DATABASE_URL: ${{ vars.APP_DATABASE_URL }}
       COGNITO_USER_POOL_ID: ${{ vars.COGNITO_USER_POOL_ID }}
       COGNITO_APP_CLIENT_ID: ${{ vars.COGNITO_APP_CLIENT_ID }}
       COGNITO_ADDITIONAL_CLIENT_IDS: ${{ vars.COGNITO_ADDITIONAL_CLIENT_IDS }}
       COGNITO_DOMAIN: ${{ vars.COGNITO_DOMAIN }}
-      COGNITO_APP_CLIENT_SECRET: ${{ secrets.COGNITO_APP_CLIENT_SECRET }}
 
     steps:
       - uses: actions/checkout@v4
@@ -75,8 +60,11 @@ jobs:
           aws-region: ca-central-1
 
       # Migrations run before the new code goes live, so they must stay compatible with the running version.
+      # Only the migration step gets the admin password; it never reaches the Lambda.
       - name: Run database migrations
         run: alembic upgrade head
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Deploy
         run: npx serverless deploy --stage dev

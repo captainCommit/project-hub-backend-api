@@ -13,6 +13,8 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://postgres:postgres@localhost:5432/project_hub",
         validation_alias="DATABASE_URL",
     )
+    # Sign in to RDS with a short-lived IAM token instead of a password (the deployed Lambda does this).
+    database_iam_auth: bool = Field(default=False, validation_alias="DATABASE_IAM_AUTH")
     cors_origins: str = Field(
         default="http://localhost:3000",
         validation_alias="CORS_ORIGINS",
@@ -35,6 +37,8 @@ class Settings(BaseSettings):
     # Hosted login domain and client secret: the API exchanges sign-in codes and refresh tokens.
     cognito_domain: str = Field(default="", validation_alias="COGNITO_DOMAIN")
     cognito_app_client_secret: str = Field(default="", validation_alias="COGNITO_APP_CLIENT_SECRET")
+    # Deployed: the secret lives in this SSM SecureString and is read at startup, not in the Lambda environment.
+    cognito_app_client_secret_param: str = Field(default="", validation_alias="COGNITO_APP_CLIENT_SECRET_PARAM")
     # Session cookies are HttpOnly + SameSite=Strict; Secure can only be relaxed for plain-http dev hosts.
     session_cookie_secure: bool = Field(default=True, validation_alias="SESSION_COOKIE_SECURE")
     auth_mode: Literal["local", "cognito"] = Field(default="local", validation_alias="AUTH_MODE")
@@ -65,6 +69,18 @@ class Settings(BaseSettings):
         return f"{self.cognito_issuer}/.well-known/jwks.json"
 
 
+def _read_secure_parameter(name: str, region_name: str) -> str:
+    import boto3
+
+    response = boto3.client("ssm", region_name=region_name).get_parameter(Name=name, WithDecryption=True)
+    return response["Parameter"]["Value"]
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    if settings.cognito_app_client_secret_param and not settings.cognito_app_client_secret:
+        settings.cognito_app_client_secret = _read_secure_parameter(
+            settings.cognito_app_client_secret_param, settings.aws_region
+        )
+    return settings
