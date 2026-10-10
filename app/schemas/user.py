@@ -17,6 +17,7 @@ class UserRead(BaseModel):
     phone: str | None = None
     photo_url: str | None = None
     is_active: bool
+    is_platform_admin: bool = False
     created_at: datetime
     updated_at: datetime
 

@@ -53,6 +53,8 @@ def get_or_create_dev_user(db: Session) -> User:
     user = user_repository.get_by_email(DEV_USER_EMAIL)
     if user is None:
         user = user_repository.create(email=DEV_USER_EMAIL, full_name=DEV_USER_FULL_NAME)
+        # Local dev only: the single dev user can do everything, including creating accounts.
+        user.is_platform_admin = True
         db.commit()
         db.refresh(user)
     return user

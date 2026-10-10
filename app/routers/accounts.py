@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate
@@ -18,8 +19,9 @@ def create_account(
     account_in: AccountCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
 ) -> AccountRead:
-    return AccountService(db).create_account(account_in=account_in, current_user=current_user)
+    return AccountService(db, settings=settings).create_account(account_in=account_in, current_user=current_user)
 
 
 @router.get("", response_model=list[AccountRead])

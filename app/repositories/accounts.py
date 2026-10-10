@@ -30,6 +30,9 @@ class AccountRepository:
         )
         return list(self.db.scalars(statement).all())
 
+    def list_all(self) -> list[Account]:
+        return list(self.db.scalars(select(Account).order_by(Account.name, Account.created_at)).all())
+
     def update(self, account: Account, *, name: str | None, slug: str | None) -> Account:
         if name is not None:
             account.name = name

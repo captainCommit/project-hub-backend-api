@@ -112,6 +112,15 @@ def set_current_user_role(db_session: Session, account_id: str | UUID, role: Acc
     db_session.commit()
 
 
+def make_current_user_regular(client: TestClient, db_session: Session) -> None:
+    """The local dev user is a platform admin; turn that off to test member-only rules."""
+    client.get("/api/v1/me")
+    current = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+    assert current is not None
+    current.is_platform_admin = False
+    db_session.commit()
+
+
 def invite_user(
     client: TestClient,
     account_id: str | UUID,
@@ -144,6 +153,7 @@ def test_account_member_can_list_account_users(client: TestClient, db_session: S
 
 def test_non_member_cannot_list_account_users(client: TestClient, db_session: Session) -> None:
     account = create_private_account(db_session)
+    make_current_user_regular(client, db_session)
 
     response = client.get(f"/api/v1/accounts/{account.id}/users")
 
@@ -266,6 +276,7 @@ def test_non_admin_roles_cannot_invite_user(
 ) -> None:
     account = create_account(client, name=f"Invite Blocked {role.value}", slug=f"invite-blocked-{role.value.lower()}")
     set_current_user_role(db_session, account["id"], role)
+    make_current_user_regular(client, db_session)
 
     response = invite_user(client, account["id"], email=f"blocked-{role.value.lower()}@example.com")
 
@@ -486,3 +497,36 @@ def test_cognito_invite_is_called_when_enabled_and_mocked(
     assert calls[0]["email"] == "enabled-cognito@example.com"
     assert calls[0]["full_name"] == "Enabled Cognito"
     assert isinstance(calls[0]["settings"], Settings)
+
+def test_platform_admin_can_list_and_invite_in_an_account_they_are_not_in(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    account = create_private_account(db_session)
+
+    listed = client.get(f"/api/v1/accounts/{account.id}/users")
+    invited = invite_user(client, account.id, email="added-by-platform@example.com")
+
+    assert listed.status_code == 200
+    assert invited.status_code == 200
+    assert invited.json()["status"] == "CREATED"
+
+
+def test_regular_non_member_cannot_invite(client: TestClient, db_session: Session) -> None:
+    account = create_private_account(db_session)
+    make_current_user_regular(client, db_session)
+
+    response = invite_user(client, account.id, email="nope@example.com")
+
+    assert response.status_code == 403
+
+
+def test_account_users_include_role_and_sign_in_state(client: TestClient, db_session: Session) -> None:
+    account = create_account(client)
+    invite_user(client, account["id"], email="pending@example.com", role="VIEWER")
+
+    users = {user["email"]: user for user in client.get(f"/api/v1/accounts/{account['id']}/users").json()}
+
+    assert users["pending@example.com"]["role"] == "VIEWER"
+    assert users["pending@example.com"]["has_signed_in"] is False
+    assert users["dev@example.com"]["role"] == "OWNER"

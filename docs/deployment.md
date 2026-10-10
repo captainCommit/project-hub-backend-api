@@ -16,7 +16,7 @@ be cross-site and the browser would drop the cookies. A CloudFront Function serv
 client-side routes (any path without a file extension), so API error responses pass through untouched.
 Because both share one origin, the API has CORS turned off (`CORS_ORIGINS` is empty in the Lambda).
 
-The Lambda runs on `arm64` and keeps CloudWatch logs for 30 days. boto3 is left out of the package
+The Lambda runs on `arm64` with 1769 MB (one full vCPU; startup is CPU-bound) and keeps CloudWatch logs for 30 days. boto3 is left out of the package
 because the Lambda runtime already provides it.
 
 If the Content-Security-Policy blocks something new (the browser console shows the blocked URL),
@@ -120,6 +120,20 @@ Run a migration by hand only when needed (the deploy workflow normally does it):
 
 ```bash
 alembic upgrade head   # uses DATABASE_URL from .env or the environment
+```
+
+## Users and accounts
+
+The Cognito pool is invite-only. Adding a user (Account → Users, or the invite API) creates them in
+Cognito with `AdminCreateUser`, which emails a temporary password from Cognito's default sender
+(limit: 50 emails a day). Their Project Hub user is linked by email on first sign-in.
+
+**Platform admins** (`users.is_platform_admin`) create accounts and can add users to any account
+(Account → All Accounts). Creating an account with an admin email invites that person as its ADMIN;
+without one, the creator becomes OWNER. Grant or revoke it with the admin `DATABASE_URL`:
+
+```bash
+python scripts/grant_platform_admin.py prjadmin@projecthub.com          # --revoke to remove
 ```
 
 ## Smoke test

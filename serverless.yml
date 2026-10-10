@@ -32,6 +32,8 @@ provider:
     COGNITO_APP_CLIENT_ID: ${env:COGNITO_APP_CLIENT_ID, ''}
     COGNITO_ADDITIONAL_CLIENT_IDS: ${env:COGNITO_ADDITIONAL_CLIENT_IDS, ''}
     COGNITO_DOMAIN: ${env:COGNITO_DOMAIN, ''}
+    # The pool is invite-only, so adding a user must create them in Cognito (AdminCreateUser emails the invite).
+    COGNITO_INVITE_ENABLED: "true"
     COGNITO_APP_CLIENT_SECRET_PARAM: /project-hub/${sls:stage}/cognito-app-client-secret
     S3_BUCKET_NAME:
       Ref: AttachmentsBucket
@@ -50,6 +52,10 @@ provider:
           Resource:
             - Fn::Sub: arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/project_hub_app
         - Effect: Allow
+          Action: cognito-idp:AdminCreateUser
+          Resource:
+            - Fn::Sub: arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${env:COGNITO_USER_POOL_ID, ''}
+        - Effect: Allow
           Action: ssm:GetParameter
           Resource:
             - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/project-hub/${sls:stage}/*
@@ -58,7 +64,8 @@ functions:
   api:
     handler: app.main.handler
     description: Project Hub FastAPI app served by Mangum behind API Gateway HTTP API.
-    memorySize: 512
+    # 1769 MB is one full vCPU. Startup is CPU-bound (importing the app), and at 512 MB it took 2.5–5 s.
+    memorySize: 1769
     timeout: 28
     events:
       - httpApi:

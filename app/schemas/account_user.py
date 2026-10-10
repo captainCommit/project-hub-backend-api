@@ -99,6 +99,9 @@ class AccountUserRead(BaseModel):
     email: str
     full_name: str | None
     is_active: bool
+    role: AccountMemberRole | None = None
+    # False until the person signs in for the first time (an invite not yet accepted).
+    has_signed_in: bool = False
     created_at: datetime
     updated_at: datetime
 

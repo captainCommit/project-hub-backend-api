@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -19,10 +20,15 @@ class Base(DeclarativeBase):
 settings = get_settings()
 
 
-def _rds_auth_token(host: str, port: int, username: str) -> str:
+@lru_cache
+def _rds_client():  # type: ignore[no-untyped-def]
     import boto3
 
-    return boto3.client("rds", region_name=settings.aws_region).generate_db_auth_token(
+    return boto3.client("rds", region_name=settings.aws_region)
+
+
+def _rds_auth_token(host: str, port: int, username: str) -> str:
+    return _rds_client().generate_db_auth_token(
         DBHostname=host, Port=port, DBUsername=username, Region=settings.aws_region
     )
 

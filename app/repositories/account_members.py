@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.account_member import AccountMember, AccountMemberRole
@@ -53,3 +53,20 @@ class AccountMemberRepository:
             .where(AccountMember.account_id == account_id)
         )
         return list(self.db.scalars(statement).all())
+    def roles_for_user(self, user_id: UUID) -> dict[UUID, str]:
+        statement = select(AccountMember.account_id, AccountMember.role).where(AccountMember.user_id == user_id)
+        return {account_id: role for account_id, role in self.db.execute(statement).all()}
+
+    def count_by_account(self) -> dict[UUID, int]:
+        statement = select(AccountMember.account_id, func.count()).group_by(AccountMember.account_id)
+        return {account_id: count for account_id, count in self.db.execute(statement).all()}
+
+    def list_admins(self) -> list[tuple[UUID, User, str]]:
+        """Owners and admins of every account, owners first."""
+        statement = (
+            select(AccountMember.account_id, User, AccountMember.role)
+            .join(User, User.id == AccountMember.user_id)
+            .where(AccountMember.role.in_([AccountMemberRole.OWNER.value, AccountMemberRole.ADMIN.value]))
+            .order_by(AccountMember.role.desc(), User.email)
+        )
+        return [(account_id, user, role) for account_id, user, role in self.db.execute(statement).all()]

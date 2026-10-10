@@ -17,6 +17,7 @@ from app.routers.accounts import router as accounts_router
 from app.routers.account_settings import router as account_settings_router
 from app.routers.account_users import router as account_users_router
 from app.routers.activity import router as activity_router
+from app.routers.admin import router as admin_router
 from app.routers.attachments import router as attachments_router
 from app.routers.auth import router as auth_router
 from app.routers.collaboration import router as collaboration_router
@@ -138,6 +139,7 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(accounts_router)
+app.include_router(admin_router)
 app.include_router(account_settings_router)
 app.include_router(account_users_router)
 app.include_router(options_router)

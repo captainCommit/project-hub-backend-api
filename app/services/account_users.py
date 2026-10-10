@@ -20,6 +20,7 @@ from app.schemas.account_user import (
     AccountUserInviteCreate,
     AccountUserInviteRead,
     AccountUserInviteStatus,
+    AccountUserRead,
 )
 from app.services.cognito import admin_create_user_invite, should_send_cognito_invite
 
@@ -46,12 +47,21 @@ class AccountUserService:
         account_id: UUID,
         current_user: User,
         pagination: PaginationParams | None = None,
-    ) -> list[User] | dict[str, object]:
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
+    ) -> list[AccountUserRead] | dict[str, object]:
+        self.require_account_access(account_id=account_id, current_user=current_user)
         if pagination and pagination.paginated:
             users, total = self.account_users.list_for_account_paginated(account_id, pagination=pagination)
-            return paginated_response(items=users, total=total, pagination=pagination)
-        return self.account_users.list_for_account(account_id)
+            return paginated_response(items=self.to_reads(account_id, users), total=total, pagination=pagination)
+        return self.to_reads(account_id, self.account_users.list_for_account(account_id))
+
+    def to_reads(self, account_id: UUID, users: list[User]) -> list[AccountUserRead]:
+        roles = {member.user_id: member.role for member in self.account_members.list_for_account(account_id)}
+        return [
+            AccountUserRead.model_validate(user).model_copy(
+                update={"role": roles.get(user.id), "has_signed_in": user.cognito_sub is not None}
+            )
+            for user in users
+        ]
 
     def search_account_users(self, *, account_id: UUID, q: str, current_user: User) -> list[User]:
         query = q.strip()
@@ -70,9 +80,9 @@ class AccountUserService:
         invite_in: AccountUserInviteCreate,
         current_user: User,
     ) -> AccountUserInviteRead:
-        self.require_account_role(
+        self.require_account_access(
             account_id=account_id,
-            user_id=current_user.id,
+            current_user=current_user,
             allowed_roles=INVITE_ACCOUNT_ROLES,
         )
         try:
@@ -99,9 +109,9 @@ class AccountUserService:
         bulk_in: AccountUserBulkInviteCreate,
         current_user: User,
     ) -> AccountUserBulkInviteRead:
-        self.require_account_role(
+        self.require_account_access(
             account_id=account_id,
-            user_id=current_user.id,
+            current_user=current_user,
             allowed_roles=INVITE_ACCOUNT_ROLES,
         )
 
@@ -252,6 +262,22 @@ class AccountUserService:
         if value is None:
             return None
         return str(value).strip().lower() or None
+
+    def require_account_access(
+        self,
+        *,
+        account_id: UUID,
+        current_user: User,
+        allowed_roles: set[str] | None = None,
+    ) -> None:
+        """Members (holding one of allowed_roles, when given) pass; platform admins pass for any account."""
+        if not current_user.is_platform_admin:
+            if allowed_roles is None:
+                self.require_account_member(account_id=account_id, user_id=current_user.id)
+            else:
+                self.require_account_role(account_id=account_id, user_id=current_user.id, allowed_roles=allowed_roles)
+        elif self.accounts.get_by_id(account_id) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
 
     def require_account_member(self, *, account_id: UUID, user_id: UUID) -> None:
         account = self.accounts.get_by_id(account_id)

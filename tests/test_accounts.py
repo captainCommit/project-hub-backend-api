@@ -366,3 +366,78 @@ def test_get_missing_account_returns_404(client: TestClient) -> None:
 
     assert response.status_code == 404
     assert response.json()["message"] == "Account not found."
+
+def make_current_user_regular(db_session: Session) -> User:
+    client_user = db_session.scalar(select(User).where(User.email == DEV_USER_EMAIL))
+    assert client_user is not None
+    client_user.is_platform_admin = False
+    db_session.commit()
+    return client_user
+
+
+def test_me_reports_platform_admin(client: TestClient) -> None:
+    assert client.get("/api/v1/me").json()["is_platform_admin"] is True
+
+
+def test_only_platform_admins_can_create_accounts(client: TestClient, db_session: Session) -> None:
+    client.get("/api/v1/me")
+    make_current_user_regular(db_session)
+
+    response = client.post("/api/v1/accounts", json={"name": "Nope", "slug": "nope"})
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Platform admin access required."
+    assert db_session.scalar(select(Account).where(Account.slug == "nope")) is None
+
+
+def test_create_account_with_admin_email_invites_that_admin(client: TestClient, db_session: Session) -> None:
+    response = client.post(
+        "/api/v1/accounts",
+        json={"name": "Client Co", "slug": "client-co", "admin_email": " Boss@Client.example ", "admin_full_name": "Boss"},
+    )
+
+    assert response.status_code == 201
+    account_id = UUID(response.json()["id"])
+    members = db_session.execute(
+        select(User.email, User.full_name, AccountMember.role)
+        .join(AccountMember, AccountMember.user_id == User.id)
+        .where(AccountMember.account_id == account_id)
+    ).all()
+    # The creating platform admin is not added; the named person is the admin.
+    assert members == [("boss@client.example", "Boss", AccountMemberRole.ADMIN.value)]
+    assert db_session.scalar(select(AccountSettings).where(AccountSettings.account_id == account_id)) is not None
+
+
+def test_create_account_rejects_invalid_admin_email(client: TestClient) -> None:
+    response = client.post("/api/v1/accounts", json={"name": "Bad", "slug": "bad", "admin_email": "not-an-email"})
+
+    assert response.status_code == 422
+
+
+def test_list_accounts_includes_current_user_role(client: TestClient) -> None:
+    client.post("/api/v1/accounts", json={"name": "Mine", "slug": "mine"})
+
+    response = client.get("/api/v1/accounts")
+
+    assert [(account["slug"], account["role"]) for account in response.json()] == [("mine", "OWNER")]
+
+
+def test_platform_admin_lists_every_account_with_its_admins(client: TestClient, db_session: Session) -> None:
+    client.post("/api/v1/accounts", json={"name": "Beta", "slug": "beta", "admin_email": "admin@beta.example"})
+    client.post("/api/v1/accounts", json={"name": "Alpha", "slug": "alpha"})
+
+    response = client.get("/api/v1/admin/accounts")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [account["slug"] for account in body] == ["alpha", "beta"]
+    assert body[0]["member_count"] == 1
+    assert [(a["email"], a["role"]) for a in body[0]["admins"]] == [(DEV_USER_EMAIL, "OWNER")]
+    assert [(a["email"], a["role"]) for a in body[1]["admins"]] == [("admin@beta.example", "ADMIN")]
+
+
+def test_regular_users_cannot_list_every_account(client: TestClient, db_session: Session) -> None:
+    client.get("/api/v1/me")
+    make_current_user_regular(db_session)
+
+    assert client.get("/api/v1/admin/accounts").status_code == 403
