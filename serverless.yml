@@ -80,7 +80,7 @@ package:
     - "!**"
     - app/**
     - requirements.txt
-    - "!app/**/__pycache__/**"
+    # CI compiles app/ to hash-checked .pyc just before deploying (see deploy-dev.yml).
     - "!app/migrations/**/__pycache__/**"
     - "!tests/**"
     - "!screenshots/**"
@@ -95,7 +95,8 @@ custom:
       - --implementation=cp
       - --python-version=3.11
       - "--only-binary=:all:"
-      - --no-compile
+    # pip also writes .pyc files. Lambda's code directory is read-only, so without them every cold start
+    # recompiles all dependencies (seconds). They only match the runtime when packaging runs on Python 3.11, as CI does.
     slim: false
     strip: false
     useDownloadCache: false

@@ -68,8 +68,14 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
+      # Ship bytecode so cold starts don't recompile everything. SOURCE_DATE_EPOCH makes pip and compileall
+      # write hash-checked .pyc files, which stay valid whatever file times the Lambda zip ends up with.
       - name: Deploy
-        run: npx serverless deploy --stage dev
+        run: |
+          python -m compileall -q app
+          npx serverless deploy --stage dev
+        env:
+          SOURCE_DATE_EPOCH: "315532800"
 
       - name: Show app URL
         run: |
