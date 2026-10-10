@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 from app.core.database import get_db
+from app import main as main_module
 from app.main import app
 from app.routers import health as health_router
 
@@ -67,3 +68,16 @@ def test_health_endpoint_degraded(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "degraded", "database": "disconnected"}
+
+def test_requests_without_the_origin_header_are_refused_when_a_secret_is_set(monkeypatch) -> None:
+    monkeypatch.setattr(main_module.settings, "origin_verify_secret", "from-cloudfront")
+
+    missing = client.get("/")
+    wrong = client.get("/", headers={"X-Origin-Verify": "guess"})
+    right = client.get("/", headers={"X-Origin-Verify": "from-cloudfront"})
+
+    assert missing.status_code == 403
+    assert missing.json()["error_code"] == "FORBIDDEN"
+    assert missing.headers["X-Request-ID"]
+    assert wrong.status_code == 403
+    assert right.status_code == 200

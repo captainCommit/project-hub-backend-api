@@ -1,3 +1,4 @@
+import hmac
 import logging
 import time
 from typing import Any
@@ -51,6 +52,23 @@ if settings.cors_origin_list:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+ORIGIN_VERIFY_HEADER = "X-Origin-Verify"
+
+
+# Registered before request_context_middleware so it runs inside it and refusals still get a request ID.
+@app.middleware("http")
+async def origin_verify_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+    expected = settings.origin_verify_secret
+    if expected and not hmac.compare_digest(request.headers.get(ORIGIN_VERIFY_HEADER, ""), expected):
+        return error_response(
+            status_code=403,
+            error_code="FORBIDDEN",
+            message="Forbidden.",
+            request_id=request.state.request_id,
+        )
+    return await call_next(request)
 
 
 @app.middleware("http")

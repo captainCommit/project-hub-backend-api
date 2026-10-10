@@ -14,6 +14,13 @@ The UI and API must share one site: the session cookies are `HttpOnly; Secure; S
 and `cloudfront.net` / `execute-api.amazonaws.com` are public suffixes, so separate hostnames would
 be cross-site and the browser would drop the cookies. A CloudFront Function serves `index.html` for
 client-side routes (any path without a file extension), so API error responses pass through untouched.
+Because both share one origin, the API has CORS turned off (`CORS_ORIGINS` is empty in the Lambda).
+
+The Lambda runs on `arm64` and keeps CloudWatch logs for 30 days. boto3 is left out of the package
+because the Lambda runtime already provides it.
+
+If the Content-Security-Policy blocks something new (the browser console shows the blocked URL),
+add the source to `SecurityHeadersPolicy` in `serverless.yml`.
 
 The `project-hub-api-dev` stack (`serverless.yml`) owns:
 
@@ -23,6 +30,9 @@ The `project-hub-api-dev` stack (`serverless.yml`) owns:
 | `UiBucket` | UI build, readable only by CloudFront (Origin Access Control) |
 | `AttachmentsBucket` | Attachment files; the browser uploads/downloads with presigned URLs. CORS allows the app URL and `http://localhost:5173`. Retained if the stack is removed. |
 | `AppDistribution` | CloudFront in front of both |
+| `SecurityHeadersPolicy` | HSTS, `X-Frame-Options: DENY`, `nosniff`, referrer policy, Permissions-Policy and a Content-Security-Policy on every response |
+| `OriginVerifySecret` | Secrets Manager value CloudFront sends to the API as `X-Origin-Verify`; the Lambda refuses requests without it (`ORIGIN_VERIFY_SECRET`), so the raw `execute-api` URL returns 403 |
+| `AlarmTopic` + alarms | SNS topic and CloudWatch alarms: Lambda errors and throttles, API 5xx (3+ in 5 min), RDS CPU above 80% for 15 min, RDS free storage below 2 GiB |
 
 Stack outputs: `AppUrl`, `CloudFrontDistributionId`, `UiBucketName`, `AttachmentsBucketName`.
 
@@ -59,6 +69,7 @@ the new code goes live, so each migration must work with the version that is sti
    | Variable | `COGNITO_DOMAIN` | `https://projecthub-auth.auth.ca-central-1.amazoncognito.com` |
    | Variable | `APP_DATABASE_URL` | set by `scripts/setup-db-iam-auth.sh` (no password) |
    | Secret | `DATABASE_URL` | the admin `DATABASE_URL` from your local `.env`; used only by the migration step |
+   | Variable | `ALARM_EMAIL` | inbox for alarm emails (optional; AWS emails a confirmation link after the first deploy) |
 
    The Cognito client secret is not in GitHub: the Lambda reads it from SSM (see [Database](#database)).
 
@@ -121,9 +132,10 @@ aws cloudformation describe-stacks --region ca-central-1 --stack-name project-hu
 
 ## Packaging locally
 
-Lambda needs Linux wheels (`psycopg[binary]`). The workflow builds on Ubuntu; on Windows/macOS
-`serverless package` needs Docker (`dockerizePip: non-linux`). `npx serverless print --stage dev`
-checks the resolved configuration without packaging.
+Lambda needs Linux arm64 wheels (`psycopg[binary]`, `cryptography`, `pydantic-core`). pip downloads
+them directly (`--platform=manylinux2014_aarch64 --only-binary=:all:` in `pipCmdExtraArgs`), so
+`serverless package` works on any OS without Docker. A new dependency must publish an aarch64 or
+pure-Python wheel. `npx serverless print --stage dev` checks the resolved configuration without packaging.
 
 ## Remove the stack
 

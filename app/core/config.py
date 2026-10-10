@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # Session cookies are HttpOnly + SameSite=Strict; Secure can only be relaxed for plain-http dev hosts.
     session_cookie_secure: bool = Field(default=True, validation_alias="SESSION_COOKIE_SECURE")
     auth_mode: Literal["local", "cognito"] = Field(default="local", validation_alias="AUTH_MODE")
+    # Deployed: CloudFront adds X-Origin-Verify with this value, so calls straight to execute-api are refused.
+    # Empty (local dev) turns the check off.
+    origin_verify_secret: str = Field(default="", validation_alias="ORIGIN_VERIFY_SECRET")
 
     model_config = SettingsConfigDict(
         env_file=".env",

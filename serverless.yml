@@ -9,12 +9,12 @@ plugins:
 provider:
   name: aws
   runtime: python3.11
-  architecture: x86_64
+  architecture: arm64
   region: ${env:APP_AWS_REGION, 'ca-central-1'}
   stage: ${opt:stage, env:ENVIRONMENT, 'dev'}
   endpointType: regional
-  httpApi:
-    cors: true
+  # Logs are kept for a month instead of forever.
+  logRetentionInDays: 30
   environment:
     APP_NAME: ${env:APP_NAME, 'Project Hub API'}
     ENVIRONMENT: ${env:ENVIRONMENT, self:provider.stage}
@@ -23,6 +23,11 @@ provider:
     DATABASE_IAM_AUTH: "true"
     AUTH_MODE: ${env:AUTH_MODE, 'cognito'}
     APP_AWS_REGION: ${self:provider.region}
+    # The UI and API share one CloudFront origin, so the API needs no CORS.
+    CORS_ORIGINS: ""
+    # CloudFront sends this header to the API; requests made straight to execute-api don't have it.
+    ORIGIN_VERIFY_SECRET:
+      Fn::Sub: "{{resolve:secretsmanager:${OriginVerifySecret}:SecretString:value}}"
     COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID, ''}
     COGNITO_APP_CLIENT_ID: ${env:COGNITO_APP_CLIENT_ID, ''}
     COGNITO_ADDITIONAL_CLIENT_IDS: ${env:COGNITO_ADDITIONAL_CLIENT_IDS, ''}
@@ -76,12 +81,21 @@ package:
 custom:
   pythonRequirements:
     fileName: requirements.txt
-    dockerizePip: non-linux
+    # Linux arm64 wheels are fetched directly, so packaging works the same on Windows, macOS and CI.
+    dockerizePip: false
+    pipCmdExtraArgs:
+      - --platform=manylinux2014_aarch64
+      - --implementation=cp
+      - --python-version=3.11
+      - "--only-binary=:all:"
+      - --no-compile
     slim: false
     strip: false
     useDownloadCache: false
     useStaticCache: false
     noDeploy:
+      # Already in the Lambda Python runtime.
+      - boto3
       - pytest
       - httpx
       - uvicorn
@@ -90,7 +104,24 @@ custom:
 #   /*      -> private S3 bucket with the Vite build (deployed by the UI repo's workflow)
 #   /api/*  -> this stack's HTTP API
 resources:
+  Conditions:
+    HasAlarmEmail:
+      Fn::Not:
+        - Fn::Equals: ["${env:ALARM_EMAIL, ''}", ""]
+
   Resources:
+    # Shared between CloudFront (sent as X-Origin-Verify) and the Lambda (checked on every request).
+    OriginVerifySecret:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        Name: /project-hub/${sls:stage}/origin-verify
+        Description: Header value CloudFront adds to API requests so direct execute-api calls are refused.
+        GenerateSecretString:
+          SecretStringTemplate: "{}"
+          GenerateStringKey: value
+          PasswordLength: 48
+          ExcludePunctuation: true
+
     UiBucket:
       Type: AWS::S3::Bucket
       Properties:
@@ -170,6 +201,50 @@ resources:
             return request;
           }
 
+    # 'unsafe-inline' styles: the rich-text editor and PDF export write inline style attributes.
+    # img-src allows https: because profile photos can be any image URL.
+    SecurityHeadersPolicy:
+      Type: AWS::CloudFront::ResponseHeadersPolicy
+      Properties:
+        ResponseHeadersPolicyConfig:
+          Name: ${self:service}-${sls:stage}-security-headers
+          SecurityHeadersConfig:
+            StrictTransportSecurity:
+              AccessControlMaxAgeSec: 31536000
+              IncludeSubdomains: false
+              Preload: false
+              Override: true
+            ContentTypeOptions:
+              Override: true
+            FrameOptions:
+              FrameOption: DENY
+              Override: true
+            ReferrerPolicy:
+              ReferrerPolicy: strict-origin-when-cross-origin
+              Override: true
+            ContentSecurityPolicy:
+              Override: true
+              ContentSecurityPolicy:
+                Fn::Join:
+                  - "; "
+                  - - default-src 'self'
+                    - script-src 'self'
+                    - style-src 'self' 'unsafe-inline'
+                    - "img-src 'self' data: blob: https:"
+                    - "font-src 'self' data:"
+                    # Presigned attachment uploads. A wildcard, because naming AttachmentsBucket here would
+                    # be circular (its CORS rule names this distribution).
+                    - Fn::Sub: connect-src 'self' https://*.s3.${AWS::Region}.amazonaws.com https://*.s3.amazonaws.com
+                    - object-src 'none'
+                    - base-uri 'self'
+                    - form-action 'self'
+                    - frame-ancestors 'none'
+          CustomHeadersConfig:
+            Items:
+              - Header: Permissions-Policy
+                Value: camera=(), microphone=(), geolocation=()
+                Override: true
+
     AppDistribution:
       Type: AWS::CloudFront::Distribution
       Properties:
@@ -193,6 +268,10 @@ resources:
               CustomOriginConfig:
                 OriginProtocolPolicy: https-only
                 OriginSSLProtocols: [TLSv1.2]
+              OriginCustomHeaders:
+                - HeaderName: X-Origin-Verify
+                  HeaderValue:
+                    Fn::Sub: "{{resolve:secretsmanager:${OriginVerifySecret}:SecretString:value}}"
           DefaultCacheBehavior:
             TargetOriginId: ui
             ViewerProtocolPolicy: redirect-to-https
@@ -200,6 +279,8 @@ resources:
             AllowedMethods: [GET, HEAD, OPTIONS]
             CachedMethods: [GET, HEAD]
             CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+            ResponseHeadersPolicyId:
+              Ref: SecurityHeadersPolicy
             FunctionAssociations:
               - EventType: viewer-request
                 FunctionARN:
@@ -213,6 +294,121 @@ resources:
               CachedMethods: [GET, HEAD]
               CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
               OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+              ResponseHeadersPolicyId:
+                Ref: SecurityHeadersPolicy
+
+    # Alarms go to this topic; ALARM_EMAIL (a GitHub variable) subscribes an inbox, which must confirm by email.
+    AlarmTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-${sls:stage}-alarms
+        Subscription:
+          Fn::If:
+            - HasAlarmEmail
+            - - Protocol: email
+                Endpoint: ${env:ALARM_EMAIL, ''}
+            - Ref: AWS::NoValue
+
+    LambdaErrorsAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${sls:stage}-lambda-errors
+        AlarmDescription: The API Lambda crashed or timed out.
+        Namespace: AWS/Lambda
+        MetricName: Errors
+        Dimensions:
+          - Name: FunctionName
+            Value:
+              Ref: ApiLambdaFunction
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions: [{ Ref: AlarmTopic }]
+        OKActions: [{ Ref: AlarmTopic }]
+
+    LambdaThrottlesAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${sls:stage}-lambda-throttles
+        AlarmDescription: The API Lambda is being throttled.
+        Namespace: AWS/Lambda
+        MetricName: Throttles
+        Dimensions:
+          - Name: FunctionName
+            Value:
+              Ref: ApiLambdaFunction
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions: [{ Ref: AlarmTopic }]
+        OKActions: [{ Ref: AlarmTopic }]
+
+    Api5xxAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${sls:stage}-api-5xx
+        AlarmDescription: The API returned three or more 5xx responses in five minutes.
+        Namespace: AWS/ApiGateway
+        MetricName: 5xx
+        Dimensions:
+          - Name: ApiId
+            Value:
+              Ref: HttpApi
+          - Name: Stage
+            Value: $default
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 3
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions: [{ Ref: AlarmTopic }]
+        OKActions: [{ Ref: AlarmTopic }]
+
+    # The database isn't part of this stack, so it is referred to by its identifier.
+    DbCpuAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${sls:stage}-db-cpu
+        AlarmDescription: Database CPU has been above 80% for 15 minutes.
+        Namespace: AWS/RDS
+        MetricName: CPUUtilization
+        Dimensions:
+          - Name: DBInstanceIdentifier
+            Value: ${env:DB_INSTANCE_ID, 'project-hub-db'}
+        Statistic: Average
+        Period: 300
+        EvaluationPeriods: 3
+        Threshold: 80
+        ComparisonOperator: GreaterThanThreshold
+        TreatMissingData: missing
+        AlarmActions: [{ Ref: AlarmTopic }]
+        OKActions: [{ Ref: AlarmTopic }]
+
+    DbStorageAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${sls:stage}-db-storage
+        AlarmDescription: Database free storage is below 2 GiB.
+        Namespace: AWS/RDS
+        MetricName: FreeStorageSpace
+        Dimensions:
+          - Name: DBInstanceIdentifier
+            Value: ${env:DB_INSTANCE_ID, 'project-hub-db'}
+        Statistic: Minimum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 2147483648
+        ComparisonOperator: LessThanThreshold
+        TreatMissingData: missing
+        AlarmActions: [{ Ref: AlarmTopic }]
+        OKActions: [{ Ref: AlarmTopic }]
 
   Outputs:
     AppUrl:
