@@ -71,8 +71,8 @@ def test_missing_token_returns_401_in_cognito_mode(db_session: Session) -> None:
     assert_error_response(
         response,
         status_code=401,
-        error_code="UNAUTHORIZED",
-        message="Missing bearer token.",
+        error_code="AUTH_REQUIRED",
+        message="Sign in to continue.",
     )
 
 
@@ -147,3 +147,66 @@ def test_cognito_mode_syncs_user_from_mocked_valid_token(
     user = db_session.scalar(select(User).where(User.cognito_sub == "cognito-user-sub"))
     assert user is not None
     assert user.email == "cognito@example.com"
+
+def make_signed_token(claims: dict[str, object]) -> tuple[str, dict[str, object]]:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from jose import jwk, jwt as jose_jwt
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    public_jwk = jwk.construct(private_key.public_key(), algorithm="RS256").to_dict()
+    public_jwk["kid"] = "test-kid"
+    token = jose_jwt.encode(claims, pem, algorithm="RS256", headers={"kid": "test-kid"})
+    return token, {"keys": [public_jwk]}
+
+
+@pytest.mark.parametrize(
+    ("token_use", "client_claim", "client_id", "accepted"),
+    (
+        ("id", "aud", "main-client", True),
+        ("id", "aud", "ui-client", True),
+        ("access", "client_id", "ui-client", True),
+        ("id", "aud", "unknown-client", False),
+        ("access", "client_id", "unknown-client", False),
+    ),
+)
+def test_cognito_validation_accepts_configured_client_ids(
+    monkeypatch: pytest.MonkeyPatch,
+    token_use: str,
+    client_claim: str,
+    client_id: str,
+    accepted: bool,
+) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from fastapi import HTTPException
+
+    settings = Settings(
+        auth_mode="cognito",
+        cognito_user_pool_id="ca-central-1_example",
+        cognito_app_client_id="main-client",
+        cognito_additional_client_ids="ui-client, other-client",
+    )
+    token, jwks = make_signed_token(
+        {
+            "sub": "user-sub",
+            "email": "user@example.com",
+            "iss": settings.cognito_issuer,
+            "token_use": token_use,
+            client_claim: client_id,
+            "exp": int((datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()),
+        }
+    )
+    monkeypatch.setattr(auth_service, "get_cognito_jwks", lambda settings: jwks)
+
+    if accepted:
+        assert auth_service.validate_cognito_token(token, settings)["sub"] == "user-sub"
+    else:
+        with pytest.raises(HTTPException) as excinfo:
+            auth_service.validate_cognito_token(token, settings)
+        assert excinfo.value.status_code == 401

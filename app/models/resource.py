@@ -29,6 +29,14 @@ class Resource(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    hourly_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    non_project_hours: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+    )
     weekly_capacity_hours: Mapped[Decimal] = mapped_column(
         Numeric(10, 2),
         nullable=False,

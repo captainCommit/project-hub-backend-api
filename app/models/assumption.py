@@ -45,6 +45,7 @@ class Assumption(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    entered_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     date_entered: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

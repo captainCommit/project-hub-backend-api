@@ -9,6 +9,7 @@ from app.core.pagination import PaginatedResponse, PaginationParams, get_paginat
 from app.models.user import User
 from app.schemas.tasks import (
     TaskAssignmentCreate,
+    TaskAssignmentUpdate,
     TaskAssignmentRead,
     TaskBulkDeleteRequest,
     TaskBulkUpdateRequest,
@@ -77,6 +78,22 @@ def get_sprint_board(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, object]:
     return TaskService(db).get_sprint_board(sprint_id=sprint_id, current_user=current_user)
+
+
+@router.get("/accounts/{account_id}/tasks", response_model=list[TaskRead])
+def list_account_tasks(
+    account_id: UUID,
+    project_id: UUID | None = None,
+    sprint_id: UUID | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    return TaskService(db).list_account_tasks(
+        account_id=account_id,
+        current_user=current_user,
+        project_id=project_id,
+        sprint_id=sprint_id,
+    )
 
 
 @router.get("/accounts/{account_id}/tasks/due", response_model=DueTasksRead)
@@ -267,6 +284,29 @@ def create_task_assignment(
 ) -> TaskAssignmentRead:
     return TaskService(db).create_assignment(
         task_id=task_id,
+        assignment_in=assignment_in,
+        current_user=current_user,
+    )
+
+
+@router.get("/tasks/{task_id}/assignments", response_model=list[TaskAssignmentRead])
+def list_task_assignments(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[TaskAssignmentRead]:
+    return TaskService(db).list_assignments(task_id=task_id, current_user=current_user)
+
+
+@router.patch("/task-assignments/{assignment_id}", response_model=TaskAssignmentRead)
+def update_task_assignment(
+    assignment_id: UUID,
+    assignment_in: TaskAssignmentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TaskAssignmentRead:
+    return TaskService(db).update_assignment(
+        assignment_id=assignment_id,
         assignment_in=assignment_in,
         current_user=current_user,
     )

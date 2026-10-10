@@ -15,6 +15,11 @@ from app.models.attachment import Attachment
 from app.models.comment import Comment
 from app.models.decision import Decision
 from app.models.decision_option import DecisionOption
+from app.models.change_request import ChangeRequest
+from app.models.dependency import Dependency
+from app.models.requirement import Requirement
+from app.models.test_case import TestCase
+from app.models.support_ticket import SupportTicket
 from app.models.issue import Issue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
@@ -49,6 +54,11 @@ ATTACHMENT_ENTITY_MODELS: dict[str, type[Any]] = {
     "DECISION": Decision,
     "DECISION_OPTION": DecisionOption,
     "COMMENT": Comment,
+    "DEPENDENCY": Dependency,
+    "CHANGE_REQUEST": ChangeRequest,
+    "REQUIREMENT": Requirement,
+    "TEST_CASE": TestCase,
+    "SUPPORT_TICKET": SupportTicket,
 }
 
 

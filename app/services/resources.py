@@ -104,6 +104,9 @@ class ResourceService:
                 user_id=resource_in.user_id,
                 name=resource_in.name,
                 role=resource_in.role,
+                department=resource_in.department,
+                hourly_rate=resource_in.hourly_rate,
+                non_project_hours=resource_in.non_project_hours,
                 weekly_capacity_hours=resource_in.weekly_capacity_hours,
                 created_by=current_user.id,
             )
@@ -194,6 +197,13 @@ class ResourceService:
         resource = self.get_resource_or_404(resource_id)
         self.require_account_member(account_id=resource.account_id, user_id=current_user.id)
         return self.resources.list_time_off_for_resource(resource_id)
+
+    def list_account_time_off(self, *, account_id: UUID, current_user: User) -> list[dict[str, object]]:
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        return [
+            {**time_off.__dict__, "resource_name": resource.name}
+            for time_off, resource in self.resources.list_time_off_for_account(account_id)
+        ]
 
     def create_time_off(
         self,

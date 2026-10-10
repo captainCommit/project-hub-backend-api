@@ -22,6 +22,15 @@ def list_sprints(
     return SprintService(db).list_sprints(project_id=project_id, current_user=current_user)
 
 
+@router.get("/accounts/{account_id}/sprints", response_model=list[SprintRead])
+def list_account_sprints(
+    account_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    return SprintService(db).list_account_sprints(account_id=account_id, current_user=current_user)
+
+
 @router.post("/projects/{project_id}/sprints", response_model=SprintRead, status_code=status.HTTP_201_CREATED)
 def create_sprint(
     project_id: UUID,

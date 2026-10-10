@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,10 +44,12 @@ class ProgramUpdate(WorkItemUpdate):
 class ProjectCreate(WorkItemBase):
     portfolio_id: UUID | None = None
     delivery_type: ProjectDeliveryType = ProjectDeliveryType.WATERFALL
+    budget: Decimal | None = Field(default=None, ge=0)
 
 
 class ProjectUpdate(WorkItemUpdate):
     delivery_type: ProjectDeliveryType | None = None
+    budget: Decimal | None = Field(default=None, ge=0)
 
 
 class StatusSummary(BaseModel):
@@ -103,6 +106,7 @@ class ProjectRead(BaseModel):
     color: str | None
     start_date: date | None
     target_end_date: date | None
+    budget: Decimal | None = None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
@@ -128,6 +132,12 @@ class ProgramsProjectsProject(BaseModel):
     delivery_type: ProjectDeliveryType
     start_date: date | None
     target_end_date: date | None
+    program_id: UUID | None = None
+    portfolio_id: UUID | None = None
+    description: str | None = None
+    color: str | None = None
+    budget: Decimal | None = None
+    created_at: datetime | None = None
 
 
 class ProgramsProjectsProgram(BaseModel):
@@ -136,6 +146,12 @@ class ProgramsProjectsProgram(BaseModel):
     status: StatusSummary | None
     project_count: int
     projects: list[ProgramsProjectsProject]
+    portfolio_id: UUID | None = None
+    description: str | None = None
+    color: str | None = None
+    start_date: date | None = None
+    target_end_date: date | None = None
+    created_at: datetime | None = None
 
 
 class ProgramsProjectsPortfolio(BaseModel):
@@ -143,6 +159,11 @@ class ProgramsProjectsPortfolio(BaseModel):
     name: str
     status: StatusSummary | None
     programs: list[ProgramsProjectsProgram]
+    description: str | None = None
+    color: str | None = None
+    start_date: date | None = None
+    target_end_date: date | None = None
+    created_at: datetime | None = None
 
 
 class ProgramsProjectsRead(BaseModel):

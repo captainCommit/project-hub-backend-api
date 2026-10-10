@@ -216,6 +216,7 @@ class HierarchyService:
             color=project_in.color,
             start_date=project_in.start_date,
             target_end_date=project_in.target_end_date,
+            budget=project_in.budget,
             created_by=current_user.id,
         )
         self.db.commit()
@@ -332,12 +333,23 @@ class HierarchyService:
                     "id": portfolio.id,
                     "name": portfolio.name,
                     "status": self.status_summary(portfolio.status_id, statuses),
+                    "description": portfolio.description,
+                    "color": portfolio.color,
+                    "start_date": portfolio.start_date,
+                    "target_end_date": portfolio.target_end_date,
+                    "created_at": portfolio.created_at,
                     "programs": [
                         {
                             "id": program.id,
                             "name": program.name,
                             "status": self.status_summary(program.status_id, statuses),
                             "project_count": len(projects_by_program.get(program.id, [])),
+                            "portfolio_id": program.portfolio_id,
+                            "description": program.description,
+                            "color": program.color,
+                            "start_date": program.start_date,
+                            "target_end_date": program.target_end_date,
+                            "created_at": program.created_at,
                             "projects": [
                                 {
                                     "id": project.id,
@@ -346,6 +358,12 @@ class HierarchyService:
                                     "delivery_type": project.delivery_type,
                                     "start_date": project.start_date,
                                     "target_end_date": project.target_end_date,
+                                    "program_id": project.program_id,
+                                    "portfolio_id": project.portfolio_id,
+                                    "description": project.description,
+                                    "color": project.color,
+                                    "budget": project.budget,
+                                    "created_at": project.created_at,
                                 }
                                 for project in projects_by_program.get(program.id, [])
                             ],

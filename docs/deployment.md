@@ -41,6 +41,9 @@ AUTH_MODE=cognito
 AWS_REGION=ca-central-1
 COGNITO_USER_POOL_ID=your-user-pool-id
 COGNITO_APP_CLIENT_ID=your-app-client-id
+COGNITO_ADDITIONAL_CLIENT_IDS=
+COGNITO_DOMAIN=https://your-domain.auth.ca-central-1.amazoncognito.com
+COGNITO_APP_CLIENT_SECRET=your-app-client-secret
 S3_BUCKET_NAME=your-attachments-bucket
 ```
 

@@ -11,6 +11,10 @@ from app.models.assumption import Assumption
 from app.models.comment import Comment
 from app.models.decision import Decision
 from app.models.decision_option import DecisionOption
+from app.models.change_request import ChangeRequest
+from app.models.dependency import Dependency
+from app.models.requirement import Requirement
+from app.models.test_case import TestCase
 from app.models.issue import Issue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
@@ -47,6 +51,10 @@ COMMENT_ENTITY_MODELS: dict[str, type[Any]] = {
     "ASSUMPTION": Assumption,
     "DECISION": Decision,
     "DECISION_OPTION": DecisionOption,
+    "DEPENDENCY": Dependency,
+    "CHANGE_REQUEST": ChangeRequest,
+    "REQUIREMENT": Requirement,
+    "TEST_CASE": TestCase,
 }
 
 
@@ -100,11 +108,19 @@ class CommentService:
             user_id=current_user.id,
             allowed_roles=COMMENT_WRITE_ROLES,
         )
+        if comment_in.parent_comment_id is not None:
+            parent = self.comments.get(comment_in.parent_comment_id)
+            if parent is None or parent.entity_type != target.entity_type or parent.entity_id != target.entity_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Parent comment must belong to the same entity.",
+                )
         comment = self.comments.create(
             account_id=target.account_id,
             entity_type=target.entity_type,
             entity_id=target.entity_id,
             body=comment_in.body,
+            parent_comment_id=comment_in.parent_comment_id,
             created_by=current_user.id,
         )
         ActivityLogService(self.db).record(

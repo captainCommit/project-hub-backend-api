@@ -20,23 +20,35 @@ class RaidProgramSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class RiskCreate(BaseModel):
+class StatusKeyInput(BaseModel):
+    """Lets clients pass an option value key (e.g. "open") instead of an option value id."""
+
+    status: str | None = Field(default=None, max_length=100)
+
+
+class OptionKeyInput(StatusKeyInput):
+    priority: str | None = Field(default=None, max_length=100)
+
+
+class RiskCreate(OptionKeyInput):
     title: str = Field(min_length=1)
     cause: str | None = None
     effect: str | None = None
     priority_id: UUID | None = None
     status_id: UUID | None = None
     assigned_to: UUID | None = None
+    assigned_to_name: str | None = Field(default=None, max_length=255)
     target_resolution_date: date | None = None
 
 
-class RiskUpdate(BaseModel):
+class RiskUpdate(OptionKeyInput):
     title: str | None = Field(default=None, min_length=1)
     cause: str | None = None
     effect: str | None = None
     priority_id: UUID | None = None
     status_id: UUID | None = None
     assigned_to: UUID | None = None
+    assigned_to_name: str | None = Field(default=None, max_length=255)
     target_resolution_date: date | None = None
 
 
@@ -52,10 +64,14 @@ class RiskRead(BaseModel):
     priority_id: UUID | None
     status_id: UUID | None
     assigned_to: UUID | None
+    assigned_to_name: str | None = Field(default=None, max_length=255)
     target_resolution_date: date | None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+    created_by_name: str | None = None
+    comment_count: int = 0
+    portfolio_id: UUID | None = None
     priority: StatusSummary | None = None
     status: StatusSummary | None = None
 
@@ -67,21 +83,23 @@ class AccountRiskRead(RiskRead):
     program: RaidProgramSummary | None = None
 
 
-class IssueCreate(BaseModel):
+class IssueCreate(OptionKeyInput):
     title: str = Field(min_length=1)
     description: str | None = None
     priority_id: UUID | None = None
     status_id: UUID | None = None
     assigned_to: UUID | None = None
+    assigned_to_name: str | None = Field(default=None, max_length=255)
     target_resolution_date: date | None = None
 
 
-class IssueUpdate(BaseModel):
+class IssueUpdate(OptionKeyInput):
     title: str | None = Field(default=None, min_length=1)
     description: str | None = None
     priority_id: UUID | None = None
     status_id: UUID | None = None
     assigned_to: UUID | None = None
+    assigned_to_name: str | None = Field(default=None, max_length=255)
     target_resolution_date: date | None = None
 
 
@@ -96,10 +114,14 @@ class IssueRead(BaseModel):
     priority_id: UUID | None
     status_id: UUID | None
     assigned_to: UUID | None
+    assigned_to_name: str | None = Field(default=None, max_length=255)
     target_resolution_date: date | None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+    created_by_name: str | None = None
+    comment_count: int = 0
+    portfolio_id: UUID | None = None
     priority: StatusSummary | None = None
     status: StatusSummary | None = None
 
@@ -111,17 +133,19 @@ class AccountIssueRead(IssueRead):
     program: RaidProgramSummary | None = None
 
 
-class AssumptionCreate(BaseModel):
+class AssumptionCreate(StatusKeyInput):
     description: str = Field(min_length=1)
     status_id: UUID | None = None
     entered_by: UUID | None = None
+    entered_by_name: str | None = Field(default=None, max_length=255)
     date_entered: date | None = None
 
 
-class AssumptionUpdate(BaseModel):
+class AssumptionUpdate(StatusKeyInput):
     description: str | None = Field(default=None, min_length=1)
     status_id: UUID | None = None
     entered_by: UUID | None = None
+    entered_by_name: str | None = Field(default=None, max_length=255)
     date_entered: date | None = None
 
 
@@ -134,9 +158,13 @@ class AssumptionRead(BaseModel):
     description: str
     status_id: UUID | None
     entered_by: UUID | None
+    entered_by_name: str | None = None
     date_entered: date | None
     created_at: datetime
     updated_at: datetime
+    created_by_name: str | None = None
+    comment_count: int = 0
+    portfolio_id: UUID | None = None
     status: StatusSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -147,22 +175,28 @@ class AccountAssumptionRead(AssumptionRead):
     program: RaidProgramSummary | None = None
 
 
-class DecisionCreate(BaseModel):
+class DecisionCreate(OptionKeyInput):
     title: str = Field(min_length=1)
     description: str | None = None
     impact: str | None = None
+    priority_id: UUID | None = None
     status_id: UUID | None = None
     proposed_date: date | None = None
+    proposed_by_name: str | None = Field(default=None, max_length=255)
+    related_record: str | None = Field(default=None, max_length=255)
     approved_date: date | None = None
     approved_by: UUID | None = None
 
 
-class DecisionUpdate(BaseModel):
+class DecisionUpdate(OptionKeyInput):
     title: str | None = Field(default=None, min_length=1)
     description: str | None = None
     impact: str | None = None
+    priority_id: UUID | None = None
     status_id: UUID | None = None
     proposed_date: date | None = None
+    proposed_by_name: str | None = Field(default=None, max_length=255)
+    related_record: str | None = Field(default=None, max_length=255)
     approved_date: date | None = None
     approved_by: UUID | None = None
 
@@ -176,13 +210,20 @@ class DecisionRead(BaseModel):
     title: str
     description: str | None
     impact: str | None
+    priority_id: UUID | None = None
     status_id: UUID | None
     proposed_date: date | None
+    proposed_by_name: str | None = None
+    related_record: str | None = None
     approved_date: date | None
     approved_by: UUID | None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+    created_by_name: str | None = None
+    comment_count: int = 0
+    portfolio_id: UUID | None = None
+    priority: StatusSummary | None = None
     status: StatusSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)

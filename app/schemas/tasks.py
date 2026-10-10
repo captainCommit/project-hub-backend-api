@@ -123,6 +123,7 @@ class TaskBoardPositionUpdate(BaseModel):
 class TaskAssignmentCreate(BaseModel):
     user_id: UUID | None = None
     resource_name: str | None = Field(default=None, max_length=255)
+    hours: Decimal | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_assignee(self) -> "TaskAssignmentCreate":
@@ -137,9 +138,24 @@ class TaskAssignmentRead(BaseModel):
     task_id: UUID
     user_id: UUID | None
     resource_name: str | None
+    hours: Decimal | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TaskAssignmentUpdate(BaseModel):
+    resource_name: str | None = Field(default=None, min_length=1, max_length=255)
+    hours: Decimal | None = Field(default=None, ge=0)
+
+
+class TaskAllocationSummary(BaseModel):
+    id: UUID
+    resource_id: UUID
+    resource_name: str
+    allocated_hours: Decimal | None
+    start_date: date | None
+    end_date: date | None
 
 
 class TaskPredecessorCreate(BaseModel):
@@ -185,6 +201,7 @@ class TaskRead(BaseModel):
     priority: StatusSummary | None = None
     sprint: SprintSummary | None = None
     assignments: list[TaskAssignmentRead] = []
+    allocations: list[TaskAllocationSummary] = []
     predecessors: list[TaskPredecessorRead] = []
 
     model_config = ConfigDict(from_attributes=True)

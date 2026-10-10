@@ -1,9 +1,10 @@
 from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from enum import Enum
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Numeric, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -56,6 +57,7 @@ class Project(Base):
     color: Mapped[str | None] = mapped_column(String(50), nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     target_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    budget: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     created_by: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

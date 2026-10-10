@@ -2,15 +2,18 @@ from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
+from app.models.comment import Comment
 from app.models.decision_option import DecisionOption
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
 from app.models.program import Program
 from app.models.project import Project
+from app.models.test_case import TestCase
+from app.models.user import User
 
 
 class RaidRepository:
@@ -190,6 +193,71 @@ class RaidRepository:
         if sort_descending(sort_value):
             sort_column = sort_column.desc()
         return statement.order_by(sort_column, getattr(model_cls, number_field), model_cls.id)
+
+    def delete_item(self, item: Any) -> None:
+        self.db.delete(item)
+        self.db.flush()
+
+    def get_option_by_value(
+        self,
+        *,
+        account_id: UUID,
+        entity_type: str,
+        option_name: str,
+        value: str,
+    ) -> OptionValue | None:
+        statement = (
+            select(OptionValue)
+            .join(OptionSet, OptionSet.id == OptionValue.option_set_id)
+            .where(
+                OptionSet.account_id == account_id,
+                OptionSet.entity_type == entity_type,
+                OptionSet.name == option_name,
+                OptionValue.value == value,
+                OptionValue.is_active.is_(True),
+            )
+            .limit(1)
+        )
+        return self.db.scalar(statement)
+
+    def count_comments(self, *, entity_type: str, entity_ids: Iterable[UUID]) -> dict[UUID, int]:
+        entity_ids = list(entity_ids)
+        if not entity_ids:
+            return {}
+        statement = (
+            select(Comment.entity_id, func.count(Comment.id))
+            .where(Comment.entity_type == entity_type, Comment.entity_id.in_(entity_ids))
+            .group_by(Comment.entity_id)
+        )
+        return {entity_id: count for entity_id, count in self.db.execute(statement).all()}
+
+    def get_users_by_ids(self, user_ids: Iterable[UUID]) -> dict[UUID, User]:
+        user_ids = list(user_ids)
+        if not user_ids:
+            return {}
+        statement = select(User).where(User.id.in_(user_ids))
+        return {user.id: user for user in self.db.scalars(statement).all()}
+
+    def get_test_cases_by_requirement(self, requirement_ids: Iterable[UUID]) -> dict[UUID, list[tuple[UUID, str]]]:
+        requirement_ids = list(requirement_ids)
+        if not requirement_ids:
+            return {}
+        statement = (
+            select(TestCase.requirement_id, TestCase.id, TestCase.test_case_number)
+            .where(TestCase.requirement_id.in_(requirement_ids))
+            .order_by(TestCase.test_case_number)
+        )
+        result: dict[UUID, list[tuple[UUID, str]]] = {}
+        for requirement_id, test_case_id, test_case_number in self.db.execute(statement).all():
+            result.setdefault(requirement_id, []).append((test_case_id, test_case_number))
+        return result
+
+    def get_labels_by_ids(self, model_cls: type[Any], label_field: str, ids: Iterable[UUID]) -> dict[UUID, str]:
+        ids = list(ids)
+        if not ids:
+            return {}
+        statement = select(model_cls.id, getattr(model_cls, label_field)).where(model_cls.id.in_(ids))
+        return {item_id: label for item_id, label in self.db.execute(statement).all()}
 
     def update_item(self, item: Any, changes: dict[str, object]) -> Any:
         for field, value in changes.items():

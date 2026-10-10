@@ -48,6 +48,7 @@ class Risk(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    assigned_to_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     target_resolution_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),

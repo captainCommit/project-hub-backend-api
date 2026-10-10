@@ -143,7 +143,12 @@ AUTH_MODE=cognito
 AWS_REGION=ca-central-1
 COGNITO_USER_POOL_ID=your-user-pool-id
 COGNITO_APP_CLIENT_ID=your-app-client-id
+COGNITO_ADDITIONAL_CLIENT_IDS=
+COGNITO_DOMAIN=https://your-domain.auth.ca-central-1.amazoncognito.com
+COGNITO_APP_CLIENT_SECRET=your-app-client-secret
 ```
+
+`COGNITO_APP_CLIENT_ID` is the primary app client. Set `COGNITO_ADDITIONAL_CLIENT_IDS` (comma-separated) to also accept tokens from other app clients, such as the browser UI's public client (no secret, hosted login with Authorization Code + PKCE). The UI sends the ID token, which carries the `email` and `name` claims used to sync the local user.
 
 When `AUTH_MODE=cognito`, protected endpoints require a bearer token:
 
@@ -167,6 +172,23 @@ On the first valid Cognito request, the API syncs a local `users` row from token
 - `name` -> `full_name`, when available
 
 If the Cognito user's email or name changes later, the local user record is updated on the next authenticated request.
+
+### Browser sessions (cookies)
+
+The web UI never handles tokens. Sign-in uses the Cognito hosted login (Authorization Code + PKCE):
+
+1. The UI redirects to `COGNITO_DOMAIN/oauth2/authorize` with a PKCE challenge.
+2. Cognito redirects back to the UI's `/auth/callback`, which posts the code and PKCE verifier to `POST /api/v1/auth/session`.
+3. The API exchanges the code using `COGNITO_APP_CLIENT_SECRET`, validates the ID token, and sets two cookies:
+   - `ph_session` — the ID token, `HttpOnly; Secure; SameSite=Strict; Path=/api`, expires with the token (60 min).
+   - `ph_refresh` — the refresh token, `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` (5 days).
+4. `POST /api/v1/auth/refresh` renews `ph_session`; `POST /api/v1/auth/logout` revokes the refresh token and clears both cookies.
+
+Requests authenticated by cookie must send `X-Requested-With` on writes (CSRF defence in addition to SameSite). Bearer-token clients are unaffected.
+
+**Same-site requirement:** `SameSite=Strict` cookies are only sent when the UI and API are on the same site. In development the UI's Vite server proxies `/api` to the API. In production serve both from one domain, e.g. a CloudFront distribution with the UI as the default origin and `/api/*` routed to API Gateway. Add that domain's `/auth/callback` and `/` to the app client's callback and sign-out URLs.
+
+Auth failures return specific `error_code`s the UI acts on: `AUTH_REQUIRED`, `TOKEN_EXPIRED`, `TOKEN_INVALID`, `SESSION_EXPIRED`, `LOGIN_FAILED`, `USER_DISABLED`, `ACCOUNT_CONFLICT`, `CSRF_CHECK_FAILED`, `AUTH_UNAVAILABLE` (503), `AUTH_NOT_CONFIGURED` (503).
 
 ## Run tests
 
@@ -325,6 +347,9 @@ AUTH_MODE=cognito
 AWS_REGION=ca-central-1
 COGNITO_USER_POOL_ID=your-user-pool-id
 COGNITO_APP_CLIENT_ID=your-app-client-id
+COGNITO_ADDITIONAL_CLIENT_IDS=
+COGNITO_DOMAIN=https://your-domain.auth.ca-central-1.amazoncognito.com
+COGNITO_APP_CLIENT_SECRET=your-app-client-secret
 S3_BUCKET_NAME=your-attachments-bucket
 ```
 

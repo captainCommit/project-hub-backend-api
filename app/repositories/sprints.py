@@ -28,6 +28,14 @@ class SprintRepository:
         statement = select(Sprint).where(Sprint.project_id == project_id).order_by(Sprint.start_date, Sprint.name)
         return list(self.db.scalars(statement).all())
 
+    def list_for_account(self, account_id: UUID) -> list[Sprint]:
+        statement = (
+            select(Sprint)
+            .where(Sprint.account_id == account_id)
+            .order_by(Sprint.project_id, Sprint.start_date, Sprint.name)
+        )
+        return list(self.db.scalars(statement).all())
+
     def update(self, sprint: Sprint, changes: dict[str, object]) -> Sprint:
         for field, value in changes.items():
             setattr(sprint, field, value)

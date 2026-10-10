@@ -119,6 +119,15 @@ class ResourceRepository:
         )
         return list(self.db.scalars(statement).all())
 
+    def list_time_off_for_account(self, account_id: UUID) -> list[tuple[ResourceTimeOff, Resource]]:
+        statement = (
+            select(ResourceTimeOff, Resource)
+            .join(Resource, Resource.id == ResourceTimeOff.resource_id)
+            .where(ResourceTimeOff.account_id == account_id)
+            .order_by(ResourceTimeOff.start_date, Resource.name, ResourceTimeOff.id)
+        )
+        return [(time_off, resource) for time_off, resource in self.db.execute(statement).all()]
+
     def list_calendar_allocations(
         self,
         *,

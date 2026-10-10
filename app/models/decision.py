@@ -34,12 +34,19 @@ class Decision(Base):
     decision_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     impact: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("option_values.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     status_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("option_values.id", ondelete="SET NULL"),
         nullable=True,
     )
     proposed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    proposed_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    related_record: Mapped[str | None] = mapped_column(String(255), nullable=True)
     approved_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     approved_by: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),

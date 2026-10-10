@@ -22,6 +22,7 @@ from app.repositories.hierarchy import HierarchyRepository
 from app.repositories.tasks import TaskRepository
 from app.schemas.tasks import (
     TaskAssignmentCreate,
+    TaskAssignmentUpdate,
     TaskBulkDeleteRequest,
     TaskBulkUpdateRequest,
     TaskBoardPositionUpdate,
@@ -671,6 +672,7 @@ class TaskService:
             task_id=task.id,
             user_id=assignment_in.user_id,
             resource_name=assignment_in.resource_name,
+            hours=assignment_in.hours,
         )
         if assignment.user_id is not None:
             NotificationService(self.db).create_notification(
@@ -686,6 +688,47 @@ class TaskService:
         self.db.commit()
         self.db.refresh(assignment)
         return assignment
+
+    def list_assignments(self, *, task_id: UUID, current_user: User) -> list[TaskAssignment]:
+        task = self.get_task_or_404(task_id)
+        self.require_account_member(account_id=task.account_id, user_id=current_user.id)
+        return self.tasks.list_assignments_for_tasks([task.id]).get(task.id, [])
+
+    def update_assignment(
+        self,
+        *,
+        assignment_id: UUID,
+        assignment_in: TaskAssignmentUpdate,
+        current_user: User,
+    ) -> TaskAssignment:
+        assignment = self.tasks.get_assignment(assignment_id)
+        if assignment is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task assignment not found.")
+        self.require_account_role(
+            account_id=assignment.account_id,
+            user_id=current_user.id,
+            allowed_roles=TASK_WRITE_ROLES,
+        )
+        changes = assignment_in.model_dump(exclude_unset=True)
+        if "resource_name" in changes and changes["resource_name"] is None:
+            changes.pop("resource_name")
+        for field, value in changes.items():
+            setattr(assignment, field, value)
+        self.db.commit()
+        self.db.refresh(assignment)
+        return assignment
+
+    def list_account_tasks(
+        self,
+        *,
+        account_id: UUID,
+        current_user: User,
+        project_id: UUID | None = None,
+        sprint_id: UUID | None = None,
+    ) -> list[dict[str, object]]:
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        tasks = self.tasks.list_tasks_for_account(account_id, project_id=project_id, sprint_id=sprint_id)
+        return self.enrich_tasks(tasks)
 
     def delete_assignment(self, *, task_id: UUID, assignment_id: UUID, current_user: User) -> None:
         task = self.get_task_or_404(task_id)
@@ -1015,6 +1058,7 @@ class TaskService:
         options = self.tasks.get_option_values_by_ids(option_ids)
         sprints = self.tasks.get_sprints_by_ids({task.sprint_id for task in tasks if task.sprint_id is not None})
         assignments = self.tasks.list_assignments_for_tasks(task_ids)
+        allocations = self.tasks.list_resource_allocations_for_tasks(task_ids)
         predecessors = self.tasks.list_predecessors_for_tasks(task_ids)
         return [
             {
@@ -1024,6 +1068,17 @@ class TaskService:
                 "priority": self.option_summary(task.priority_id, options),
                 "sprint": self.sprint_summary(task.sprint_id, sprints),
                 "assignments": assignments.get(task.id, []),
+                "allocations": [
+                    {
+                        "id": allocation.id,
+                        "resource_id": resource.id,
+                        "resource_name": resource.name,
+                        "allocated_hours": allocation.allocated_hours,
+                        "start_date": allocation.start_date,
+                        "end_date": allocation.end_date,
+                    }
+                    for allocation, resource in allocations.get(task.id, [])
+                ],
                 "predecessors": predecessors.get(task.id, []),
             }
             for task in tasks

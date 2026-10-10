@@ -657,14 +657,25 @@ def test_raid_patch_works_for_allowed_role(
 
 
 @pytest.mark.parametrize("case", RAID_CASES, ids=[str(case["entity"]) for case in RAID_CASES])
-def test_raid_delete_returns_501(client: TestClient, case: dict[str, object]) -> None:
+def test_raid_delete_removes_item(client: TestClient, case: dict[str, object]) -> None:
     hierarchy = create_work_hierarchy(client)
     item = create_raid_item(client, hierarchy["project"]["id"], case)
 
     response = client.delete(f"/api/v1/{case['collection']}/{item['id']}")
 
-    assert response.status_code == 501
-    assert response.json()["detail"] == f"{str(case['entity']).capitalize()} deletion is not implemented in Phase 4A."
+    assert response.status_code == 204
+    assert client.get(f"/api/v1/{case['collection']}/{item['id']}").status_code == 404
+
+
+@pytest.mark.parametrize("case", RAID_CASES, ids=[str(case["entity"]) for case in RAID_CASES])
+def test_viewer_cannot_delete_raid_item(client: TestClient, db_session: Session, case: dict[str, object]) -> None:
+    hierarchy = create_work_hierarchy(client)
+    item = create_raid_item(client, hierarchy["project"]["id"], case)
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.VIEWER)
+
+    response = client.delete(f"/api/v1/{case['collection']}/{item['id']}")
+
+    assert response.status_code == 403
 
 
 def test_member_can_create_decision_option(client: TestClient, db_session: Session) -> None:

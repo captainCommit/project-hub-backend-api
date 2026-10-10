@@ -89,6 +89,21 @@ class TaskRepository:
         )
         return list(self.db.scalars(statement).all())
 
+    def list_tasks_for_account(
+        self,
+        account_id: UUID,
+        *,
+        project_id: UUID | None = None,
+        sprint_id: UUID | None = None,
+    ) -> list[Task]:
+        statement = select(Task).where(Task.account_id == account_id, Task.is_deleted.is_(False))
+        if project_id is not None:
+            statement = statement.where(Task.project_id == project_id)
+        if sprint_id is not None:
+            statement = statement.where(Task.sprint_id == sprint_id)
+        statement = statement.order_by(Task.project_id, Task.sort_order, Task.created_at, Task.id)
+        return list(self.db.scalars(statement).all())
+
     def list_tasks_for_board(self, *, project_id: UUID, sprint_id: UUID | None = None) -> list[Task]:
         statement = select(Task).where(Task.project_id == project_id, Task.is_deleted.is_(False))
         if sprint_id is not None:

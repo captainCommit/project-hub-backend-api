@@ -29,7 +29,14 @@ class Settings(BaseSettings):
     )
     cognito_user_pool_id: str = Field(default="", validation_alias="COGNITO_USER_POOL_ID")
     cognito_app_client_id: str = Field(default="", validation_alias="COGNITO_APP_CLIENT_ID")
+    # Extra app clients whose tokens are accepted, e.g. the browser UI's public client.
+    cognito_additional_client_ids: str = Field(default="", validation_alias="COGNITO_ADDITIONAL_CLIENT_IDS")
     cognito_invite_enabled: bool = Field(default=False, validation_alias="COGNITO_INVITE_ENABLED")
+    # Hosted login domain and client secret: the API exchanges sign-in codes and refresh tokens.
+    cognito_domain: str = Field(default="", validation_alias="COGNITO_DOMAIN")
+    cognito_app_client_secret: str = Field(default="", validation_alias="COGNITO_APP_CLIENT_SECRET")
+    # Session cookies are HttpOnly + SameSite=Strict; Secure can only be relaxed for plain-http dev hosts.
+    session_cookie_secure: bool = Field(default=True, validation_alias="SESSION_COOKIE_SECURE")
     auth_mode: Literal["local", "cognito"] = Field(default="local", validation_alias="AUTH_MODE")
 
     model_config = SettingsConfigDict(
@@ -47,6 +54,11 @@ class Settings(BaseSettings):
     @property
     def cognito_issuer(self) -> str:
         return f"https://cognito-idp.{self.aws_region}.amazonaws.com/{self.cognito_user_pool_id}"
+
+    @property
+    def cognito_allowed_client_ids(self) -> set[str]:
+        extra = [client_id.strip() for client_id in self.cognito_additional_client_ids.split(",") if client_id.strip()]
+        return {client_id for client_id in [self.cognito_app_client_id, *extra] if client_id}
 
     @property
     def cognito_jwks_url(self) -> str:

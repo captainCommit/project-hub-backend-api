@@ -12,6 +12,9 @@ class ResourceCreate(BaseModel):
     user_id: UUID | None = None
     name: str = Field(min_length=1, max_length=255)
     role: str | None = Field(default=None, max_length=255)
+    department: str | None = Field(default=None, max_length=255)
+    hourly_rate: Decimal | None = Field(default=None, ge=0)
+    non_project_hours: Decimal = Field(default=Decimal("0"), ge=0)
     weekly_capacity_hours: Decimal = Field(default=Decimal("40"), gt=0)
 
 
@@ -19,6 +22,9 @@ class ResourceUpdate(BaseModel):
     user_id: UUID | None = None
     name: str | None = Field(default=None, min_length=1, max_length=255)
     role: str | None = Field(default=None, max_length=255)
+    department: str | None = Field(default=None, max_length=255)
+    hourly_rate: Decimal | None = Field(default=None, ge=0)
+    non_project_hours: Decimal | None = Field(default=None, ge=0)
     weekly_capacity_hours: Decimal | None = Field(default=None, gt=0)
     is_active: bool | None = None
 
@@ -29,6 +35,9 @@ class ResourceRead(BaseModel):
     user_id: UUID | None
     name: str
     role: str | None
+    department: str | None = None
+    hourly_rate: Decimal | None = None
+    non_project_hours: Decimal = Decimal("0")
     weekly_capacity_hours: Decimal
     is_active: bool
     created_by: UUID | None
@@ -112,6 +121,7 @@ class ResourceTimeOffRead(BaseModel):
     end_date: date
     reason: str | None
     hours_per_day: Decimal | None
+    resource_name: str | None = None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime

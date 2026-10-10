@@ -119,9 +119,14 @@ def update_risk(
     return RaidService(db).update_risk(risk_id=risk_id, risk_in=risk_in, current_user=current_user)
 
 
-@router.delete("/risks/{risk_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def delete_risk(risk_id: UUID) -> dict[str, str]:
-    return {"detail": "Risk deletion is not implemented in Phase 4A."}
+@router.delete("/risks/{risk_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_risk(
+    risk_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    RaidService(db).delete_item(kind="risk", item_id=risk_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/projects/{project_id}/issues", response_model=list[IssueRead] | PaginatedResponse[IssueRead])
@@ -209,9 +214,14 @@ def update_issue(
     return RaidService(db).update_issue(issue_id=issue_id, issue_in=issue_in, current_user=current_user)
 
 
-@router.delete("/issues/{issue_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def delete_issue(issue_id: UUID) -> dict[str, str]:
-    return {"detail": "Issue deletion is not implemented in Phase 4A."}
+@router.delete("/issues/{issue_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_issue(
+    issue_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    RaidService(db).delete_item(kind="issue", item_id=issue_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/projects/{project_id}/assumptions", response_model=list[AssumptionRead] | PaginatedResponse[AssumptionRead])
@@ -305,9 +315,14 @@ def update_assumption(
     )
 
 
-@router.delete("/assumptions/{assumption_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def delete_assumption(assumption_id: UUID) -> dict[str, str]:
-    return {"detail": "Assumption deletion is not implemented in Phase 4A."}
+@router.delete("/assumptions/{assumption_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_assumption(
+    assumption_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    RaidService(db).delete_item(kind="assumption", item_id=assumption_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/projects/{project_id}/decisions", response_model=list[DecisionRead] | PaginatedResponse[DecisionRead])
@@ -397,9 +412,14 @@ def update_decision(
     )
 
 
-@router.delete("/decisions/{decision_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def delete_decision(decision_id: UUID) -> dict[str, str]:
-    return {"detail": "Decision deletion is not implemented in Phase 4A."}
+@router.delete("/decisions/{decision_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_decision(
+    decision_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    RaidService(db).delete_item(kind="decision", item_id=decision_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/decisions/{decision_id}/options", response_model=list[DecisionOptionRead])

@@ -15,6 +15,10 @@ from app.models.assumption import Assumption
 from app.models.comment import Comment
 from app.models.decision import Decision
 from app.models.decision_option import DecisionOption
+from app.models.change_request import ChangeRequest
+from app.models.dependency import Dependency
+from app.models.requirement import Requirement
+from app.models.test_case import TestCase
 from app.models.issue import Issue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
@@ -47,6 +51,10 @@ ACTIVITY_ENTITY_MODELS: dict[str, type[Any]] = {
     "RESOURCE": Resource,
     "RESOURCE_ALLOCATION": ResourceAllocation,
     "RESOURCE_TIME_OFF": ResourceTimeOff,
+    "DEPENDENCY": Dependency,
+    "CHANGE_REQUEST": ChangeRequest,
+    "REQUIREMENT": Requirement,
+    "TEST_CASE": TestCase,
 }
 
 ACTIVITY_ACTIONS = {

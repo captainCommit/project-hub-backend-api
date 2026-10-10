@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from uuid import UUID
 
@@ -9,12 +10,17 @@ from sqlalchemy.orm import Session
 from app.core.pagination import PaginationParams, paginated_response, validate_sort
 from app.models.account_member import AccountMemberRole
 from app.models.assumption import Assumption
+from app.models.change_request import ChangeRequest
 from app.models.decision import Decision
 from app.models.decision_option import DecisionOption
+from app.models.dependency import Dependency
 from app.models.issue import Issue
 from app.models.option_value import OptionValue
 from app.models.project import Project
+from app.models.requirement import Requirement
 from app.models.risk import Risk
+from app.models.sprint import Sprint
+from app.models.test_case import TestCase
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
@@ -35,6 +41,10 @@ from app.schemas.raid import (
 from app.services.activity import ActivityLogService
 from app.services.notifications import NotificationService
 from app.models.notification import NotificationType
+
+
+def normalize_option_key(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", value.strip()).strip("_").upper()
 
 
 RAID_WRITE_ROLES = {
@@ -93,11 +103,68 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "prefix": "DEC",
         "entity_type": "DECISION",
         "options": {
+            "priority_id": ("PRIORITY", "Invalid decision priority."),
             "status_id": ("STATUS", "Invalid decision status."),
         },
         "account_sort_fields": {"created_at", "updated_at", "proposed_date", "approved_date", "title"},
         "search_fields": ("title", "description", "impact"),
         "created_by_field": "created_by",
+    },
+    "dependency": {
+        "model": Dependency,
+        "label": "Dependency",
+        "number_field": "dependency_number",
+        "prefix": "DEP",
+        "entity_type": "DEPENDENCY",
+        "options": {
+            "priority_id": ("PRIORITY", "Invalid dependency priority."),
+            "status_id": ("STATUS", "Invalid dependency status."),
+        },
+        "account_sort_fields": {"created_at", "updated_at", "date_entered", "title"},
+        "search_fields": ("title", "description", "impact_of_delay", "fallback_plan"),
+        "created_by_field": "created_by",
+    },
+    "change_request": {
+        "model": ChangeRequest,
+        "label": "Change request",
+        "number_field": "change_request_number",
+        "prefix": "CR",
+        "entity_type": "CHANGE_REQUEST",
+        "options": {
+            "priority_id": ("PRIORITY", "Invalid change request priority."),
+            "status_id": ("STATUS", "Invalid change request status."),
+        },
+        "account_sort_fields": {"created_at", "updated_at", "proposed_date", "title"},
+        "search_fields": ("title", "description", "related_record"),
+        "created_by_field": "created_by",
+    },
+    "requirement": {
+        "model": Requirement,
+        "label": "Requirement",
+        "number_field": "requirement_number",
+        "prefix": "REQ",
+        "entity_type": "REQUIREMENT",
+        "options": {
+            "priority_id": ("PRIORITY", "Invalid requirement priority."),
+            "status_id": ("STATUS", "Invalid requirement status."),
+        },
+        "account_sort_fields": {"created_at", "updated_at", "entered_date", "title"},
+        "search_fields": ("title", "description"),
+        "created_by_field": "created_by",
+    },
+    "test_case": {
+        "model": TestCase,
+        "label": "Test case",
+        "number_field": "test_case_number",
+        "prefix": "TC",
+        "entity_type": "TEST_CASE",
+        "options": {
+            "priority_id": ("PRIORITY", "Invalid test case priority."),
+        },
+        "account_sort_fields": {"created_at", "updated_at", "execution_date", "title"},
+        "search_fields": ("title", "description", "test_steps", "expected_results"),
+        "created_by_field": "created_by",
+        "related_fields": {"sprint_id": (Sprint, "Sprint"), "requirement_id": (Requirement, "Requirement")},
     },
 }
 
@@ -561,7 +628,9 @@ class RaidService:
         )
 
         values = item_in.model_dump()
+        self.resolve_option_keys(config=config, account_id=project.account_id, values=values)
         self.resolve_create_options(config=config, account_id=project.account_id, values=values)
+        self.validate_references(config=config, project_id=project.id, values=values)
         if kind == "decision" and "title" in values:
             values["decision_text"] = values["title"]
         if config.get("created_by_field"):
@@ -626,7 +695,9 @@ class RaidService:
             allowed_roles=RAID_WRITE_ROLES,
         )
         changes = item_in.model_dump(exclude_unset=True)
+        self.resolve_option_keys(config=config, account_id=item.account_id, values=changes)
         self.validate_update_options(config=config, account_id=item.account_id, changes=changes)
+        self.validate_references(config=config, project_id=item.project_id, values=changes)
         if kind == "decision" and "title" in changes:
             changes["decision_text"] = changes["title"]
         old_values = {field: getattr(item, field) for field in changes}
@@ -653,6 +724,56 @@ class RaidService:
         self.db.commit()
         self.db.refresh(item)
         return self.enrich_item(item, config)
+
+    def delete_item(self, *, kind: str, item_id: UUID, current_user: User) -> None:
+        config = RAID_CONFIGS[kind]
+        item = self.get_item_or_404(kind=kind, item_id=item_id)
+        self.require_account_role(
+            account_id=item.account_id,
+            user_id=current_user.id,
+            allowed_roles=RAID_WRITE_ROLES,
+        )
+        ActivityLogService(self.db).record(
+            account_id=item.account_id,
+            entity_type=config["entity_type"],
+            entity_id=item.id,
+            action="DELETED",
+            old_values=self.activity_values(item, config),
+            created_by=current_user.id,
+        )
+        self.raid.delete_item(item)
+        self.db.commit()
+
+    def resolve_option_keys(self, *, config: dict[str, Any], account_id: UUID, values: dict[str, object]) -> None:
+        """Translate status/priority value keys (e.g. "in_progress") into option value ids."""
+        for key, field in (("status", "status_id"), ("priority", "priority_id")):
+            if key not in values:
+                continue
+            option_key = values.pop(key)
+            if field not in config["options"] or option_key is None or values.get(field) is not None:
+                continue
+            option_name, detail = config["options"][field]
+            option_value = self.raid.get_option_by_value(
+                account_id=account_id,
+                entity_type=config["entity_type"],
+                option_name=option_name,
+                value=normalize_option_key(str(option_key)),
+            )
+            if option_value is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+            values[field] = option_value.id
+
+    def validate_references(self, *, config: dict[str, Any], project_id: UUID, values: dict[str, object]) -> None:
+        for field, (model_cls, label) in config.get("related_fields", {}).items():
+            related_id = values.get(field)
+            if related_id is None:
+                continue
+            related = self.raid.get_item(model_cls, related_id)  # type: ignore[arg-type]
+            if related is None or related.project_id != project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{label} must belong to the same project.",
+                )
 
     def activity_values(self, item: Any, config: dict[str, Any]) -> dict[str, object]:
         values: dict[str, object] = {
@@ -745,6 +866,28 @@ class RaidService:
         programs = self.raid.get_programs_by_ids(
             {item.program_id for item in items if getattr(item, "program_id", None) is not None}
         )
+        author_field = config.get("created_by_field") or config.get("entered_by_field")
+        authors = self.raid.get_users_by_ids(
+            {getattr(item, author_field) for item in items if getattr(item, author_field, None) is not None}
+        )
+        comment_counts = self.raid.count_comments(
+            entity_type=config["entity_type"],
+            entity_ids={item.id for item in items},
+        )
+        linked_test_cases = (
+            self.raid.get_test_cases_by_requirement({item.id for item in items})
+            if config["model"] is Requirement
+            else {}
+        )
+        requirement_numbers: dict[UUID, str] = {}
+        sprint_names: dict[UUID, str] = {}
+        if config["model"] is TestCase:
+            requirement_numbers = self.raid.get_labels_by_ids(
+                Requirement, "requirement_number", {item.requirement_id for item in items if item.requirement_id}
+            )
+            sprint_names = self.raid.get_labels_by_ids(
+                Sprint, "name", {item.sprint_id for item in items if item.sprint_id}
+            )
         enriched_items: list[dict[str, object]] = []
         for item in items:
             item_data = {**item.__dict__}
@@ -754,7 +897,18 @@ class RaidService:
             project = projects.get(item.project_id)
             program = programs.get(item.program_id)
             item_data["project"] = {"id": project.id, "name": project.name} if project is not None else None
+            item_data["portfolio_id"] = project.portfolio_id if project is not None else None
             item_data["program"] = {"id": program.id, "name": program.name} if program is not None else None
+            author = authors.get(getattr(item, author_field, None))
+            item_data["created_by_name"] = (author.full_name or author.email) if author is not None else None
+            item_data["comment_count"] = comment_counts.get(item.id, 0)
+            if config["model"] is Requirement:
+                test_cases = linked_test_cases.get(item.id, [])
+                item_data["test_case_ids"] = [test_case_id for test_case_id, _ in test_cases]
+                item_data["test_case_numbers"] = [number for _, number in test_cases]
+            if config["model"] is TestCase:
+                item_data["requirement_number"] = requirement_numbers.get(item.requirement_id)
+                item_data["sprint_name"] = sprint_names.get(item.sprint_id)
             enriched_items.append(item_data)
         return enriched_items
 

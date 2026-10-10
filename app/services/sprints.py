@@ -49,6 +49,10 @@ class SprintService:
         self.require_account_member(account_id=project.account_id, user_id=current_user.id)
         return self.enrich_sprints(self.sprints.list_for_project(project.id))
 
+    def list_account_sprints(self, *, account_id: UUID, current_user: User) -> list[dict[str, object]]:
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        return self.enrich_sprints(self.sprints.list_for_account(account_id))
+
     def create_sprint(self, *, project_id: UUID, sprint_in: SprintCreate, current_user: User) -> dict[str, object]:
         project = self.get_project_or_404(project_id)
         self.require_account_role(

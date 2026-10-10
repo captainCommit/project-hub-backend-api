@@ -17,6 +17,8 @@ from app.routers.account_settings import router as account_settings_router
 from app.routers.account_users import router as account_users_router
 from app.routers.activity import router as activity_router
 from app.routers.attachments import router as attachments_router
+from app.routers.auth import router as auth_router
+from app.routers.collaboration import router as collaboration_router
 from app.routers.comments import router as comments_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.delivery import router as delivery_router
@@ -25,6 +27,7 @@ from app.routers.hierarchy import router as hierarchy_router
 from app.routers.me import router as me_router
 from app.routers.notifications import router as notifications_router
 from app.routers.options import router as options_router
+from app.routers.project_logs import router as project_logs_router
 from app.routers.raid import router as raid_router
 from app.routers.resources import router as resources_router
 from app.routers.search import router as search_router
@@ -114,6 +117,7 @@ def swagger_openapi() -> dict[str, Any]:
 
 
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(accounts_router)
 app.include_router(account_settings_router)
@@ -123,6 +127,7 @@ app.include_router(dashboard_router)
 app.include_router(hierarchy_router)
 app.include_router(tasks_router)
 app.include_router(raid_router)
+app.include_router(project_logs_router)
 app.include_router(resources_router)
 app.include_router(skills_router)
 app.include_router(search_router)
@@ -132,5 +137,6 @@ app.include_router(delivery_router)
 app.include_router(comments_router)
 app.include_router(activity_router)
 app.include_router(attachments_router)
+app.include_router(collaboration_router)
 
 handler = Mangum(app)

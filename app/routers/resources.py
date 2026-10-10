@@ -95,6 +95,15 @@ def list_resource_time_off(
     return ResourceService(db).list_resource_time_off(resource_id=resource_id, current_user=current_user)
 
 
+@router.get("/accounts/{account_id}/time-off", response_model=list[ResourceTimeOffRead])
+def list_account_time_off(
+    account_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    return ResourceService(db).list_account_time_off(account_id=account_id, current_user=current_user)
+
+
 @router.post("/resources/{resource_id}/time-off", response_model=ResourceTimeOffRead, status_code=status.HTTP_201_CREATED)
 def create_resource_time_off(
     resource_id: UUID,

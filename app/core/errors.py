@@ -4,7 +4,7 @@ import logging
 from http import HTTPStatus
 from typing import Any
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -24,6 +24,20 @@ ERROR_CODE_BY_STATUS: dict[int, str] = {
     status.HTTP_500_INTERNAL_SERVER_ERROR: "INTERNAL_SERVER_ERROR",
     status.HTTP_503_SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
 }
+
+
+class AppHTTPException(HTTPException):
+    """HTTPException carrying a specific error_code (e.g. TOKEN_EXPIRED) instead of the status default."""
+
+    def __init__(
+        self,
+        status_code: int,
+        error_code: str,
+        detail: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(status_code=status_code, detail=detail, headers=headers)
+        self.error_code = error_code
 
 
 def request_id_from_request(request: Request) -> str:
@@ -108,7 +122,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
     request_id = request_id_from_request(request)
     return error_response(
         status_code=exc.status_code,
-        error_code=error_code_for_status(exc.status_code),
+        error_code=getattr(exc, "error_code", None) or error_code_for_status(exc.status_code),
         message=normalize_message(exc.detail, exc.status_code),
         details=exc.detail if isinstance(exc.detail, (dict, list)) else None,
         request_id=request_id,
