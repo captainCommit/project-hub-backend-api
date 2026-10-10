@@ -25,7 +25,18 @@ if ! aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$PROVI
   echo "Created GitHub OIDC provider"
 fi
 
+GH="$(command -v gh || echo "/c/Program Files/GitHub CLI/gh.exe")"
+
+# The token's subject starts with the repo's own prefix: "repo:owner/name" by default, but repos on
+# GitHub's immutable subject format use "repo:owner@<id>/name@<id>". Ask GitHub which one it is.
+sub_prefix() {
+  "$GH" api "repos/${OWNER}/$1/actions/oidc/customization/sub" --jq '.sub_claim_prefix // empty' 2>/dev/null || true
+}
+
 trust_policy() {
+  local prefix
+  prefix="$(sub_prefix "$1" | tr -d "[:space:]")"
+  prefix="${prefix:-repo:${OWNER}/$1}"
   cat <<JSON
 {
   "Version": "2012-10-17",
@@ -36,7 +47,7 @@ trust_policy() {
     "Condition": {
       "StringEquals": {
         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        "token.actions.githubusercontent.com:sub": "repo:${OWNER}/$1:environment:dev"
+        "token.actions.githubusercontent.com:sub": "${prefix}:environment:dev"
       }
     }
   }]

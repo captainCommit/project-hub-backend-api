@@ -7,10 +7,15 @@ Usage: python scripts/add_cognito_app_url.py https://dxxxx.cloudfront.net
 Reads COGNITO_USER_POOL_ID / COGNITO_APP_CLIENT_ID / APP_AWS_REGION from the environment or .env.
 """
 import sys
+from pathlib import Path
 
 import boto3
 
-from app.core.config import get_settings
+API_ROOT = Path(__file__).resolve().parents[1]
+if str(API_ROOT) not in sys.path:
+    sys.path.insert(0, str(API_ROOT))
+
+from app.core.config import get_settings  # noqa: E402
 
 UPDATABLE_FIELDS = (
     "ClientName", "RefreshTokenValidity", "AccessTokenValidity", "IdTokenValidity", "TokenValidityUnits",
