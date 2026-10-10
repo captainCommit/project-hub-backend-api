@@ -26,7 +26,8 @@ provider:
     COGNITO_ADDITIONAL_CLIENT_IDS: ${env:COGNITO_ADDITIONAL_CLIENT_IDS, ''}
     COGNITO_DOMAIN: ${env:COGNITO_DOMAIN, ''}
     COGNITO_APP_CLIENT_SECRET: ${env:COGNITO_APP_CLIENT_SECRET, ''}
-    S3_BUCKET_NAME: ${env:S3_BUCKET_NAME, ''}
+    S3_BUCKET_NAME:
+      Ref: AttachmentsBucket
   iam:
     role:
       statements:
@@ -36,7 +37,7 @@ provider:
             - s3:GetObject
             - s3:DeleteObject
           Resource:
-            - arn:aws:s3:::${env:S3_BUCKET_NAME, 'project-hub-attachments-placeholder'}/*
+            - Fn::Join: ["", [{ "Fn::GetAtt": [AttachmentsBucket, Arn] }, "/*"]]
 
 functions:
   api:
@@ -74,3 +75,145 @@ custom:
       - pytest
       - httpx
       - uvicorn
+# The UI and the API share one CloudFront address: the session cookies are SameSite=Strict, and
+# cloudfront.net / execute-api.amazonaws.com are public suffixes, so separate hosts would be cross-site.
+#   /*      -> private S3 bucket with the Vite build (deployed by the UI repo's workflow)
+#   /api/*  -> this stack's HTTP API
+resources:
+  Resources:
+    UiBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+
+    UiBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket:
+          Ref: UiBucket
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: AllowCloudFrontRead
+              Effect: Allow
+              Principal:
+                Service: cloudfront.amazonaws.com
+              Action: s3:GetObject
+              Resource:
+                Fn::Join: ["", [{ "Fn::GetAtt": [UiBucket, Arn] }, "/*"]]
+              Condition:
+                StringEquals:
+                  AWS:SourceArn:
+                    Fn::Sub: arn:aws:cloudfront::${AWS::AccountId}:distribution/${AppDistribution}
+
+    AttachmentsBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        # The browser uploads and downloads attachments directly with presigned URLs.
+        CorsConfiguration:
+          CorsRules:
+            - AllowedMethods: [GET, PUT, HEAD]
+              AllowedOrigins:
+                - Fn::Sub: https://${AppDistribution.DomainName}
+                - http://localhost:5173
+              AllowedHeaders: ["*"]
+              ExposedHeaders: [ETag]
+              MaxAge: 3000
+
+    UiOriginAccessControl:
+      Type: AWS::CloudFront::OriginAccessControl
+      Properties:
+        OriginAccessControlConfig:
+          Name: ${self:service}-${sls:stage}-ui
+          OriginAccessControlOriginType: s3
+          SigningBehavior: always
+          SigningProtocol: sigv4
+
+    # Client-side routes (/projects/123, /auth/callback) have no file extension; serve index.html for them.
+    # Done here rather than with 403/404 error pages so API error responses under /api pass through untouched.
+    SpaRewriteFunction:
+      Type: AWS::CloudFront::Function
+      Properties:
+        Name: ${self:service}-${sls:stage}-spa-rewrite
+        AutoPublish: true
+        FunctionConfig:
+          Comment: Serve index.html for client-side routes
+          Runtime: cloudfront-js-2.0
+        FunctionCode: |
+          function handler(event) {
+            var request = event.request;
+            var lastSegment = request.uri.split('/').pop();
+            if (lastSegment.indexOf('.') === -1) {
+              request.uri = '/index.html';
+            }
+            return request;
+          }
+
+    AppDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Enabled: true
+          Comment: Project Hub ${sls:stage} (UI + API)
+          HttpVersion: http2and3
+          PriceClass: PriceClass_100
+          DefaultRootObject: index.html
+          Origins:
+            - Id: ui
+              DomainName:
+                Fn::GetAtt: [UiBucket, RegionalDomainName]
+              OriginAccessControlId:
+                Ref: UiOriginAccessControl
+              S3OriginConfig:
+                OriginAccessIdentity: ""
+            - Id: api
+              DomainName:
+                Fn::Sub: ${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+              CustomOriginConfig:
+                OriginProtocolPolicy: https-only
+                OriginSSLProtocols: [TLSv1.2]
+          DefaultCacheBehavior:
+            TargetOriginId: ui
+            ViewerProtocolPolicy: redirect-to-https
+            Compress: true
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN:
+                  Fn::GetAtt: [SpaRewriteFunction, FunctionMetadata.FunctionARN]
+          CacheBehaviors:
+            - PathPattern: /api/*
+              TargetOriginId: api
+              ViewerProtocolPolicy: https-only
+              Compress: true
+              AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+              CachedMethods: [GET, HEAD]
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+              OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+
+  Outputs:
+    AppUrl:
+      Value:
+        Fn::Sub: https://${AppDistribution.DomainName}
+    CloudFrontDistributionId:
+      Value:
+        Ref: AppDistribution
+    UiBucketName:
+      Value:
+        Ref: UiBucket
+    AttachmentsBucketName:
+      Value:
+        Ref: AttachmentsBucket
