@@ -315,6 +315,22 @@ def test_owner_and_admin_can_update_account_settings(client: TestClient, db_sess
     assert admin_update_response.json()["default_landing_page"] == "SPRINTS"
 
 
+def test_account_settings_accept_day_month_name_date_format(client: TestClient) -> None:
+    create_response = client.post(
+        "/api/v1/accounts",
+        json={"name": "Long Date Format", "slug": "long-date-format"},
+    )
+    account_id = UUID(create_response.json()["id"])
+
+    response = client.patch(
+        f"/api/v1/accounts/{account_id}/settings",
+        json={"date_format": "D MMM YYYY"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["date_format"] == "D MMM YYYY"
+
+
 def test_invalid_account_settings_date_format_rejected(client: TestClient) -> None:
     create_response = client.post(
         "/api/v1/accounts",

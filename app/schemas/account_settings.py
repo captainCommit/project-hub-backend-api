@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-DateFormat = Literal["MM/dd/yyyy", "dd/MM/yyyy", "yyyy-MM-dd"]
+DateFormat = Literal["MM/dd/yyyy", "dd/MM/yyyy", "yyyy-MM-dd", "D MMM YYYY"]
 DefaultLandingPage = Literal["FAVORITES", "PORTFOLIOS", "PROGRAMS", "SPRINTS"]
 WeekdayName = Literal["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
 

@@ -22,7 +22,7 @@ class AccountSettings(Base):
     __table_args__ = (
         UniqueConstraint("account_id", name="uq_account_settings_account_id"),
         CheckConstraint(
-            "date_format in ('MM/dd/yyyy', 'dd/MM/yyyy', 'yyyy-MM-dd')",
+            "date_format in ('MM/dd/yyyy', 'dd/MM/yyyy', 'yyyy-MM-dd', 'D MMM YYYY')",
             name="ck_account_settings_date_format",
         ),
         CheckConstraint(
