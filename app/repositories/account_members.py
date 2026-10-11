@@ -61,6 +61,28 @@ class AccountMemberRepository:
         statement = select(AccountMember.account_id, func.count()).group_by(AccountMember.account_id)
         return {account_id: count for account_id, count in self.db.execute(statement).all()}
 
+    def count_seats_by_account_role(self) -> dict[UUID, dict[str, int]]:
+        """Active members who have signed in, per account and role. Pending invites hold no seat."""
+        statement = (
+            select(AccountMember.account_id, AccountMember.role, func.count())
+            .join(User, User.id == AccountMember.user_id)
+            .where(User.cognito_sub.is_not(None), User.is_active.is_(True))
+            .group_by(AccountMember.account_id, AccountMember.role)
+        )
+        counts: dict[UUID, dict[str, int]] = {}
+        for account_id, role, count in self.db.execute(statement).all():
+            counts.setdefault(account_id, {})[role] = count
+        return counts
+
+    def count_pending_invites_by_account(self) -> dict[UUID, int]:
+        statement = (
+            select(AccountMember.account_id, func.count())
+            .join(User, User.id == AccountMember.user_id)
+            .where(User.cognito_sub.is_(None))
+            .group_by(AccountMember.account_id)
+        )
+        return {account_id: count for account_id, count in self.db.execute(statement).all()}
+
     def list_admins(self) -> list[tuple[UUID, User, str]]:
         """Owners and admins of every account, owners first."""
         statement = (

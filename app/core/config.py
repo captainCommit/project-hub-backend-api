@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Deployed: CloudFront adds X-Origin-Verify with this value, so calls straight to execute-api are refused.
     # Empty (local dev) turns the check off.
     origin_verify_secret: str = Field(default="", validation_alias="ORIGIN_VERIFY_SECRET")
+    # Monthly price per seat, in cents. Viewers are billed at their own (lower) rate; every other role at the full rate.
+    seat_price_cents: int = Field(default=2000, validation_alias="SEAT_PRICE_CENTS")
+    viewer_seat_price_cents: int = Field(default=1000, validation_alias="VIEWER_SEAT_PRICE_CENTS")
+    billing_currency: str = Field(default="USD", validation_alias="BILLING_CURRENCY")
 
     model_config = SettingsConfigDict(
         env_file=".env",

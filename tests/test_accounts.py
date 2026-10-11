@@ -441,3 +441,62 @@ def test_regular_users_cannot_list_every_account(client: TestClient, db_session:
     make_current_user_regular(db_session)
 
     assert client.get("/api/v1/admin/accounts").status_code == 403
+
+
+def add_member(db_session: Session, account_id: UUID, email: str, role: AccountMemberRole, *, signed_in: bool = True) -> User:
+    user = User(email=email, cognito_sub=f"sub-{email}" if signed_in else None)
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(AccountMember(account_id=account_id, user_id=user.id, role=role.value))
+    db_session.commit()
+    return user
+
+
+def test_billing_counts_signed_in_members_and_prices_viewers_at_half(client: TestClient, db_session: Session) -> None:
+    account_id = UUID(client.post("/api/v1/accounts", json={"name": "Acme", "slug": "acme", "admin_email": "a@acme.example"}).json()["id"])
+    # The invited admin has not signed in yet, so holds no seat.
+    add_member(db_session, account_id, "m1@acme.example", AccountMemberRole.MANAGER)
+    add_member(db_session, account_id, "m2@acme.example", AccountMemberRole.MEMBER)
+    add_member(db_session, account_id, "v1@acme.example", AccountMemberRole.VIEWER)
+    add_member(db_session, account_id, "v2@acme.example", AccountMemberRole.VIEWER)
+    add_member(db_session, account_id, "p@acme.example", AccountMemberRole.MEMBER, signed_in=False)
+    inactive = add_member(db_session, account_id, "gone@acme.example", AccountMemberRole.MEMBER)
+    inactive.is_active = False
+    db_session.commit()
+
+    response = client.get("/api/v1/admin/billing")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["currency"], body["seat_price_cents"], body["viewer_seat_price_cents"]) == ("USD", 2000, 1000)
+    [line] = body["accounts"]
+    assert line["seats"] == {"OWNER": 0, "ADMIN": 0, "MANAGER": 1, "MEMBER": 1, "VIEWER": 2}
+    assert (line["full_seats"], line["viewer_seats"], line["pending_invites"]) == (2, 2, 2)
+    assert line["monthly_total_cents"] == 2 * 2000 + 2 * 1000
+    assert body["monthly_total_cents"] == line["monthly_total_cents"]
+
+
+def test_billing_seat_counts_cover_every_role() -> None:
+    from app.schemas.platform import SeatCounts
+
+    assert set(SeatCounts.model_fields) == {role.value for role in AccountMemberRole}
+
+
+def test_system_status_reports_database_and_counts(client: TestClient) -> None:
+    client.post("/api/v1/accounts", json={"name": "Acme", "slug": "acme"})
+
+    response = client.get("/api/v1/admin/system")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["database"] == "connected"
+    assert body["migration_version"] is None
+    assert (body["account_count"], body["user_count"]) == (1, 1)
+
+
+def test_regular_users_cannot_see_billing_or_system(client: TestClient, db_session: Session) -> None:
+    client.get("/api/v1/me")
+    make_current_user_regular(db_session)
+
+    assert client.get("/api/v1/admin/billing").status_code == 403
+    assert client.get("/api/v1/admin/system").status_code == 403
