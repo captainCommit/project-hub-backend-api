@@ -15,6 +15,7 @@ class PlatformAuditAction:
     ACCOUNT_USERS_VIEWED = "account.users_viewed"
     ACCOUNT_USER_INVITED = "account.user_invited"
     ACCOUNT_USER_ROLE_CHANGED = "account.user_role_changed"
+    ACCOUNT_USER_REMOVED = "account.user_removed"
     ACCOUNT_USERS_BULK_INVITED = "account.users_bulk_invited"
     ACCOUNT_BILLING_ENABLED = "account.billing_enabled"
     ACCOUNT_BILLING_DISABLED = "account.billing_disabled"

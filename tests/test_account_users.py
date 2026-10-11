@@ -531,3 +531,82 @@ def test_bulk_invite_reports_last_owner_demotion_as_failed(client: TestClient) -
     body = response.json()
     assert body["failed"] == 1
     assert body["results"][0]["error"] == "An account needs at least one owner."
+
+
+def test_owner_can_change_another_owners_role(client: TestClient) -> None:
+    account = create_account(client, name="Role Change", slug="role-change")
+    second = invite_user(client, account["id"], email="second@example.com", role="OWNER").json()
+
+    response = client.patch(f"/api/v1/accounts/{account['id']}/users/{second['user_id']}", json={"role": "VIEWER"})
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "VIEWER"
+    users = {u["email"]: u["role"] for u in client.get(f"/api/v1/accounts/{account['id']}/users").json()}
+    assert users["second@example.com"] == "VIEWER"
+
+
+def test_role_change_cannot_remove_the_last_owner(client: TestClient, db_session: Session) -> None:
+    account = create_account(client, name="Last Owner", slug="last-owner")
+    dev = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+
+    response = client.patch(f"/api/v1/accounts/{account['id']}/users/{dev.id}", json={"role": "MANAGER"})
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "An account needs at least one owner."
+
+
+def test_non_owner_cannot_change_roles(client: TestClient, db_session: Session) -> None:
+    account = create_account(client, name="Not Owner", slug="not-owner")
+    target = invite_user(client, account["id"], email="target@example.com").json()
+    invite_user(client, account["id"], email="other-owner@example.com", role="OWNER")
+    dev = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+    membership = db_session.scalar(select(AccountMember).where(AccountMember.user_id == dev.id))
+    membership.role = AccountMemberRole.MANAGER.value
+    db_session.commit()
+    make_current_user_regular(client, db_session)
+
+    changed = client.patch(f"/api/v1/accounts/{account['id']}/users/{target['user_id']}", json={"role": "VIEWER"})
+    removed = client.delete(f"/api/v1/accounts/{account['id']}/users/{target['user_id']}")
+
+    assert changed.status_code == 403
+    assert removed.status_code == 403
+
+
+def test_owner_can_remove_a_user_and_their_grants(client: TestClient, db_session: Session) -> None:
+    from app.models.access_grant import AccessGrant
+
+    account = create_account(client, name="Remove", slug="remove")
+    portfolio = client.post(f"/api/v1/accounts/{account['id']}/portfolios", json={"name": "Portfolio"}).json()
+    member = invite_user(client, account["id"], email="leaver@example.com").json()
+    granted = client.post(
+        f"/api/v1/accounts/{account['id']}/access-grants",
+        json={"user_id": member["user_id"], "portfolio_id": portfolio["id"], "role": "MEMBER", "modules": ["TASKS"]},
+    )
+    assert granted.status_code == 201
+
+    response = client.delete(f"/api/v1/accounts/{account['id']}/users/{member['user_id']}")
+
+    assert response.status_code == 204
+    emails = {u["email"] for u in client.get(f"/api/v1/accounts/{account['id']}/users").json()}
+    assert "leaver@example.com" not in emails
+    assert db_session.scalar(select(AccessGrant).where(AccessGrant.user_id == UUID(member["user_id"]))) is None
+
+
+def test_last_owner_cannot_be_removed(client: TestClient, db_session: Session) -> None:
+    account = create_account(client, name="Keep Owner", slug="keep-owner")
+    dev = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+
+    response = client.delete(f"/api/v1/accounts/{account['id']}/users/{dev.id}")
+
+    assert response.status_code == 409
+
+
+def test_changing_role_of_a_non_member_is_404(client: TestClient, db_session: Session) -> None:
+    account = create_account(client, name="Stranger", slug="stranger")
+    stranger = User(email="stranger@example.com", full_name="Stranger")
+    db_session.add(stranger)
+    db_session.commit()
+
+    response = client.patch(f"/api/v1/accounts/{account['id']}/users/{stranger.id}", json={"role": "VIEWER"})
+
+    assert response.status_code == 404

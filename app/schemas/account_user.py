@@ -56,6 +56,10 @@ class AccountUserInviteCreate(BaseModel):
         return normalized or None
 
 
+class AccountUserRoleUpdate(BaseModel):
+    role: AccountUserInviteRole
+
+
 class AccountUserBulkInviteItem(BaseModel):
     email: Any = None
     full_name: Any = None

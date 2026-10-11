@@ -2,12 +2,13 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
+from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.pagination import PaginationParams, paginated_response
-from app.models.access_grant import GrantRole
+from app.models.access_grant import AccessGrant, GrantRole
 from app.models.account import Account
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.user import User
@@ -23,6 +24,7 @@ from app.schemas.account_user import (
     AccountUserInviteRead,
     AccountUserInviteStatus,
     AccountUserRead,
+    AccountUserRoleUpdate,
 )
 from app.services.access import forget_access
 from app.services.access_grants import AccessGrantService
@@ -80,6 +82,80 @@ class AccountUserService:
             )
             for user in users
         ]
+
+    def change_account_user_role(
+        self,
+        *,
+        account_id: UUID,
+        user_id: UUID,
+        role_in: AccountUserRoleUpdate,
+        current_user: User,
+    ) -> AccountUserRead:
+        """Owners can change anyone's role, other owners included, as long as one owner remains.
+
+        Existing grants stay; they are capped by the new seat when access is checked.
+        """
+        platform_account = self.require_account_access(
+            account_id=account_id,
+            current_user=current_user,
+            allowed_roles=INVITE_ACCOUNT_ROLES,
+        )
+        membership, user = self.get_membership_or_404(account_id=account_id, user_id=user_id)
+        if membership.role != role_in.role.value:
+            self.require_another_owner(membership)
+            self.account_members.update_role(membership, role=AccountMemberRole(role_in.role.value))
+            if platform_account is not None:
+                record_platform_action(
+                    self.db,
+                    actor=current_user,
+                    action=PlatformAuditAction.ACCOUNT_USER_ROLE_CHANGED,
+                    account=platform_account,
+                    target=user.email,
+                    details={"role": role_in.role.value},
+                )
+            self.db.commit()
+            forget_access(self.db)
+            self.sync_billing(account_id, changed=True)
+        return self.to_reads(account_id, [user])[0]
+
+    def remove_account_user(self, *, account_id: UUID, user_id: UUID, current_user: User) -> None:
+        """Take someone out of the account, with all their access grants in it."""
+        platform_account = self.require_account_access(
+            account_id=account_id,
+            current_user=current_user,
+            allowed_roles=INVITE_ACCOUNT_ROLES,
+        )
+        membership, user = self.get_membership_or_404(account_id=account_id, user_id=user_id)
+        self.require_another_owner(membership)
+        self.db.execute(
+            delete(AccessGrant).where(AccessGrant.account_id == account_id, AccessGrant.user_id == user_id)
+        )
+        self.db.delete(membership)
+        if platform_account is not None:
+            record_platform_action(
+                self.db,
+                actor=current_user,
+                action=PlatformAuditAction.ACCOUNT_USER_REMOVED,
+                account=platform_account,
+                target=user.email,
+            )
+        self.db.commit()
+        forget_access(self.db)
+        self.sync_billing(account_id, changed=True)
+
+    def get_membership_or_404(self, *, account_id: UUID, user_id: UUID) -> tuple[AccountMember, User]:
+        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
+        user = self.db.get(User, user_id) if membership is not None else None
+        if membership is None or user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User is not a member of this account.")
+        return membership, user
+
+    def require_another_owner(self, membership: AccountMember) -> None:
+        if (
+            membership.role == AccountMemberRole.OWNER.value
+            and self.account_members.count_owners(membership.account_id) <= 1
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER_MESSAGE)
 
     def search_account_users(self, *, account_id: UUID, q: str, current_user: User) -> list[User]:
         query = q.strip()

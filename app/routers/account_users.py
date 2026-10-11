@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -13,6 +13,7 @@ from app.schemas.account_user import (
     AccountUserInviteCreate,
     AccountUserInviteRead,
     AccountUserRead,
+    AccountUserRoleUpdate,
 )
 from app.services.account_users import AccountUserService
 from app.services.auth import get_current_user
@@ -63,6 +64,39 @@ def bulk_invite_account_users(
         bulk_in=bulk_in,
         current_user=current_user,
     )
+
+
+@router.patch("/{account_id}/users/{user_id}", response_model=AccountUserRead)
+def change_account_user_role(
+    account_id: UUID,
+    user_id: UUID,
+    role_in: AccountUserRoleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> AccountUserRead:
+    return AccountUserService(db, settings=settings).change_account_user_role(
+        account_id=account_id,
+        user_id=user_id,
+        role_in=role_in,
+        current_user=current_user,
+    )
+
+
+@router.delete("/{account_id}/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_account_user(
+    account_id: UUID,
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    AccountUserService(db, settings=settings).remove_account_user(
+        account_id=account_id,
+        user_id=user_id,
+        current_user=current_user,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{account_id}/users/search", response_model=list[AccountUserRead])
