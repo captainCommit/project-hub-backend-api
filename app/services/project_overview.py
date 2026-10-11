@@ -18,7 +18,8 @@ from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.project_overview import ProjectOverviewRepository
-from app.services.access import access_for
+from app.models.access_grant import ProjectModule
+from app.services.access import access_for, hidden_entity_types
 
 
 TASK_COMPLETED_KEYS = {"complete", "completed", "done"}
@@ -44,16 +45,23 @@ class ProjectOverviewService:
 
     def get_project_overview(self, *, project_id: UUID, current_user: User) -> dict[str, object]:
         project = self.get_project_or_404(project_id)
-        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
+        permission = access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
+        sees = permission.can_view
 
+        # Modules this person can't see count as empty here, so no title or number leaks out.
         today = self.overview.today()
-        task_rows = self.overview.list_project_tasks(project.id)
-        risk_rows = self.overview.list_project_risks(project.id)
-        issue_rows = self.overview.list_project_issues(project.id)
-        assumption_rows = self.overview.list_project_assumptions(project.id)
-        decision_rows = self.overview.list_project_decisions(project.id)
+        task_rows = self.overview.list_project_tasks(project.id) if sees(ProjectModule.TASKS) else []
+        risk_rows = self.overview.list_project_risks(project.id) if sees(ProjectModule.RISKS) else []
+        issue_rows = self.overview.list_project_issues(project.id) if sees(ProjectModule.ISSUES) else []
+        assumption_rows = self.overview.list_project_assumptions(project.id) if sees(ProjectModule.ASSUMPTIONS) else []
+        decision_rows = self.overview.list_project_decisions(project.id) if sees(ProjectModule.DECISIONS) else []
         resource_summary = self.build_resource_summary(project.id)
-        recent_activity = self.overview.list_recent_activity(account_id=project.account_id, project_id=project.id, limit=10)
+        hidden = hidden_entity_types(permission)
+        recent_activity = [
+            activity
+            for activity in self.overview.list_recent_activity(account_id=project.account_id, project_id=project.id, limit=40)
+            if activity.entity_type not in hidden
+        ][:10]
         project_status = self.overview.get_option_value(project.status_id)
 
         task_stats = self.build_task_stats(task_rows=task_rows, today=today)

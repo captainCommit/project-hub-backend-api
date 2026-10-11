@@ -373,6 +373,7 @@ class AccountUserService:
                 role=GrantRole(membership.role),
                 target=invite_in.access,
                 modules=invite_in.access.modules,
+                view_modules=invite_in.access.view_modules,
                 created_by=None,
             )
             forget_access(self.db)

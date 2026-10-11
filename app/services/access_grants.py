@@ -88,6 +88,7 @@ class AccessGrantService:
                 role=permission.role,
                 can_manage=permission.can_manage,
                 editable_modules=[ProjectModule(module) for module in permission.editable_modules],
+                visible_modules=[ProjectModule(module) for module in permission.visible_modules],
             )
 
         def visible(model: type, ids: set[UUID] | None) -> list:
@@ -116,6 +117,7 @@ class AccessGrantService:
             role=grant_in.role,
             target=grant_in,
             modules=grant_in.modules,
+            view_modules=grant_in.view_modules,
             created_by=current_user.id,
         )
         self.db.commit()
@@ -129,9 +131,12 @@ class AccessGrantService:
         self.require_manage(scope, self.scope_of(grant))
         role = grant_in.role or GrantRole(grant.role)
         self.require_seat_allows(account_id=grant.account_id, user_id=grant.user_id, role=role)
-        grant.role = role.value
         modules = grant_in.modules if grant_in.modules is not None else [ProjectModule(m) for m in grant.modules or []]
-        grant.modules = [m.value for m in modules] if role == GrantRole.MEMBER else None
+        if "view_modules" in grant_in.model_fields_set:
+            view_modules = grant_in.view_modules
+        else:
+            view_modules = None if grant.view_modules is None else [ProjectModule(m) for m in grant.view_modules]
+        self.set_role_and_modules(grant, role=role, modules=modules, view_modules=view_modules)
         self.db.commit()
         self.db.refresh(grant)
         forget_access(self.db)
@@ -154,6 +159,7 @@ class AccessGrantService:
         target: GrantScope,
         modules: list[ProjectModule],
         created_by: UUID | None,
+        view_modules: list[ProjectModule] | None = None,
     ) -> AccessGrant:
         """Give or change a role on one item, without checking who is asking. The caller commits."""
         self.resolve_target(account_id, target)
@@ -176,10 +182,26 @@ class AccessGrantService:
                 created_by=created_by,
             )
             self.db.add(grant)
-        grant.role = role.value
-        grant.modules = [module.value for module in modules] if role == GrantRole.MEMBER else None
+        self.set_role_and_modules(grant, role=role, modules=modules, view_modules=view_modules)
         self.db.flush()
         return grant
+
+    @staticmethod
+    def set_role_and_modules(
+        grant: AccessGrant,
+        *,
+        role: GrantRole,
+        modules: list[ProjectModule],
+        view_modules: list[ProjectModule] | None,
+    ) -> None:
+        """Managers see and edit everything; members edit some modules; anything editable is also visible."""
+        grant.role = role.value
+        grant.modules = [module.value for module in modules] if role == GrantRole.MEMBER else None
+        if role == GrantRole.MANAGER or view_modules is None:
+            grant.view_modules = None
+        else:
+            visible = {module.value for module in view_modules} | set(grant.modules or [])
+            grant.view_modules = [module.value for module in ProjectModule if module.value in visible]
 
     # Rules
 
@@ -272,6 +294,7 @@ class AccessGrantService:
                     scope_name=names.get(scope_id, ""),
                     role=GrantRole(grant.role),
                     modules=[ProjectModule(m) for m in grant.modules or []],
+                    view_modules=None if grant.view_modules is None else [ProjectModule(m) for m in grant.view_modules],
                     inherited=own_column is not None and getattr(grant, own_column) is None,
                     created_at=grant.created_at,
                 )

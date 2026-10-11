@@ -413,7 +413,7 @@ class ResourceService:
         self.validate_allocation_date_range(start_date=start_date, end_date=end_date)
         access = access_for(self.db, account_id=account_id, user=current_user)
         access.require_visible_filters(program_id=program_id, project_id=project_id)
-        visible_projects = access.visible_project_ids()
+        visible_projects = access.visible_project_ids(ProjectModule.TASKS)
         if resource_id is not None:
             self.validate_resource_belongs_to_account(resource_id=resource_id, account_id=account_id)
         if project_id is not None:
@@ -638,7 +638,7 @@ class ResourceService:
         ]
 
         task_contexts = self.resource_analysis_task_contexts(
-            visible_project_ids=access.visible_project_ids(),
+            visible_project_ids=access.visible_project_ids(ProjectModule.TASKS),
             account_id=account_id,
             start_date=start_date,
             end_date=end_date,
@@ -1685,7 +1685,9 @@ class ResourceService:
         project = self.db.get(Project, task.project_id)
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-        access_for(self.db, account_id=task.account_id, user=current_user).require_project(project, module=module)
+        access_for(self.db, account_id=task.account_id, user=current_user).require_project(
+            project, module=module, view=ProjectModule.TASKS
+        )
 
     def get_task_or_404(self, task_id: UUID) -> Task:
         task = self.tasks.get_task(task_id)

@@ -84,6 +84,8 @@ class AccessGrant(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     # MEMBER grants: the modules this person may edit. Ignored for MANAGER (all) and VIEWER (none).
     modules: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # MEMBER and VIEWER grants: the modules this person may see. None means all. Ignored for MANAGER (all).
+    view_modules: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_by: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

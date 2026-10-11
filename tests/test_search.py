@@ -317,3 +317,19 @@ def test_search_only_returns_what_grants_cover(client: TestClient, db_session: S
     assert titles("Project", "PROJECT") == ["Granted Project"]
     assert titles("Searchable Program", "PROGRAM") == ["Searchable Program"]
     assert other_portfolio["name"] not in titles("Portfolio", "PORTFOLIO")
+
+
+def test_search_leaves_out_modules_a_grant_hides(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client, program_name="Module Program", project_name="Module Project")
+    project_id = hierarchy["project"]["id"]
+    create_task(client, project_id, "Gadget task")
+    client.post(f"/api/v1/projects/{project_id}/risks", json={"title": "Gadget risk"})
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+    grant_existing_portfolios(db_session, hierarchy["account"]["id"], "OWNER")  # clear the broad grants
+    grant_access(
+        db_session, account_id=hierarchy["account"]["id"], role="VIEWER", project_id=project_id, view_modules=["RISKS"]
+    )
+
+    results = client.get("/api/v1/search", params={"q": "Gadget", "entity_types": "TASK,RISK"}).json()["results"]
+
+    assert [r["title"] for r in results] == ["Gadget risk"]

@@ -56,7 +56,9 @@ class ActivityLogRepository:
         items, total = paginate_statement(self.db, statement, pagination)
         return items, total
 
-    def list_for_project_statement(self, project_id: UUID, *, sort: str = "-created_at") -> Select[tuple[ActivityLog]]:
+    def list_for_project_statement(
+        self, project_id: UUID, *, sort: str = "-created_at", exclude_entity_types: set[str] | None = None
+    ) -> Select[tuple[ActivityLog]]:
         conditions = [and_(ActivityLog.entity_type == "PROJECT", ActivityLog.entity_id == project_id)]
         for entity_type, ids in (
             ("TASK", self._ids_for_project(Task, project_id)),
@@ -83,10 +85,15 @@ class ActivityLogRepository:
         descending = sort_descending(sort)
         sort_column = ActivityLog.created_at.desc() if descending else ActivityLog.created_at
         created_tie_breaker = case((ActivityLog.action == "CREATED", 1 if descending else 0), else_=0 if descending else 1)
-        return select(ActivityLog).where(or_(*conditions)).order_by(sort_column, created_tie_breaker, ActivityLog.id.desc())
+        statement = select(ActivityLog).where(or_(*conditions))
+        if exclude_entity_types:
+            statement = statement.where(ActivityLog.entity_type.not_in(exclude_entity_types))
+        return statement.order_by(sort_column, created_tie_breaker, ActivityLog.id.desc())
 
-    def list_for_project(self, project_id: UUID, *, sort: str = "-created_at") -> list[ActivityLog]:
-        statement = self.list_for_project_statement(project_id, sort=sort)
+    def list_for_project(
+        self, project_id: UUID, *, sort: str = "-created_at", exclude_entity_types: set[str] | None = None
+    ) -> list[ActivityLog]:
+        statement = self.list_for_project_statement(project_id, sort=sort, exclude_entity_types=exclude_entity_types)
         return list(self.db.scalars(statement).all())
 
     def list_for_project_paginated(
@@ -95,8 +102,9 @@ class ActivityLogRepository:
         *,
         sort: str,
         pagination: PaginationParams,
+        exclude_entity_types: set[str] | None = None,
     ) -> tuple[list[ActivityLog], int]:
-        statement = self.list_for_project_statement(project_id, sort=sort)
+        statement = self.list_for_project_statement(project_id, sort=sort, exclude_entity_types=exclude_entity_types)
         items, total = paginate_statement(self.db, statement, pagination)
         return items, total
 

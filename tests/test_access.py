@@ -13,7 +13,7 @@ import app.models  # noqa: F401
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.main import app
-from app.models.access_grant import AccessGrant
+from app.models.access_grant import AccessGrant, ProjectModule
 from app.models.account_member import AccountMember
 from app.models.user import User
 from app.services.auth import get_current_user
@@ -191,7 +191,12 @@ def test_my_access_reports_effective_permissions(
 
     assert access["is_owner"] is False
     assert access["projects"] == {
-        world["project"]["id"]: {"role": "MEMBER", "can_manage": False, "editable_modules": ["TESTING"]}
+        world["project"]["id"]: {
+            "role": "MEMBER",
+            "can_manage": False,
+            "editable_modules": ["TESTING"],
+            "visible_modules": [module.value for module in ProjectModule],
+        }
     }
     assert access["programs"][world["program"]["id"]]["role"] == "VIEWER"
     assert world["other_program"]["id"] not in access["programs"]
@@ -223,3 +228,65 @@ def test_invite_rejects_starting_access_outside_the_account(client: TestClient, 
     )
 
     assert response.status_code == 404
+
+
+def test_member_sees_only_the_modules_they_were_given(
+    client: TestClient, db_session: Session, world: dict, act_as: Callable
+) -> None:
+    project_id = world["project"]["id"]
+    member = add_member(db_session, world["account"]["id"], "seer@acme.example", "MEMBER")
+    response = grant(
+        client, world["account"]["id"], member, "MEMBER",
+        project_id=project_id, modules=["RISKS"], view_modules=["ISSUES"],
+    )
+    assert response.status_code == 201
+    # Editing implies seeing, so RISKS joins the visible list.
+    assert response.json()["view_modules"] == ["RISKS", "ISSUES"]
+    risk = client.post(f"/api/v1/projects/{project_id}/risks", json={"title": "Findable risk"}).json()
+    assumption = client.post(f"/api/v1/projects/{project_id}/assumptions", json={"description": "Hidden assumption"}).json()
+    client.post(f"/api/v1/projects/{project_id}/tasks", json={"name": "Hidden task"})
+
+    act_as(member)
+    account_id = world["account"]["id"]
+    assert client.get(f"/api/v1/projects/{project_id}/risks").status_code == 200
+    assert client.get(f"/api/v1/projects/{project_id}/issues").status_code == 200
+    assert client.get(f"/api/v1/projects/{project_id}/assumptions").status_code == 403
+    assert client.get(f"/api/v1/assumptions/{assumption['id']}").status_code == 403
+    assert client.get(f"/api/v1/projects/{project_id}/tasks").status_code == 403
+    assert client.get(f"/api/v1/accounts/{account_id}/assumptions").json() == []
+    assert [r["id"] for r in client.get(f"/api/v1/accounts/{account_id}/risks").json()] == [risk["id"]]
+    assert client.post(f"/api/v1/projects/{project_id}/issues", json={"title": "Seen, not editable"}).status_code == 403
+
+    overview = client.get(f"/api/v1/projects/{project_id}/overview").json()
+    assert overview["stats"]["open_assumptions"] == 0
+
+    access = client.get(f"/api/v1/accounts/{account_id}/my-access").json()
+    assert access["projects"][project_id]["visible_modules"] == ["RISKS", "ISSUES"]
+    assert access["projects"][project_id]["editable_modules"] == ["RISKS"]
+
+
+
+def test_grants_combine_what_each_one_shows(
+    client: TestClient, db_session: Session, world: dict, act_as: Callable
+) -> None:
+    project_id = world["project"]["id"]
+    member = add_member(db_session, world["account"]["id"], "both@acme.example", "MEMBER")
+    grant(client, world["account"]["id"], member, "VIEWER", program_id=world["program"]["id"], view_modules=["TASKS"])
+    grant(client, world["account"]["id"], member, "VIEWER", project_id=project_id, view_modules=["RISKS"])
+
+    act_as(member)
+    access = client.get(f"/api/v1/accounts/{world['account']['id']}/my-access").json()
+    assert access["projects"][project_id]["visible_modules"] == ["TASKS", "RISKS"]
+
+
+def test_grant_update_can_clear_the_module_limit(client: TestClient, db_session: Session, world: dict) -> None:
+    member = add_member(db_session, world["account"]["id"], "lim@acme.example", "MEMBER")
+    created = grant(
+        client, world["account"]["id"], member, "VIEWER", project_id=world["project"]["id"], view_modules=["TASKS"]
+    ).json()
+
+    kept = client.patch(f"/api/v1/access-grants/{created['id']}", json={"role": "VIEWER"}).json()
+    cleared = client.patch(f"/api/v1/access-grants/{created['id']}", json={"view_modules": None}).json()
+
+    assert kept["view_modules"] == ["TASKS"]
+    assert cleared["view_modules"] is None

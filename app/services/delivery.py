@@ -16,6 +16,7 @@ from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.hierarchy import HierarchyRepository
+from app.models.access_grant import ProjectModule
 from app.services.access import access_for
 
 
@@ -46,7 +47,10 @@ class DeliveryService:
         projects = access.keep_visible(projects, access.visible_project_ids())
 
         project_ids = [project.id for project in projects]
-        sprints = self.list_sprints(project_ids)
+        sprint_project_ids = access.visible_project_ids(ProjectModule.SPRINTS)
+        sprints = self.list_sprints(
+            project_ids if sprint_project_ids is None else [pid for pid in project_ids if pid in sprint_project_ids]
+        )
         sprint_ids = [sprint.id for sprint in sprints]
         sprint_statuses = self.hierarchy.get_status_values_by_ids(
             {sprint.status_id for sprint in sprints if sprint.status_id is not None}

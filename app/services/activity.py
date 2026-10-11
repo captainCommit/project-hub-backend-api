@@ -33,7 +33,7 @@ from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.activity import ActivityLogRepository
-from app.services.access import access_for
+from app.services.access import access_for, hidden_entity_types
 
 
 # Account-wide records: any member of the account can see their history.
@@ -171,16 +171,18 @@ class ActivityLogService:
         project = self.db.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
+        permission = access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
+        hidden = hidden_entity_types(permission)
         sort_value = validate_sort(sort, allowed_fields={"created_at"}, default="-created_at")
         if pagination and pagination.paginated:
             activity, total = self.activity.list_for_project_paginated(
                 project.id,
                 sort=sort_value,
                 pagination=pagination,
+                exclude_entity_types=hidden,
             )
             return paginated_response(items=activity, total=total, pagination=pagination)
-        return self.activity.list_for_project(project.id, sort=sort_value)
+        return self.activity.list_for_project(project.id, sort=sort_value, exclude_entity_types=hidden)
 
     def resolve_activity_entity(self, *, entity_type: str, entity_id: UUID) -> ResolvedActivityEntity:
         normalized_entity_type = entity_type.strip().upper()

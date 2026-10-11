@@ -202,7 +202,7 @@ class TaskService:
             program_id=program_id,
             assigned_to=assigned_to,
         )
-        visible = scope.visible_project_ids()
+        visible = scope.visible_project_ids(ProjectModule.TASKS)
         if visible is not None:
             rows = [row for row in rows if row[0].project_id in visible]
         tasks = [task for task, _project, _program in rows]
@@ -679,7 +679,7 @@ class TaskService:
     ) -> list[dict[str, object]]:
         scope = access_for(self.db, account_id=account_id, user=current_user)
         tasks = self.tasks.list_tasks_for_account(account_id, project_id=project_id, sprint_id=sprint_id)
-        visible = scope.visible_project_ids()
+        visible = scope.visible_project_ids(ProjectModule.TASKS)
         if visible is not None:
             tasks = [task for task in tasks if task.project_id in visible]
         return self.enrich_tasks(tasks)
@@ -1132,6 +1132,8 @@ class TaskService:
     def require_project_access(
         self, project_id: UUID, current_user: User, *, module: ProjectModule | None = None
     ) -> None:
-        """View access to the project, or edit access to `module` in it."""
+        """Sight of the project's tasks, or edit access to `module` in it."""
         project = self.get_project_or_404(project_id)
-        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project, module=module)
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(
+            project, module=module, view=ProjectModule.TASKS
+        )

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.activity_log import ActivityLog
 from app.models.account_member import AccountMemberRole
+from app.models.access_grant import ProjectModule
 from app.models.issue import Issue
 from app.models.option_value import OptionValue
 from app.models.portfolio import Portfolio
@@ -92,10 +93,16 @@ class AccountDashboardService:
         project_statuses = self.hierarchy.get_status_values_by_ids(
             {project.status_id for project in scope.projects if project.status_id is not None}
         )
-        task_rows = self.dashboard.list_tasks_for_projects(project_ids)
-        risk_rows = self.dashboard.list_risks_for_projects(project_ids)
-        issue_rows = self.dashboard.list_issues_for_projects(project_ids)
-        decision_rows = self.dashboard.list_decisions_for_projects(project_ids)
+
+        def where_visible(module: ProjectModule) -> list[UUID]:
+            # Only projects where this module is visible to the user.
+            visible = access.visible_project_ids(module)
+            return project_ids if visible is None else [pid for pid in project_ids if pid in visible]
+
+        task_rows = self.dashboard.list_tasks_for_projects(where_visible(ProjectModule.TASKS))
+        risk_rows = self.dashboard.list_risks_for_projects(where_visible(ProjectModule.RISKS))
+        issue_rows = self.dashboard.list_issues_for_projects(where_visible(ProjectModule.ISSUES))
+        decision_rows = self.dashboard.list_decisions_for_projects(where_visible(ProjectModule.DECISIONS))
         resource_rows = self.dashboard.list_resource_utilization_rollups(project_ids)
         project_resource_rows = self.dashboard.list_project_resource_rollups(project_ids)
         recent_activity = self.dashboard.list_recent_activity(
@@ -104,8 +111,12 @@ class AccountDashboardService:
             program_ids=[program.id for program in scope.programs],
             project_ids=project_ids,
             restrict_to_scope=scope.restrict_activity,
-            limit=10,
+            limit=10 if access.is_owner else 40,
         )
+        if not access.is_owner:
+            recent_activity = [
+                activity for activity in recent_activity if access.can_view_activity(activity.entity_type, activity.entity_id)
+            ][:10]
 
         task_stats = self.build_task_stats(task_rows=task_rows, today=today)
         open_risks = [row for row in risk_rows if self.overview_helpers.is_open_status(row[3])]

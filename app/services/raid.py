@@ -497,7 +497,9 @@ class RaidService:
     ) -> list[dict[str, object]] | dict[str, object]:
         config = RAID_CONFIGS[kind]
         project = self.get_project_or_404(project_id)
-        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(
+            project, view=config["module"]
+        )
         number_field = str(config["number_field"])
         allowed_sort_fields = {number_field, "created_at", "updated_at", "status_id"}
         if hasattr(config["model"], "title"):
@@ -548,7 +550,7 @@ class RaidService:
     ) -> list[dict[str, object]] | dict[str, object]:
         config = RAID_CONFIGS[kind]
         scope = access_for(self.db, account_id=account_id, user=current_user)
-        visible = scope.item_filter(config["model"].project_id, config["model"].program_id)
+        visible = scope.item_filter(config["model"].project_id, config["model"].program_id, config["module"])
         sort_value = validate_sort(
             sort,
             allowed_fields=config["account_sort_fields"],
@@ -602,7 +604,7 @@ class RaidService:
 
     def get_item(self, *, kind: str, item_id: UUID, current_user: User) -> dict[str, object]:
         item = self.get_item_or_404(kind=kind, item_id=item_id)
-        self.require_item_access(item, current_user)
+        self.require_item_access(item, current_user, view=RAID_CONFIGS[kind]["module"])
         return self.enrich_item(item, RAID_CONFIGS[kind])
 
     def create_item(
@@ -942,14 +944,26 @@ class RaidService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision option not found.")
         return option
 
-    def require_item_access(self, item: Any, current_user: User, *, module: ProjectModule | None = None) -> None:
-        """View access to the item's project (or program), or edit access to `module` there."""
+    def require_item_access(
+        self,
+        item: Any,
+        current_user: User,
+        *,
+        module: ProjectModule | None = None,
+        view: ProjectModule | None = None,
+    ) -> None:
+        """Sight of `view` (or of `module`) in the item's project or program, plus edit access to `module`."""
         access_for(self.db, account_id=item.account_id, user=current_user).require_item(
-            project_id=item.project_id, program_id=getattr(item, "program_id", None), module=module
+            project_id=item.project_id,
+            program_id=getattr(item, "program_id", None),
+            module=module,
+            view=view or module,
         )
 
     def require_decision_access(
         self, record: Decision | DecisionOption, current_user: User, *, edit: bool = False
     ) -> None:
         decision = record if isinstance(record, Decision) else self.get_decision_or_404(record.decision_id)
-        self.require_item_access(decision, current_user, module=ProjectModule.DECISIONS if edit else None)
+        self.require_item_access(
+            decision, current_user, module=ProjectModule.DECISIONS if edit else None, view=ProjectModule.DECISIONS
+        )

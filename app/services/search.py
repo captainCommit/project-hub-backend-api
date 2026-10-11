@@ -1,12 +1,12 @@
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import String, and_, bindparam, case, cast, func, literal, or_, select, union_all
+from sqlalchemy import String, and_, bindparam, case, cast, func, literal, or_, select, true, union_all
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.account import Account
-from app.models.access_grant import AccessGrant
+from app.models.access_grant import AccessGrant, GrantRole, ProjectModule
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.assumption import Assumption
 from app.models.decision import Decision
@@ -48,12 +48,25 @@ def held_by_user() -> ColumnElement[bool]:
     return AccessGrant.user_id == bindparam("user_id")
 
 
-def visible_project(project_id: ColumnElement[object]) -> ColumnElement[bool]:
+def grant_shows(module: ProjectModule) -> ColumnElement[bool]:
+    """A grant shows a module when it's a manager grant, has no module limit, or lists the module."""
+    return or_(
+        AccessGrant.role == GrantRole.MANAGER.value,
+        # "No limit" is SQL NULL on older rows and JSON null on rows saved since.
+        AccessGrant.view_modules.is_(None),
+        cast(AccessGrant.view_modules, String) == "null",
+        cast(AccessGrant.view_modules, String).like(f'%"{module.value}"%'),
+    )
+
+
+def visible_project(project_id: ColumnElement[object], module: ProjectModule | None = None) -> ColumnElement[bool]:
+    """Projects the user can see; with a module, only those where a grant also shows that module."""
     project = aliased(Project)
     granted_projects = select(project.id).join(
         AccessGrant,
         and_(
             held_by_user(),
+            grant_shows(module) if module is not None else true(),
             or_(
                 AccessGrant.project_id == project.id,
                 AccessGrant.program_id == project.program_id,
@@ -258,7 +271,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(Task.is_deleted.is_(False), visible_project(Task.project_id)),
+                filters=(Task.is_deleted.is_(False), visible_project(Task.project_id, ProjectModule.TASKS)),
             ),
             "RISK": self.entity_statement(
                 entity_type="RISK",
@@ -277,7 +290,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Risk.project_id),),
+                filters=(visible_project(Risk.project_id, ProjectModule.RISKS),),
             ),
             "ISSUE": self.entity_statement(
                 entity_type="ISSUE",
@@ -296,7 +309,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Issue.project_id),),
+                filters=(visible_project(Issue.project_id, ProjectModule.ISSUES),),
             ),
             "ASSUMPTION": self.entity_statement(
                 entity_type="ASSUMPTION",
@@ -315,7 +328,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Assumption.project_id),),
+                filters=(visible_project(Assumption.project_id, ProjectModule.ASSUMPTIONS),),
             ),
             "DECISION": self.entity_statement(
                 entity_type="DECISION",
@@ -334,7 +347,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Decision.project_id),),
+                filters=(visible_project(Decision.project_id, ProjectModule.DECISIONS),),
             ),
             "SPRINT": self.entity_statement(
                 entity_type="SPRINT",
@@ -354,7 +367,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Sprint.project_id),),
+                filters=(visible_project(Sprint.project_id, ProjectModule.SPRINTS),),
             ),
             "RESOURCE": self.entity_statement(
                 entity_type="RESOURCE",

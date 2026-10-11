@@ -26,6 +26,7 @@ def grant_access(
     project_id: "str | UUID | None" = None,
     modules: list[str] | None = None,
     email: str = "dev@example.com",
+    view_modules: list[str] | None = None,
 ) -> None:
     """Give a user (the local dev user by default) a role on one portfolio, program or project."""
     from uuid import UUID
@@ -49,6 +50,7 @@ def grant_access(
             project_id=as_uuid(project_id),
             role=role,
             modules=modules,
+            view_modules=view_modules,
         )
     )
     db_session.commit()

@@ -34,23 +34,28 @@ class AccessGrantCreate(GrantScope):
     role: GrantRole
     # MEMBER grants: modules they may edit. Ignored for other roles.
     modules: list[ProjectModule] = Field(default_factory=list)
+    # MEMBER and VIEWER grants: modules they may see; None means all. Edit modules are always visible.
+    view_modules: list[ProjectModule] | None = None
 
-    _unique_modules = field_validator("modules")(unique_modules)
+    _unique_modules = field_validator("modules", "view_modules")(unique_modules)
 
 
 class AccessGrantUpdate(BaseModel):
     role: GrantRole | None = None
     modules: list[ProjectModule] | None = None
+    # Sending null makes every module visible; leaving it out keeps what the grant has.
+    view_modules: list[ProjectModule] | None = None
 
-    _unique_modules = field_validator("modules")(unique_modules)
+    _unique_modules = field_validator("modules", "view_modules")(unique_modules)
 
 
 class InviteAccess(GrantScope):
     """Where a newly invited person starts, at their invited role."""
 
     modules: list[ProjectModule] = Field(default_factory=list)
+    view_modules: list[ProjectModule] | None = None
 
-    _unique_modules = field_validator("modules")(unique_modules)
+    _unique_modules = field_validator("modules", "view_modules")(unique_modules)
 
 
 class AccessGrantUser(BaseModel):
@@ -68,6 +73,8 @@ class AccessGrantRead(BaseModel):
     scope_name: str
     role: GrantRole
     modules: list[ProjectModule]
+    # None means every module is visible.
+    view_modules: list[ProjectModule] | None
     # True when the grant sits on a parent (portfolio or program) of the scope that was asked about.
     inherited: bool
     created_at: datetime
@@ -77,6 +84,7 @@ class PermissionRead(BaseModel):
     role: str
     can_manage: bool
     editable_modules: list[ProjectModule]
+    visible_modules: list[ProjectModule]
 
 
 class MyAccessRead(BaseModel):

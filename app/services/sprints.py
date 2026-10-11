@@ -47,7 +47,7 @@ class SprintService:
     def list_account_sprints(self, *, account_id: UUID, current_user: User) -> list[dict[str, object]]:
         scope = access_for(self.db, account_id=account_id, user=current_user)
         sprints = self.sprints.list_for_account(account_id)
-        visible = scope.visible_project_ids()
+        visible = scope.visible_project_ids(ProjectModule.SPRINTS)
         if visible is not None:
             sprints = [sprint for sprint in sprints if sprint.project_id in visible]
         return self.enrich_sprints(sprints)
@@ -197,6 +197,8 @@ class SprintService:
     def require_project_access(
         self, project_id: UUID, current_user: User, *, module: ProjectModule | None = None
     ) -> None:
-        """View access to the project, or edit access to `module` in it."""
+        """Sight of the project's sprints, or edit access to `module` in it."""
         project = self.get_project_or_404(project_id)
-        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project, module=module)
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(
+            project, module=module, view=ProjectModule.SPRINTS
+        )

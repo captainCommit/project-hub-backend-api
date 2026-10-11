@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models.access_grant import ProjectModule
 from app.models.account_member import AccountMemberRole
@@ -22,7 +23,7 @@ from app.schemas.hierarchy import (
     ProjectCreate,
     ProjectUpdate,
 )
-from app.services.access import access_for
+from app.services.access import AccessScope, access_for
 
 
 # Portfolios sit at the top of the account, so only owners create them; below that, managers of the parent do.
@@ -164,7 +165,8 @@ class HierarchyService:
         program = self.get_program_or_404(program_id)
         scope = access_for(self.db, account_id=program.account_id, user=current_user)
         scope.require_visible_program(program)
-        return scope.keep_visible(self.hierarchy.list_projects_for_program(program_id), scope.visible_project_ids())
+        projects = scope.keep_visible(self.hierarchy.list_projects_for_program(program_id), scope.visible_project_ids())
+        return self.hide_budgets(scope, projects)
 
     def create_project(
         self,
@@ -212,8 +214,9 @@ class HierarchyService:
 
     def get_project(self, *, project_id: UUID, current_user: User) -> Project:
         project = self.get_project_or_404(project_id)
-        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
-        return project
+        scope = access_for(self.db, account_id=project.account_id, user=current_user)
+        scope.require_project(project)
+        return self.hide_budgets(scope, [project])[0]
 
     def update_project(
         self,
@@ -385,8 +388,19 @@ class HierarchyService:
         return (
             scope.keep_visible(self.hierarchy.list_portfolios_for_account(account_id), scope.visible_portfolio_ids()),
             scope.keep_visible(self.hierarchy.list_programs_for_account(account_id), scope.visible_program_ids()),
-            scope.keep_visible(self.hierarchy.list_projects_for_account(account_id), scope.visible_project_ids()),
+            self.hide_budgets(
+                scope, scope.keep_visible(self.hierarchy.list_projects_for_account(account_id), scope.visible_project_ids())
+            ),
         )
+
+    def hide_budgets(self, scope: AccessScope, projects: list[Project]) -> list[Project]:
+        """Blank the budget of projects whose Financials this user can't see (for this request only, never saved)."""
+        visible = scope.visible_project_ids(ProjectModule.FINANCIALS)
+        if visible is not None:
+            for project in projects:
+                if project.id not in visible:
+                    set_committed_value(project, "budget", None)
+        return projects
 
     def resolve_status_id(
         self,
