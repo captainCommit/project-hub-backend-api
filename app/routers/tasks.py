@@ -18,6 +18,8 @@ from app.schemas.tasks import (
     TaskBoardPositionUpdate,
     TaskBoardRead,
     TaskCreate,
+    TaskImportRead,
+    TaskImportRequest,
     TaskMoveRequest,
     TaskPredecessorCreate,
     TaskPredecessorRead,
@@ -27,6 +29,7 @@ from app.schemas.tasks import (
     TaskUpdate,
 )
 from app.services.auth import get_current_user
+from app.services.task_import import TaskImportService
 from app.services.tasks import TaskService
 
 
@@ -135,6 +138,20 @@ def create_task(
     current_user: User = Depends(get_current_user),
 ) -> TaskRead:
     return TaskService(db).create_task(project_id=project_id, task_in=task_in, current_user=current_user)
+
+
+@router.post(
+    "/projects/{project_id}/tasks/import",
+    response_model=TaskImportRead,
+    summary="Create tasks from spreadsheet rows (all or nothing; dry_run only checks them)",
+)
+def import_tasks(
+    project_id: UUID,
+    import_in: TaskImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TaskImportRead:
+    return TaskImportService(db).import_tasks(project_id=project_id, import_in=import_in, current_user=current_user)
 
 
 @router.patch(

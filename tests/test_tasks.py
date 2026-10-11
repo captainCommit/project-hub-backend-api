@@ -1271,3 +1271,79 @@ def test_due_tasks_return_overdue_upcoming_and_apply_filters(client: TestClient,
     assert [task["id"] for task in assigned_filter_response.json()["tasks"]] == [overdue["id"]]
     assert overdue_mode_response.status_code == 200
     assert {task["name"] for task in overdue_mode_response.json()["tasks"]} == {"Overdue"}
+
+def import_tasks(client: TestClient, project_id: str, rows: list[dict], **extra: object):
+    return client.post(f"/api/v1/projects/{project_id}/tasks/import", json={"rows": rows, **extra})
+
+
+def test_import_creates_tasks_with_names_resolved(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    create_sprint(client, project_id, "Sprint 1")
+    existing = create_task(client, project_id, "Existing phase")
+
+    response = import_tasks(client, project_id, [
+        {"name": "Design", "status": "in progress", "type": "Work Package", "priority": "High",
+         "start_date": "2026-11-02", "finish_date": "2026/11/06", "percent_complete": "25%",
+         "story_points": "3", "assignee": "DEV@example.com", "sprint": "sprint 1"},
+        {"name": "Wireframes", "parent": "Design", "duration_days": "2"},
+        {"name": "Kickoff", "parent": "Existing phase"},
+    ])
+
+    assert response.status_code == 200
+    assert response.json() == {"created": 3, "dry_run": False, "errors": []}
+    tree = client.get(f"/api/v1/projects/{project_id}/tasks/tree").json()
+    by_name = {node["name"]: node for node in tree}
+    design = by_name["Design"]
+    assert design["status"]["label"] == "In Progress"
+    assert design["percent_complete"] in ("25", "25.00", 25)
+    assert design["sprint_id"] is not None
+    assert [child["name"] for child in design["children"]] == ["Wireframes"]
+    assert [child["name"] for child in by_name["Existing phase"]["children"]] == ["Kickoff"]
+    assert by_name["Existing phase"]["id"] == existing["id"]
+    tasks = client.get(f"/api/v1/projects/{project_id}/tasks").json()
+    design_task = next(t for t in tasks if t["name"] == "Design")
+    assert any(a["user_id"] for a in design_task["assignments"])
+
+
+def test_import_reports_every_bad_row_and_creates_nothing(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+
+    response = import_tasks(client, project_id, [
+        {"name": "Fine"},
+        {"name": "", "status": "Someday"},
+        {"name": "Backwards", "start_date": "2026-11-10", "finish_date": "2026-11-01"},
+        {"name": "Orphan", "parent": "Nowhere", "assignee": "stranger@example.com"},
+    ])
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["created"] == 0
+    assert [e["row"] for e in body["errors"]] == [2, 3, 4]
+    assert "Name is required" in body["errors"][0]["message"]
+    assert 'Unknown status "Someday"' in body["errors"][0]["message"]
+    assert "Not Started" in body["errors"][0]["message"]
+    assert "Finish date is before the start date" in body["errors"][1]["message"]
+    assert 'Parent "Nowhere"' in body["errors"][2]["message"]
+    assert "stranger@example.com" in body["errors"][2]["message"]
+    assert client.get(f"/api/v1/projects/{project_id}/tasks").json() == []
+
+
+def test_import_dry_run_checks_without_creating(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+
+    response = import_tasks(client, project_id, [{"name": "Only a check"}], dry_run=True)
+
+    assert response.json() == {"created": 0, "dry_run": True, "errors": []}
+    assert client.get(f"/api/v1/projects/{project_id}/tasks").json() == []
+
+
+def test_viewer_cannot_import_tasks(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.VIEWER)
+
+    response = import_tasks(client, hierarchy["project"]["id"], [{"name": "Blocked"}])
+
+    assert response.status_code == 403

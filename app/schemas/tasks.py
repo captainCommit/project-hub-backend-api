@@ -99,6 +99,46 @@ class TaskBulkDeleteRequest(BaseModel):
     task_ids: list[UUID] = Field(min_length=1)
 
 
+class TaskImportRow(BaseModel):
+    """One spreadsheet row, as text. Options, sprints, assignees and parents are matched by name."""
+
+    name: str | None = None
+    description: str | None = None
+    type: str | None = None
+    status: str | None = None
+    priority: str | None = None
+    start_date: str | None = None
+    finish_date: str | None = None
+    duration_days: str | None = None
+    story_points: str | None = None
+    percent_complete: str | None = None
+    # Email of an account member.
+    assignee: str | None = None
+    sprint: str | None = None
+    # Name of an earlier row in the file, or of a task already in the project.
+    parent: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class TaskImportRequest(BaseModel):
+    rows: list[TaskImportRow] = Field(min_length=1, max_length=1000)
+    # Check every row and report problems without creating anything.
+    dry_run: bool = False
+
+
+class TaskImportError(BaseModel):
+    # 1-based position among the data rows (the header is not counted).
+    row: int
+    message: str
+
+
+class TaskImportRead(BaseModel):
+    created: int
+    dry_run: bool
+    errors: list[TaskImportError]
+
+
 class TaskReorderItem(BaseModel):
     id: UUID
     parent_task_id: UUID | None = None
