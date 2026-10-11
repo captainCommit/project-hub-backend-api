@@ -28,12 +28,10 @@ from app.schemas.skills import (
 
 SKILL_WRITE_ROLES = {
     AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
     AccountMemberRole.MANAGER.value,
 }
 SKILL_ASSIGNMENT_WRITE_ROLES = {
     AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
     AccountMemberRole.MANAGER.value,
     AccountMemberRole.MEMBER.value,
 }

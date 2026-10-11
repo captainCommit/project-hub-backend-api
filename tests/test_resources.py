@@ -11,6 +11,7 @@ import app.models  # noqa: F401
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.main import app
+from tests.helpers import grant_existing_portfolios
 from app.models.account import Account
 from app.models.account_holiday import AccountHoliday
 from app.models.account_member import AccountMember, AccountMemberRole
@@ -213,6 +214,7 @@ def set_current_user_role(db_session: Session, account_id: str | UUID, role: Acc
     assert membership is not None
     membership.role = role.value
     db_session.commit()
+    grant_existing_portfolios(db_session, account_id, role)
 
 
 def get_option_id(
@@ -394,7 +396,7 @@ def test_viewer_cannot_create_allocation(client: TestClient, db_session: Session
     )
 
     assert response.status_code == 403
-    assert response.json()["message"] == "Insufficient account role."
+    assert response.json()["message"] == "Insufficient project permission."
 
 
 def test_task_resource_account_mismatch_is_rejected(client: TestClient) -> None:
@@ -764,7 +766,7 @@ def test_account_holiday_crud_permission_checks(client: TestClient, db_session: 
     assert viewer_create_response.status_code == 403
     assert viewer_create_response.json()["message"] == "Insufficient account role."
 
-    set_current_user_role(db_session, account_id, AccountMemberRole.ADMIN)
+    set_current_user_role(db_session, account_id, AccountMemberRole.OWNER)
     holiday_response = client.post(
         f"/api/v1/accounts/{account_id}/holidays",
         json={"holiday_date": "2026-01-05", "name": "Admin Holiday"},

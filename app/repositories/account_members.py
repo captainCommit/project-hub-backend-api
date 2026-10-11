@@ -57,6 +57,13 @@ class AccountMemberRepository:
         statement = select(AccountMember.account_id, AccountMember.role).where(AccountMember.user_id == user_id)
         return {account_id: role for account_id, role in self.db.execute(statement).all()}
 
+    def count_owners(self, account_id: UUID) -> int:
+        statement = select(func.count()).where(
+            AccountMember.account_id == account_id,
+            AccountMember.role == AccountMemberRole.OWNER.value,
+        )
+        return self.db.scalar(statement) or 0
+
     def count_by_account(self) -> dict[UUID, int]:
         statement = select(AccountMember.account_id, func.count()).group_by(AccountMember.account_id)
         return {account_id: count for account_id, count in self.db.execute(statement).all()}
@@ -84,11 +91,11 @@ class AccountMemberRepository:
         return {account_id: count for account_id, count in self.db.execute(statement).all()}
 
     def list_admins(self) -> list[tuple[UUID, User, str]]:
-        """Owners and admins of every account, owners first."""
+        """Owners of every account."""
         statement = (
             select(AccountMember.account_id, User, AccountMember.role)
             .join(User, User.id == AccountMember.user_id)
-            .where(AccountMember.role.in_([AccountMemberRole.OWNER.value, AccountMemberRole.ADMIN.value]))
-            .order_by(AccountMember.role.desc(), User.email)
+            .where(AccountMember.role == AccountMemberRole.OWNER.value)
+            .order_by(User.email)
         )
         return [(account_id, user, role) for account_id, user, role in self.db.execute(statement).all()]

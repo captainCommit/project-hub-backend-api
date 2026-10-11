@@ -11,6 +11,7 @@ import app.models  # noqa: F401
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.main import app
+from tests.helpers import grant_existing_portfolios
 from app.models.account import Account
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.decision import Decision
@@ -185,6 +186,7 @@ def set_current_user_role(db_session: Session, account_id: str | UUID, role: Acc
     assert membership is not None
     membership.role = role.value
     db_session.commit()
+    grant_existing_portfolios(db_session, account_id, role)
 
 
 def get_option_id(
@@ -255,7 +257,7 @@ def test_viewer_cannot_create_raid_item(client: TestClient, db_session: Session,
     )
 
     assert response.status_code == 403
-    assert response.json()["message"] == "Insufficient account role."
+    assert response.json()["message"] == "Insufficient project permission."
 
 
 @pytest.mark.parametrize("case", RAID_CASES, ids=[str(case["entity"]) for case in RAID_CASES])
@@ -710,7 +712,7 @@ def test_viewer_cannot_create_decision_option(client: TestClient, db_session: Se
     )
 
     assert response.status_code == 403
-    assert response.json()["message"] == "Insufficient account role."
+    assert response.json()["message"] == "Insufficient project permission."
 
 
 def test_non_member_cannot_read_decision_options(client: TestClient, db_session: Session) -> None:

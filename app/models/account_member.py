@@ -10,7 +10,6 @@ from app.core.database import Base
 
 class AccountMemberRole(str, Enum):
     OWNER = "OWNER"
-    ADMIN = "ADMIN"
     MANAGER = "MANAGER"
     MEMBER = "MEMBER"
     VIEWER = "VIEWER"
@@ -21,7 +20,7 @@ class AccountMember(Base):
     __table_args__ = (
         UniqueConstraint("account_id", "user_id", name="uq_account_members_account_id_user_id"),
         CheckConstraint(
-            "role in ('OWNER', 'ADMIN', 'MANAGER', 'MEMBER', 'VIEWER')",
+            "role in ('OWNER', 'MANAGER', 'MEMBER', 'VIEWER')",
             name="ck_account_members_role",
         ),
     )

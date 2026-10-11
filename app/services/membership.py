@@ -10,11 +10,10 @@ from app.repositories.accounts import AccountRepository
 
 WRITE_ROLES = {
     AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
     AccountMemberRole.MANAGER.value,
     AccountMemberRole.MEMBER.value,
 }
-ADMIN_ROLES = {AccountMemberRole.OWNER.value, AccountMemberRole.ADMIN.value}
+ADMIN_ROLES = {AccountMemberRole.OWNER.value}
 
 
 def require_account_member(db: Session, *, account_id: UUID, user_id: UUID) -> AccountMember:

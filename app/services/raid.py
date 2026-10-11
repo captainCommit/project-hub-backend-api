@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginated_response, validate_sort
-from app.models.account_member import AccountMemberRole
+from app.models.access_grant import ProjectModule
 from app.models.assumption import Assumption
 from app.models.change_request import ChangeRequest
 from app.models.decision import Decision
@@ -38,6 +38,7 @@ from app.schemas.raid import (
     RiskCreate,
     RiskUpdate,
 )
+from app.services.access import access_for
 from app.services.activity import ActivityLogService
 from app.services.notifications import NotificationService
 from app.models.notification import NotificationType
@@ -47,15 +48,10 @@ def normalize_option_key(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", value.strip()).strip("_").upper()
 
 
-RAID_WRITE_ROLES = {
-    AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
-    AccountMemberRole.MANAGER.value,
-    AccountMemberRole.MEMBER.value,
-}
 
 RAID_CONFIGS: dict[str, dict[str, Any]] = {
     "risk": {
+        "module": ProjectModule.RISKS,
         "model": Risk,
         "label": "Risk",
         "number_field": "risk_number",
@@ -70,6 +66,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "created_by_field": "created_by",
     },
     "issue": {
+        "module": ProjectModule.ISSUES,
         "model": Issue,
         "label": "Issue",
         "number_field": "issue_number",
@@ -84,6 +81,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "created_by_field": "created_by",
     },
     "assumption": {
+        "module": ProjectModule.ASSUMPTIONS,
         "model": Assumption,
         "label": "Assumption",
         "number_field": "assumption_number",
@@ -97,6 +95,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "entered_by_field": "entered_by",
     },
     "decision": {
+        "module": ProjectModule.DECISIONS,
         "model": Decision,
         "label": "Decision",
         "number_field": "decision_number",
@@ -111,6 +110,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "created_by_field": "created_by",
     },
     "dependency": {
+        "module": ProjectModule.DEPENDENCIES,
         "model": Dependency,
         "label": "Dependency",
         "number_field": "dependency_number",
@@ -125,6 +125,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "created_by_field": "created_by",
     },
     "change_request": {
+        "module": ProjectModule.CHANGE_REQUESTS,
         "model": ChangeRequest,
         "label": "Change request",
         "number_field": "change_request_number",
@@ -139,6 +140,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "created_by_field": "created_by",
     },
     "requirement": {
+        "module": ProjectModule.REQUIREMENTS,
         "model": Requirement,
         "label": "Requirement",
         "number_field": "requirement_number",
@@ -153,6 +155,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "created_by_field": "created_by",
     },
     "test_case": {
+        "module": ProjectModule.TESTING,
         "model": TestCase,
         "label": "Test case",
         "number_field": "test_case_number",
@@ -429,7 +432,7 @@ class RaidService:
 
     def list_decision_options(self, *, decision_id: UUID, current_user: User) -> list[DecisionOption]:
         decision = self.get_decision_or_404(decision_id)
-        self.require_account_member(account_id=decision.account_id, user_id=current_user.id)
+        self.require_decision_access(decision, current_user)
         return self.raid.list_decision_options(decision.id)
 
     def create_decision_option(
@@ -440,11 +443,7 @@ class RaidService:
         current_user: User,
     ) -> DecisionOption:
         decision = self.get_decision_or_404(decision_id)
-        self.require_account_role(
-            account_id=decision.account_id,
-            user_id=current_user.id,
-            allowed_roles=RAID_WRITE_ROLES,
-        )
+        self.require_decision_access(decision, current_user, edit=True)
         option = self.raid.create_decision_option(
             account_id=decision.account_id,
             decision_id=decision.id,
@@ -461,7 +460,7 @@ class RaidService:
 
     def get_decision_option(self, *, option_id: UUID, current_user: User) -> DecisionOption:
         option = self.get_decision_option_or_404(option_id)
-        self.require_account_member(account_id=option.account_id, user_id=current_user.id)
+        self.require_decision_access(option, current_user)
         return option
 
     def update_decision_option(
@@ -472,11 +471,7 @@ class RaidService:
         current_user: User,
     ) -> DecisionOption:
         option = self.get_decision_option_or_404(option_id)
-        self.require_account_role(
-            account_id=option.account_id,
-            user_id=current_user.id,
-            allowed_roles=RAID_WRITE_ROLES,
-        )
+        self.require_decision_access(option, current_user, edit=True)
         changes = option_in.model_dump(exclude_unset=True)
         option = self.raid.update_decision_option(option, changes)
         self.db.commit()
@@ -485,11 +480,7 @@ class RaidService:
 
     def delete_decision_option(self, *, option_id: UUID, current_user: User) -> None:
         option = self.get_decision_option_or_404(option_id)
-        self.require_account_role(
-            account_id=option.account_id,
-            user_id=current_user.id,
-            allowed_roles=RAID_WRITE_ROLES,
-        )
+        self.require_decision_access(option, current_user, edit=True)
         self.raid.delete_decision_option(option)
         self.db.commit()
 
@@ -506,7 +497,7 @@ class RaidService:
     ) -> list[dict[str, object]] | dict[str, object]:
         config = RAID_CONFIGS[kind]
         project = self.get_project_or_404(project_id)
-        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
         number_field = str(config["number_field"])
         allowed_sort_fields = {number_field, "created_at", "updated_at", "status_id"}
         if hasattr(config["model"], "title"):
@@ -556,7 +547,8 @@ class RaidService:
         pagination: PaginationParams | None = None,
     ) -> list[dict[str, object]] | dict[str, object]:
         config = RAID_CONFIGS[kind]
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=account_id, user=current_user)
+        visible = scope.item_filter(config["model"].project_id, config["model"].program_id)
         sort_value = validate_sort(
             sort,
             allowed_fields=config["account_sort_fields"],
@@ -589,6 +581,7 @@ class RaidService:
                 search_fields=config["search_fields"],
                 sort=sort_value,
                 pagination=pagination,
+                visible=visible,
             )
             return paginated_response(items=self.enrich_items(items, config), total=total, pagination=pagination)
 
@@ -603,12 +596,13 @@ class RaidService:
             search=search,
             search_fields=config["search_fields"],
             sort=sort_value,
+            visible=visible,
         )
         return self.enrich_items(items, config)
 
     def get_item(self, *, kind: str, item_id: UUID, current_user: User) -> dict[str, object]:
         item = self.get_item_or_404(kind=kind, item_id=item_id)
-        self.require_account_member(account_id=item.account_id, user_id=current_user.id)
+        self.require_item_access(item, current_user)
         return self.enrich_item(item, RAID_CONFIGS[kind])
 
     def create_item(
@@ -621,10 +615,8 @@ class RaidService:
     ) -> dict[str, object]:
         config = RAID_CONFIGS[kind]
         project = self.get_project_or_404(project_id)
-        self.require_account_role(
-            account_id=project.account_id,
-            user_id=current_user.id,
-            allowed_roles=RAID_WRITE_ROLES,
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(
+            project, module=config["module"]
         )
 
         values = item_in.model_dump()
@@ -689,11 +681,7 @@ class RaidService:
     ) -> dict[str, object]:
         config = RAID_CONFIGS[kind]
         item = self.get_item_or_404(kind=kind, item_id=item_id)
-        self.require_account_role(
-            account_id=item.account_id,
-            user_id=current_user.id,
-            allowed_roles=RAID_WRITE_ROLES,
-        )
+        self.require_item_access(item, current_user, module=config["module"])
         changes = item_in.model_dump(exclude_unset=True)
         self.resolve_option_keys(config=config, account_id=item.account_id, values=changes)
         self.validate_update_options(config=config, account_id=item.account_id, changes=changes)
@@ -728,11 +716,7 @@ class RaidService:
     def delete_item(self, *, kind: str, item_id: UUID, current_user: User) -> None:
         config = RAID_CONFIGS[kind]
         item = self.get_item_or_404(kind=kind, item_id=item_id)
-        self.require_account_role(
-            account_id=item.account_id,
-            user_id=current_user.id,
-            allowed_roles=RAID_WRITE_ROLES,
-        )
+        self.require_item_access(item, current_user, module=config["module"])
         ActivityLogService(self.db).record(
             account_id=item.account_id,
             entity_type=config["entity_type"],
@@ -958,22 +942,14 @@ class RaidService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision option not found.")
         return option
 
-    def require_account_member(self, *, account_id: UUID, user_id: UUID) -> None:
-        account = self.accounts.get_by_id(account_id)
-        if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account access denied.")
+    def require_item_access(self, item: Any, current_user: User, *, module: ProjectModule | None = None) -> None:
+        """View access to the item's project (or program), or edit access to `module` there."""
+        access_for(self.db, account_id=item.account_id, user=current_user).require_item(
+            project_id=item.project_id, program_id=getattr(item, "program_id", None), module=module
+        )
 
-    def require_account_role(
-        self,
-        *,
-        account_id: UUID,
-        user_id: UUID,
-        allowed_roles: set[str],
+    def require_decision_access(
+        self, record: Decision | DecisionOption, current_user: User, *, edit: bool = False
     ) -> None:
-        self.require_account_member(account_id=account_id, user_id=user_id)
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None or membership.role not in allowed_roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")
+        decision = record if isinstance(record, Decision) else self.get_decision_or_404(record.decision_id)
+        self.require_item_access(decision, current_user, module=ProjectModule.DECISIONS if edit else None)

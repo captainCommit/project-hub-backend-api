@@ -155,9 +155,11 @@ class ResourceCalendarProgramSummary(BaseModel):
 
 class ResourceCalendarAllocationRead(BaseModel):
     id: UUID
-    task: ResourceCalendarTaskSummary
-    project: ResourceCalendarProjectSummary
-    program: ResourceCalendarProgramSummary
+    # Empty, with restricted set, for work on projects the viewer cannot see: the hours still count.
+    task: ResourceCalendarTaskSummary | None
+    project: ResourceCalendarProjectSummary | None
+    program: ResourceCalendarProgramSummary | None
+    restricted: bool = False
     allocated_hours: Decimal | None
     start_date: date | None
     end_date: date | None

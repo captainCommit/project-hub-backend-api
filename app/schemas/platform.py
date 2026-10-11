@@ -1,12 +1,11 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class SeatCounts(BaseModel):
     OWNER: int = 0
-    ADMIN: int = 0
     MANAGER: int = 0
     MEMBER: int = 0
     VIEWER: int = 0
@@ -23,6 +22,12 @@ class AccountBillingLine(BaseModel):
     viewer_seats: int
     pending_invites: int
     monthly_total_cents: int
+    billing_enabled: bool
+    subscription_status: str | None
+    past_due: bool
+    read_only: bool
+    # Unpaid balance on open Stripe invoices.
+    outstanding_cents: int
 
 
 class BillingSummary(BaseModel):
@@ -46,3 +51,17 @@ class SystemStatus(BaseModel):
     user_count: int
     signed_in_user_count: int
     checked_at: datetime
+
+
+class PlatformAuditEventRead(BaseModel):
+    id: UUID
+    actor_email: str
+    action: str
+    account_id: UUID | None
+    account_name: str | None
+    target: str | None
+    details: dict[str, object] | None
+    request_id: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

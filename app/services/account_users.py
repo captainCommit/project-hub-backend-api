@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.pagination import PaginationParams, paginated_response
+from app.models.access_grant import GrantRole
+from app.models.account import Account
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
@@ -22,14 +24,25 @@ from app.schemas.account_user import (
     AccountUserInviteStatus,
     AccountUserRead,
 )
+from app.services.access import forget_access
+from app.services.access_grants import AccessGrantService
+from app.services.billing import BillingService
 from app.services.cognito import admin_create_user_invite, should_send_cognito_invite
+from app.services.platform_audit import PlatformAuditAction, record_platform_action
 
 
-INVITE_ACCOUNT_ROLES = {AccountMemberRole.OWNER.value, AccountMemberRole.ADMIN.value}
+INVITE_ACCOUNT_ROLES = {AccountMemberRole.OWNER.value}
 
 
 class CognitoInviteError(Exception):
     """Raised when Cognito AdminCreateUser fails during account-user onboarding."""
+
+
+class LastOwnerError(Exception):
+    """Changing this role would leave the account without an owner."""
+
+
+LAST_OWNER_MESSAGE = "An account needs at least one owner."
 
 
 class AccountUserService:
@@ -48,7 +61,12 @@ class AccountUserService:
         current_user: User,
         pagination: PaginationParams | None = None,
     ) -> list[AccountUserRead] | dict[str, object]:
-        self.require_account_access(account_id=account_id, current_user=current_user)
+        platform_account = self.require_account_access(account_id=account_id, current_user=current_user)
+        if platform_account is not None:
+            record_platform_action(
+                self.db, actor=current_user, action=PlatformAuditAction.ACCOUNT_USERS_VIEWED, account=platform_account
+            )
+            self.db.commit()
         if pagination and pagination.paginated:
             users, total = self.account_users.list_for_account_paginated(account_id, pagination=pagination)
             return paginated_response(items=self.to_reads(account_id, users), total=total, pagination=pagination)
@@ -80,14 +98,28 @@ class AccountUserService:
         invite_in: AccountUserInviteCreate,
         current_user: User,
     ) -> AccountUserInviteRead:
-        self.require_account_access(
+        platform_account = self.require_account_access(
             account_id=account_id,
             current_user=current_user,
             allowed_roles=INVITE_ACCOUNT_ROLES,
         )
         try:
             result = self.apply_account_user_invite(account_id=account_id, invite_in=invite_in)
+            if platform_account is not None and result.status != AccountUserInviteStatus.ALREADY_EXISTS:
+                record_platform_action(
+                    self.db,
+                    actor=current_user,
+                    action=(
+                        PlatformAuditAction.ACCOUNT_USER_INVITED
+                        if result.status == AccountUserInviteStatus.CREATED
+                        else PlatformAuditAction.ACCOUNT_USER_ROLE_CHANGED
+                    ),
+                    account=platform_account,
+                    target=result.email,
+                    details={"role": result.role.value},
+                )
             self.db.commit()
+            self.sync_billing(account_id, changed=result.status != AccountUserInviteStatus.ALREADY_EXISTS)
             return result
         except IntegrityError as exc:
             self.db.rollback()
@@ -101,6 +133,9 @@ class AccountUserService:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Cognito invite failed.",
             ) from exc
+        except LastOwnerError as exc:
+            self.db.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER_MESSAGE) from exc
 
     def bulk_invite_account_users(
         self,
@@ -109,7 +144,7 @@ class AccountUserService:
         bulk_in: AccountUserBulkInviteCreate,
         current_user: User,
     ) -> AccountUserBulkInviteRead:
-        self.require_account_access(
+        platform_account = self.require_account_access(
             account_id=account_id,
             current_user=current_user,
             allowed_roles=INVITE_ACCOUNT_ROLES,
@@ -175,7 +210,49 @@ class AccountUserService:
                         error="Cognito invite failed.",
                     )
                 )
+            except HTTPException as exc:
+                # E.g. the starting access named a project outside the account.
+                self.db.rollback()
+                counts[AccountUserInviteStatus.FAILED] += 1
+                results.append(
+                    AccountUserBulkInviteResult(
+                        email=self.safe_email_value(payload.get("email")),
+                        status=AccountUserInviteStatus.FAILED,
+                        role=None,
+                        error=str(exc.detail),
+                    )
+                )
+            except LastOwnerError:
+                self.db.rollback()
+                counts[AccountUserInviteStatus.FAILED] += 1
+                results.append(
+                    AccountUserBulkInviteResult(
+                        email=self.safe_email_value(payload.get("email")),
+                        status=AccountUserInviteStatus.FAILED,
+                        role=None,
+                        error=LAST_OWNER_MESSAGE,
+                    )
+                )
 
+        changed = [
+            {"email": r.email, "status": r.status.value, "role": r.role.value}
+            for r in results
+            if r.status in (AccountUserInviteStatus.CREATED, AccountUserInviteStatus.UPDATED) and r.role is not None
+        ]
+        if platform_account is not None and changed:
+            record_platform_action(
+                self.db,
+                actor=current_user,
+                action=PlatformAuditAction.ACCOUNT_USERS_BULK_INVITED,
+                account=platform_account,
+                details={"users": changed},
+            )
+            self.db.commit()
+
+        self.sync_billing(
+            account_id,
+            changed=bool(counts[AccountUserInviteStatus.CREATED] or counts[AccountUserInviteStatus.UPDATED]),
+        )
         return AccountUserBulkInviteRead(
             created=counts[AccountUserInviteStatus.CREATED],
             updated=counts[AccountUserInviteStatus.UPDATED],
@@ -200,6 +277,11 @@ class AccountUserService:
             )
             invite_status = AccountUserInviteStatus.CREATED
         elif membership.role != invite_in.role.value and invite_in.update_existing:
+            if (
+                membership.role == AccountMemberRole.OWNER.value
+                and self.account_members.count_owners(account_id) <= 1
+            ):
+                raise LastOwnerError
             membership = self.account_members.update_role(
                 membership,
                 role=AccountMemberRole(invite_in.role.value),
@@ -208,6 +290,17 @@ class AccountUserService:
         else:
             invite_status = AccountUserInviteStatus.ALREADY_EXISTS
 
+        if invite_in.access is not None and membership.role != AccountMemberRole.OWNER.value:
+            AccessGrantService(self.db).apply_grant(
+                account_id=account_id,
+                user_id=user.id,
+                role=GrantRole(membership.role),
+                target=invite_in.access,
+                modules=invite_in.access.modules,
+                created_by=None,
+            )
+            forget_access(self.db)
+
         self.send_cognito_invite_if_enabled(user=user)
 
         return self.build_invite_read(
@@ -215,6 +308,11 @@ class AccountUserService:
             membership=membership,
             status=invite_status,
         )
+
+    def sync_billing(self, account_id: UUID, *, changed: bool) -> None:
+        """Someone who has signed in before takes a seat as soon as they join; role changes can move seat types."""
+        if changed and self.settings is not None:
+            BillingService(self.db, settings=self.settings).sync_seats_quietly([account_id])
 
     def build_invite_read(
         self,
@@ -269,15 +367,23 @@ class AccountUserService:
         account_id: UUID,
         current_user: User,
         allowed_roles: set[str] | None = None,
-    ) -> None:
-        """Members (holding one of allowed_roles, when given) pass; platform admins pass for any account."""
+    ) -> Account | None:
+        """Members (holding one of allowed_roles, when given) pass; platform admins pass for any account.
+
+        Returns the account when access came only from platform admin powers, so the caller can audit it.
+        """
+        membership = self.account_members.get_for_user(account_id=account_id, user_id=current_user.id)
+        if membership is not None and (allowed_roles is None or membership.role in allowed_roles):
+            return None
         if not current_user.is_platform_admin:
             if allowed_roles is None:
                 self.require_account_member(account_id=account_id, user_id=current_user.id)
             else:
                 self.require_account_role(account_id=account_id, user_id=current_user.id, allowed_roles=allowed_roles)
-        elif self.accounts.get_by_id(account_id) is None:
+        account = self.accounts.get_by_id(account_id)
+        if account is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
+        return account
 
     def require_account_member(self, *, account_id: UUID, user_id: UUID) -> None:
         account = self.accounts.get_by_id(account_id)

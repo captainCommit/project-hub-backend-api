@@ -35,6 +35,9 @@ jobs:
       COGNITO_APP_CLIENT_ID: ${{ vars.COGNITO_APP_CLIENT_ID }}
       COGNITO_ADDITIONAL_CLIENT_IDS: ${{ vars.COGNITO_ADDITIONAL_CLIENT_IDS }}
       COGNITO_DOMAIN: ${{ vars.COGNITO_DOMAIN }}
+      STRIPE_FULL_SEAT_PRICE_ID: ${{ vars.STRIPE_FULL_SEAT_PRICE_ID }}
+      STRIPE_VIEWER_SEAT_PRICE_ID: ${{ vars.STRIPE_VIEWER_SEAT_PRICE_ID }}
+      APP_URL: ${{ vars.APP_URL }}
       # Inbox for CloudWatch alarm emails (confirm the SNS subscription once).
       ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
 

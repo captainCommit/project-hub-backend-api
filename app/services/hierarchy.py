@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.access_grant import ProjectModule
 from app.models.account_member import AccountMemberRole
 from app.models.option_value import OptionValue
 from app.models.portfolio import Portfolio
@@ -21,13 +22,12 @@ from app.schemas.hierarchy import (
     ProjectCreate,
     ProjectUpdate,
 )
+from app.services.access import access_for
 
 
-HIERARCHY_WRITE_ROLES = {
-    AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
-    AccountMemberRole.MANAGER.value,
-}
+# Portfolios sit at the top of the account, so only owners create them; below that, managers of the parent do.
+PORTFOLIO_CREATE_ROLES = {AccountMemberRole.OWNER.value}
+FINANCIAL_PROJECT_FIELDS = {"budget"}
 
 
 class HierarchyService:
@@ -38,8 +38,8 @@ class HierarchyService:
         self.hierarchy = HierarchyRepository(db)
 
     def list_portfolios(self, *, account_id: UUID, current_user: User) -> list[Portfolio]:
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
-        return self.hierarchy.list_portfolios_for_account(account_id)
+        scope = access_for(self.db, account_id=account_id, user=current_user)
+        return scope.keep_visible(self.hierarchy.list_portfolios_for_account(account_id), scope.visible_portfolio_ids())
 
     def create_portfolio(
         self,
@@ -51,8 +51,9 @@ class HierarchyService:
         self.require_account_role(
             account_id=account_id,
             user_id=current_user.id,
-            allowed_roles=HIERARCHY_WRITE_ROLES,
+            allowed_roles=PORTFOLIO_CREATE_ROLES,
         )
+        access_for(self.db, account_id=account_id, user=current_user).require_writable()
         status_id = self.resolve_status_id(
             account_id=account_id,
             entity_type="PORTFOLIO",
@@ -74,7 +75,7 @@ class HierarchyService:
 
     def get_portfolio(self, *, portfolio_id: UUID, current_user: User) -> Portfolio:
         portfolio = self.get_portfolio_or_404(portfolio_id)
-        self.require_account_member(account_id=portfolio.account_id, user_id=current_user.id)
+        access_for(self.db, account_id=portfolio.account_id, user=current_user).require_visible_portfolio(portfolio)
         return portfolio
 
     def update_portfolio(
@@ -85,11 +86,7 @@ class HierarchyService:
         current_user: User,
     ) -> Portfolio:
         portfolio = self.get_portfolio_or_404(portfolio_id)
-        self.require_account_role(
-            account_id=portfolio.account_id,
-            user_id=current_user.id,
-            allowed_roles=HIERARCHY_WRITE_ROLES,
-        )
+        access_for(self.db, account_id=portfolio.account_id, user=current_user).require_portfolio(portfolio, manage=True)
         changes = portfolio_in.model_dump(exclude_unset=True)
         if "status_id" in changes and changes["status_id"] is not None:
             changes["status_id"] = self.validate_status_id(
@@ -104,8 +101,9 @@ class HierarchyService:
 
     def list_programs(self, *, portfolio_id: UUID, current_user: User) -> list[Program]:
         portfolio = self.get_portfolio_or_404(portfolio_id)
-        self.require_account_member(account_id=portfolio.account_id, user_id=current_user.id)
-        return self.hierarchy.list_programs_for_portfolio(portfolio_id)
+        scope = access_for(self.db, account_id=portfolio.account_id, user=current_user)
+        scope.require_visible_portfolio(portfolio)
+        return scope.keep_visible(self.hierarchy.list_programs_for_portfolio(portfolio_id), scope.visible_program_ids())
 
     def create_program(
         self,
@@ -115,11 +113,7 @@ class HierarchyService:
         current_user: User,
     ) -> Program:
         portfolio = self.get_portfolio_or_404(portfolio_id)
-        self.require_account_role(
-            account_id=portfolio.account_id,
-            user_id=current_user.id,
-            allowed_roles=HIERARCHY_WRITE_ROLES,
-        )
+        access_for(self.db, account_id=portfolio.account_id, user=current_user).require_portfolio(portfolio, manage=True)
         status_id = self.resolve_status_id(
             account_id=portfolio.account_id,
             entity_type="PROGRAM",
@@ -142,7 +136,7 @@ class HierarchyService:
 
     def get_program(self, *, program_id: UUID, current_user: User) -> Program:
         program = self.get_program_or_404(program_id)
-        self.require_account_member(account_id=program.account_id, user_id=current_user.id)
+        access_for(self.db, account_id=program.account_id, user=current_user).require_visible_program(program)
         return program
 
     def update_program(
@@ -153,11 +147,7 @@ class HierarchyService:
         current_user: User,
     ) -> Program:
         program = self.get_program_or_404(program_id)
-        self.require_account_role(
-            account_id=program.account_id,
-            user_id=current_user.id,
-            allowed_roles=HIERARCHY_WRITE_ROLES,
-        )
+        access_for(self.db, account_id=program.account_id, user=current_user).require_program(program, manage=True)
         changes = program_in.model_dump(exclude_unset=True)
         if "status_id" in changes and changes["status_id"] is not None:
             changes["status_id"] = self.validate_status_id(
@@ -172,8 +162,9 @@ class HierarchyService:
 
     def list_projects(self, *, program_id: UUID, current_user: User) -> list[Project]:
         program = self.get_program_or_404(program_id)
-        self.require_account_member(account_id=program.account_id, user_id=current_user.id)
-        return self.hierarchy.list_projects_for_program(program_id)
+        scope = access_for(self.db, account_id=program.account_id, user=current_user)
+        scope.require_visible_program(program)
+        return scope.keep_visible(self.hierarchy.list_projects_for_program(program_id), scope.visible_project_ids())
 
     def create_project(
         self,
@@ -195,11 +186,7 @@ class HierarchyService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Program, portfolio, and account hierarchy is inconsistent.",
             )
-        self.require_account_role(
-            account_id=program.account_id,
-            user_id=current_user.id,
-            allowed_roles=HIERARCHY_WRITE_ROLES,
-        )
+        access_for(self.db, account_id=program.account_id, user=current_user).require_program(program, manage=True)
         status_id = self.resolve_status_id(
             account_id=program.account_id,
             entity_type="PROJECT",
@@ -225,7 +212,7 @@ class HierarchyService:
 
     def get_project(self, *, project_id: UUID, current_user: User) -> Project:
         project = self.get_project_or_404(project_id)
-        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
         return project
 
     def update_project(
@@ -236,12 +223,13 @@ class HierarchyService:
         current_user: User,
     ) -> Project:
         project = self.get_project_or_404(project_id)
-        self.require_account_role(
-            account_id=project.account_id,
-            user_id=current_user.id,
-            allowed_roles=HIERARCHY_WRITE_ROLES,
-        )
         changes = project_in.model_dump(exclude_unset=True)
+        scope = access_for(self.db, account_id=project.account_id, user=current_user)
+        if changes and set(changes) <= FINANCIAL_PROJECT_FIELDS:
+            # Members with the Financials module may change the budget; everything else is for managers.
+            scope.require_project(project, module=ProjectModule.FINANCIALS)
+        else:
+            scope.require_project(project, manage=True)
         if "delivery_type" in changes:
             changes["delivery_type"] = changes["delivery_type"].value
         if "status_id" in changes and changes["status_id"] is not None:
@@ -256,10 +244,7 @@ class HierarchyService:
         return project
 
     def get_sidebar(self, *, account_id: UUID, current_user: User) -> dict[str, list[dict[str, object]]]:
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
-        portfolios = self.hierarchy.list_portfolios_for_account(account_id)
-        programs = self.hierarchy.list_programs_for_account(account_id)
-        projects = self.hierarchy.list_projects_for_account(account_id)
+        portfolios, programs, projects = self.visible_hierarchy(account_id=account_id, current_user=current_user)
 
         status_ids = {
             item.status_id
@@ -307,10 +292,7 @@ class HierarchyService:
         }
 
     def get_programs_projects(self, *, account_id: UUID, current_user: User) -> dict[str, list[dict[str, object]]]:
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
-        portfolios = self.hierarchy.list_portfolios_for_account(account_id)
-        programs = self.hierarchy.list_programs_for_account(account_id)
-        projects = self.hierarchy.list_projects_for_account(account_id)
+        portfolios, programs, projects = self.visible_hierarchy(account_id=account_id, current_user=current_user)
 
         status_ids = {
             item.status_id
@@ -377,20 +359,34 @@ class HierarchyService:
 
     def get_portfolio_overview(self, *, portfolio_id: UUID, current_user: User) -> dict[str, object]:
         portfolio = self.get_portfolio_or_404(portfolio_id)
-        self.require_account_member(account_id=portfolio.account_id, user_id=current_user.id)
-        return {
-            "portfolio": portfolio,
-            "program_count": self.hierarchy.count_programs_for_portfolio(portfolio_id),
-            "project_count": self.hierarchy.count_projects_for_portfolio(portfolio_id),
-        }
+        scope = access_for(self.db, account_id=portfolio.account_id, user=current_user)
+        scope.require_visible_portfolio(portfolio)
+        if scope.is_owner:
+            program_count = self.hierarchy.count_programs_for_portfolio(portfolio_id)
+            project_count = self.hierarchy.count_projects_for_portfolio(portfolio_id)
+        else:
+            programs = self.hierarchy.list_programs_for_portfolio(portfolio_id)
+            projects = self.hierarchy.list_projects_for_portfolio(portfolio_id)
+            program_count = len(scope.keep_visible(programs, scope.visible_program_ids()))
+            project_count = len(scope.keep_visible(projects, scope.visible_project_ids()))
+        return {"portfolio": portfolio, "program_count": program_count, "project_count": project_count}
 
     def get_program_overview(self, *, program_id: UUID, current_user: User) -> dict[str, object]:
         program = self.get_program_or_404(program_id)
-        self.require_account_member(account_id=program.account_id, user_id=current_user.id)
-        return {
-            "program": program,
-            "project_count": self.hierarchy.count_projects_for_program(program_id),
-        }
+        scope = access_for(self.db, account_id=program.account_id, user=current_user)
+        scope.require_visible_program(program)
+        projects = scope.keep_visible(self.hierarchy.list_projects_for_program(program_id), scope.visible_project_ids())
+        return {"program": program, "project_count": len(projects)}
+
+    def visible_hierarchy(
+        self, *, account_id: UUID, current_user: User
+    ) -> tuple[list[Portfolio], list[Program], list[Project]]:
+        scope = access_for(self.db, account_id=account_id, user=current_user)
+        return (
+            scope.keep_visible(self.hierarchy.list_portfolios_for_account(account_id), scope.visible_portfolio_ids()),
+            scope.keep_visible(self.hierarchy.list_programs_for_account(account_id), scope.visible_program_ids()),
+            scope.keep_visible(self.hierarchy.list_projects_for_account(account_id), scope.visible_project_ids()),
+        )
 
     def resolve_status_id(
         self,

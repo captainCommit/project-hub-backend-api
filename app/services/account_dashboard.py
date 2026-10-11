@@ -28,6 +28,7 @@ from app.repositories.account_dashboard import (
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.hierarchy import HierarchyRepository
+from app.services.access import access_for
 from app.services.project_overview import ProjectOverviewService
 
 
@@ -36,7 +37,6 @@ PROJECT_COMPLETED_KEYS = {"complete", "completed", "done", "closed"}
 PROJECT_AT_RISK_KEYS = {"atrisk", "risk", "red", "yellow", "blocked", "offtrack"}
 DASHBOARD_READ_ROLES = {
     AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
     AccountMemberRole.MANAGER.value,
     AccountMemberRole.MEMBER.value,
     AccountMemberRole.VIEWER.value,
@@ -70,12 +70,22 @@ class AccountDashboardService:
         project_id: UUID | None = None,
     ) -> dict[str, object]:
         self.require_account_member(account_id=account_id, user_id=current_user.id)
+        access = access_for(self.db, account_id=account_id, user=current_user)
+        access.require_visible_filters(portfolio_id=portfolio_id, program_id=program_id, project_id=project_id)
         scope = self.resolve_scope(
             account_id=account_id,
             portfolio_id=portfolio_id,
             program_id=program_id,
             project_id=project_id,
         )
+        if not access.is_owner:
+            # Only what this user can see, and only activity on those items.
+            scope = DashboardScope(
+                portfolios=access.keep_visible(scope.portfolios, access.visible_portfolio_ids()),
+                programs=access.keep_visible(scope.programs, access.visible_program_ids()),
+                projects=access.keep_visible(scope.projects, access.visible_project_ids()),
+                restrict_activity=True,
+            )
 
         today = self.dashboard.today()
         project_ids = [project.id for project in scope.projects]

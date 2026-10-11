@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 
 from typing import Literal
@@ -48,7 +49,18 @@ class Settings(BaseSettings):
     # Monthly price per seat, in cents. Viewers are billed at their own (lower) rate; every other role at the full rate.
     seat_price_cents: int = Field(default=2000, validation_alias="SEAT_PRICE_CENTS")
     viewer_seat_price_cents: int = Field(default=1000, validation_alias="VIEWER_SEAT_PRICE_CENTS")
-    billing_currency: str = Field(default="USD", validation_alias="BILLING_CURRENCY")
+    billing_currency: str = Field(default="CAD", validation_alias="BILLING_CURRENCY")
+    # Stripe. Without a secret key, billing stays visible but nothing can be charged.
+    stripe_secret_key: str = Field(default="", validation_alias="STRIPE_SECRET_KEY")
+    stripe_webhook_secret: str = Field(default="", validation_alias="STRIPE_WEBHOOK_SECRET")
+    # Deployed: both secrets live in SSM SecureStrings and are read at startup, like the Cognito secret.
+    stripe_secret_key_param: str = Field(default="", validation_alias="STRIPE_SECRET_KEY_PARAM")
+    stripe_webhook_secret_param: str = Field(default="", validation_alias="STRIPE_WEBHOOK_SECRET_PARAM")
+    # The two recurring monthly prices, created by scripts/setup_stripe_prices.py.
+    stripe_full_seat_price_id: str = Field(default="", validation_alias="STRIPE_FULL_SEAT_PRICE_ID")
+    stripe_viewer_seat_price_id: str = Field(default="", validation_alias="STRIPE_VIEWER_SEAT_PRICE_ID")
+    # Where Stripe Checkout and the billing portal send people back to (the UI's origin).
+    app_url: str = Field(default="http://localhost:3000", validation_alias="APP_URL")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -57,6 +69,10 @@ class Settings(BaseSettings):
         extra="ignore",
         populate_by_name=True,
     )
+
+    @property
+    def stripe_enabled(self) -> bool:
+        return bool(self.stripe_secret_key and self.stripe_full_seat_price_id and self.stripe_viewer_seat_price_id)
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -90,4 +106,17 @@ def get_settings() -> Settings:
         settings.cognito_app_client_secret = _read_secure_parameter(
             settings.cognito_app_client_secret_param, settings.aws_region
         )
+    if settings.stripe_secret_key_param and not settings.stripe_secret_key:
+        settings.stripe_secret_key = _read_optional_parameter(settings.stripe_secret_key_param, settings.aws_region)
+    if settings.stripe_webhook_secret_param and not settings.stripe_webhook_secret:
+        settings.stripe_webhook_secret = _read_optional_parameter(settings.stripe_webhook_secret_param, settings.aws_region)
     return settings
+
+
+def _read_optional_parameter(name: str, region_name: str) -> str:
+    """Like _read_secure_parameter, but a missing parameter means "not set up yet" rather than a failed start."""
+    try:
+        return _read_secure_parameter(name, region_name)
+    except Exception:
+        logging.getLogger(__name__).warning("SSM parameter %s could not be read; leaving it unset", name)
+        return ""

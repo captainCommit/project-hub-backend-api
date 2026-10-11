@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.models.account_member import AccountMemberRole
+from app.models.access_grant import ProjectModule
 from app.models.option_value import OptionValue
 from app.models.project import Project
 from app.models.sprint import Sprint
@@ -15,15 +15,10 @@ from app.repositories.accounts import AccountRepository
 from app.repositories.hierarchy import HierarchyRepository
 from app.repositories.sprints import SprintRepository
 from app.schemas.sprints import SprintCreate, SprintUpdate
+from app.services.access import access_for
 from app.services.activity import ActivityLogService
 
 
-SPRINT_WRITE_ROLES = {
-    AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
-    AccountMemberRole.MANAGER.value,
-    AccountMemberRole.MEMBER.value,
-}
 
 TASK_DONE_KEYS = {"done", "complete", "completed", "closed"}
 STORY_POINT_LEGEND = [
@@ -46,20 +41,20 @@ class SprintService:
 
     def list_sprints(self, *, project_id: UUID, current_user: User) -> list[dict[str, object]]:
         project = self.get_project_or_404(project_id)
-        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        self.require_project_access(project.id, current_user)
         return self.enrich_sprints(self.sprints.list_for_project(project.id))
 
     def list_account_sprints(self, *, account_id: UUID, current_user: User) -> list[dict[str, object]]:
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
-        return self.enrich_sprints(self.sprints.list_for_account(account_id))
+        scope = access_for(self.db, account_id=account_id, user=current_user)
+        sprints = self.sprints.list_for_account(account_id)
+        visible = scope.visible_project_ids()
+        if visible is not None:
+            sprints = [sprint for sprint in sprints if sprint.project_id in visible]
+        return self.enrich_sprints(sprints)
 
     def create_sprint(self, *, project_id: UUID, sprint_in: SprintCreate, current_user: User) -> dict[str, object]:
         project = self.get_project_or_404(project_id)
-        self.require_account_role(
-            account_id=project.account_id,
-            user_id=current_user.id,
-            allowed_roles=SPRINT_WRITE_ROLES,
-        )
+        self.require_project_access(project.id, current_user, module=ProjectModule.SPRINTS)
         status_id = self.resolve_status_id(account_id=project.account_id, status_id=sprint_in.status_id)
         sprint = self.sprints.create(
             account_id=project.account_id,
@@ -85,12 +80,12 @@ class SprintService:
 
     def get_sprint(self, *, sprint_id: UUID, current_user: User) -> dict[str, object]:
         sprint = self.get_sprint_or_404(sprint_id)
-        self.require_account_member(account_id=sprint.account_id, user_id=current_user.id)
+        self.require_project_access(sprint.project_id, current_user)
         return self.enrich_sprint(sprint)
 
     def get_sprint_metrics(self, *, sprint_id: UUID, current_user: User) -> dict[str, object]:
         sprint = self.get_sprint_or_404(sprint_id)
-        self.require_account_member(account_id=sprint.account_id, user_id=current_user.id)
+        self.require_project_access(sprint.project_id, current_user)
         task_rows = self.sprints.list_tasks_with_status_for_sprint(sprint.id)
         total_tasks = len(task_rows)
         total_story_points = sum(task.story_points or 0 for task, _status_value in task_rows)
@@ -117,11 +112,7 @@ class SprintService:
 
     def update_sprint(self, *, sprint_id: UUID, sprint_in: SprintUpdate, current_user: User) -> dict[str, object]:
         sprint = self.get_sprint_or_404(sprint_id)
-        self.require_account_role(
-            account_id=sprint.account_id,
-            user_id=current_user.id,
-            allowed_roles=SPRINT_WRITE_ROLES,
-        )
+        self.require_project_access(sprint.project_id, current_user, module=ProjectModule.SPRINTS)
         changes = sprint_in.model_dump(exclude_unset=True)
         if "status_id" in changes and changes["status_id"] is not None:
             changes["status_id"] = self.validate_status_id(account_id=sprint.account_id, status_id=changes["status_id"])
@@ -203,16 +194,9 @@ class SprintService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sprint not found.")
         return sprint
 
-    def require_account_member(self, *, account_id: UUID, user_id: UUID) -> None:
-        account = self.accounts.get_by_id(account_id)
-        if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account access denied.")
-
-    def require_account_role(self, *, account_id: UUID, user_id: UUID, allowed_roles: set[str]) -> None:
-        self.require_account_member(account_id=account_id, user_id=user_id)
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None or membership.role not in allowed_roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")
+    def require_project_access(
+        self, project_id: UUID, current_user: User, *, module: ProjectModule | None = None
+    ) -> None:
+        """View access to the project, or edit access to `module` in it."""
+        project = self.get_project_or_404(project_id)
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project, module=module)

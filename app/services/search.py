@@ -2,11 +2,12 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import String, and_, bindparam, case, cast, func, literal, or_, select, union_all
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.account import Account
-from app.models.account_member import AccountMember
+from app.models.access_grant import AccessGrant
+from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.assumption import Assumption
 from app.models.decision import Decision
 from app.models.issue import Issue
@@ -35,6 +36,63 @@ SUPPORTED_ENTITY_TYPES: tuple[str, ...] = (
     "SKILL",
 )
 SEARCH_SIMILARITY_THRESHOLD = 0.1
+
+
+# Search spans every account the user belongs to, so visibility is expressed in SQL: owners see the
+# whole account, everyone else what their access grants cover (see app.services.access).
+def is_account_owner() -> ColumnElement[bool]:
+    return AccountMember.role == AccountMemberRole.OWNER.value
+
+
+def held_by_user() -> ColumnElement[bool]:
+    return AccessGrant.user_id == bindparam("user_id")
+
+
+def visible_project(project_id: ColumnElement[object]) -> ColumnElement[bool]:
+    project = aliased(Project)
+    granted_projects = select(project.id).join(
+        AccessGrant,
+        and_(
+            held_by_user(),
+            or_(
+                AccessGrant.project_id == project.id,
+                AccessGrant.program_id == project.program_id,
+                AccessGrant.portfolio_id == project.portfolio_id,
+            ),
+        ),
+    )
+    return or_(is_account_owner(), project_id.in_(granted_projects))
+
+
+def visible_program(program_id: ColumnElement[object]) -> ColumnElement[bool]:
+    program = aliased(Program)
+    project = aliased(Project)
+    program_wide = select(program.id).join(
+        AccessGrant,
+        and_(held_by_user(), or_(AccessGrant.program_id == program.id, AccessGrant.portfolio_id == program.portfolio_id)),
+    )
+    parents_of_projects = select(project.program_id).join(
+        AccessGrant, and_(held_by_user(), AccessGrant.project_id == project.id)
+    )
+    return or_(is_account_owner(), program_id.in_(program_wide), program_id.in_(parents_of_projects))
+
+
+def visible_portfolio(portfolio_id: ColumnElement[object]) -> ColumnElement[bool]:
+    program = aliased(Program)
+    project = aliased(Project)
+    direct = select(AccessGrant.portfolio_id).where(held_by_user(), AccessGrant.portfolio_id.is_not(None))
+    via_programs = select(program.portfolio_id).join(
+        AccessGrant, and_(held_by_user(), AccessGrant.program_id == program.id)
+    )
+    via_projects = select(project.portfolio_id).join(
+        AccessGrant, and_(held_by_user(), AccessGrant.project_id == project.id)
+    )
+    return or_(
+        is_account_owner(),
+        portfolio_id.in_(direct),
+        portfolio_id.in_(via_programs),
+        portfolio_id.in_(via_projects),
+    )
 
 
 class SearchService:
@@ -143,6 +201,7 @@ class SearchService:
                         ),
                     ),
                 ),
+                filters=(visible_portfolio(Portfolio.id),),
             ),
             "PROGRAM": self.entity_statement(
                 entity_type="PROGRAM",
@@ -161,6 +220,7 @@ class SearchService:
                         ),
                     ),
                 ),
+                filters=(visible_program(Program.id),),
             ),
             "PROJECT": self.entity_statement(
                 entity_type="PROJECT",
@@ -179,6 +239,7 @@ class SearchService:
                         ),
                     ),
                 ),
+                filters=(visible_project(Project.id),),
             ),
             "TASK": self.entity_statement(
                 entity_type="TASK",
@@ -197,7 +258,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(Task.is_deleted.is_(False),),
+                filters=(Task.is_deleted.is_(False), visible_project(Task.project_id)),
             ),
             "RISK": self.entity_statement(
                 entity_type="RISK",
@@ -216,6 +277,7 @@ class SearchService:
                         ),
                     ),
                 ),
+                filters=(visible_project(Risk.project_id),),
             ),
             "ISSUE": self.entity_statement(
                 entity_type="ISSUE",
@@ -234,6 +296,7 @@ class SearchService:
                         ),
                     ),
                 ),
+                filters=(visible_project(Issue.project_id),),
             ),
             "ASSUMPTION": self.entity_statement(
                 entity_type="ASSUMPTION",
@@ -252,6 +315,7 @@ class SearchService:
                         ),
                     ),
                 ),
+                filters=(visible_project(Assumption.project_id),),
             ),
             "DECISION": self.entity_statement(
                 entity_type="DECISION",
@@ -270,6 +334,7 @@ class SearchService:
                         ),
                     ),
                 ),
+                filters=(visible_project(Decision.project_id),),
             ),
             "SPRINT": self.entity_statement(
                 entity_type="SPRINT",
@@ -289,6 +354,7 @@ class SearchService:
                         ),
                     ),
                 ),
+                filters=(visible_project(Sprint.project_id),),
             ),
             "RESOURCE": self.entity_statement(
                 entity_type="RESOURCE",

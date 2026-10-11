@@ -33,7 +33,11 @@ from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.activity import ActivityLogRepository
+from app.services.access import access_for
 
+
+# Account-wide records: any member of the account can see their history.
+ACCOUNT_LEVEL_ENTITIES = {"ACCOUNT", "RESOURCE", "RESOURCE_ALLOCATION", "RESOURCE_TIME_OFF"}
 
 ACTIVITY_ENTITY_MODELS: dict[str, type[Any]] = {
     "ACCOUNT": Account,
@@ -95,6 +99,7 @@ class ResolvedActivityEntity:
     entity_type: str
     entity_id: UUID
     account_id: UUID
+    record: Any
 
 
 class ActivityLogService:
@@ -141,7 +146,9 @@ class ActivityLogService:
         pagination: PaginationParams | None = None,
     ) -> list[ActivityLog] | dict[str, object]:
         target = self.resolve_activity_entity(entity_type=entity_type, entity_id=entity_id)
-        self.require_account_member(account_id=target.account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=target.account_id, user=current_user)
+        if target.entity_type not in ACCOUNT_LEVEL_ENTITIES:
+            scope.require_entity(target.entity_type, target.record)
         sort_value = validate_sort(sort, allowed_fields={"created_at"}, default="-created_at")
         if pagination and pagination.paginated:
             activity, total = self.activity.list_for_entity_paginated(
@@ -164,7 +171,7 @@ class ActivityLogService:
         project = self.db.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
         sort_value = validate_sort(sort, allowed_fields={"created_at"}, default="-created_at")
         if pagination and pagination.paginated:
             activity, total = self.activity.list_for_project_paginated(
@@ -191,15 +198,8 @@ class ActivityLogService:
             entity_type=normalized_entity_type,
             entity_id=entity_id,
             account_id=account_id,
+            record=target,
         )
-
-    def require_account_member(self, *, account_id: UUID, user_id: UUID) -> None:
-        account = self.accounts.get_by_id(account_id)
-        if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account access denied.")
 
     def json_safe(self, value: object) -> object:
         if value is None:

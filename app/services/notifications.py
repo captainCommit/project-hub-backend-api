@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.notification import Notification, NotificationType
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
+from app.services.access import can_see_entity
 
 
 class NotificationService:
@@ -62,6 +63,12 @@ class NotificationService:
             if member.user_id in seen_user_ids:
                 continue
             seen_user_ids.add(member.user_id)
+            recipient = self.db.get(User, member.user_id)
+            if recipient is None or not can_see_entity(
+                self.db, account_id=account_id, user=recipient, entity_type=entity_type, entity_id=entity_id
+            ):
+                # Only people who can open the item hear about it.
+                continue
             notification = self.create_notification(
                 account_id=account_id,
                 user_id=member.user_id,

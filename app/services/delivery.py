@@ -16,6 +16,7 @@ from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.hierarchy import HierarchyRepository
+from app.services.access import access_for
 
 
 SPRINT_ACTIVE_KEYS = {"active"}
@@ -37,9 +38,12 @@ class DeliveryService:
         program_id: UUID | None = None,
         project_id: UUID | None = None,
     ) -> dict[str, object]:
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        access = access_for(self.db, account_id=account_id, user=current_user)
+        access.require_visible_filters(program_id=program_id, project_id=project_id)
         programs = self.filtered_programs(account_id=account_id, program_id=program_id, project_id=project_id)
         projects = self.filtered_projects(account_id=account_id, programs=programs, program_id=program_id, project_id=project_id)
+        programs = access.keep_visible(programs, access.visible_program_ids())
+        projects = access.keep_visible(projects, access.visible_project_ids())
 
         project_ids = [project.id for project in projects]
         sprints = self.list_sprints(project_ids)
@@ -259,17 +263,3 @@ class DeliveryService:
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
         return project
-
-    def require_account_member(self, *, account_id: UUID, user_id: UUID) -> None:
-        account = self.accounts.get_by_id(account_id)
-        if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account access denied.")
-
-    def require_account_role(self, *, account_id: UUID, user_id: UUID, allowed_roles: set[str]) -> None:
-        self.require_account_member(account_id=account_id, user_id=user_id)
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None or membership.role not in allowed_roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")

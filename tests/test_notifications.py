@@ -11,6 +11,7 @@ import app.models  # noqa: F401
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.main import app
+from tests.helpers import grant_access
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.comment_mention import CommentMention
 from app.models.notification import Notification
@@ -267,15 +268,32 @@ def test_comment_creates_notification(client: TestClient, db_session: Session) -
     hierarchy = create_work_hierarchy(client)
     task = create_task(client, hierarchy["project"]["id"])
     other_member = create_member(db_session, account_id=hierarchy["account"]["id"], email="comment-reader@example.com")
+    grant_access(
+        db_session,
+        account_id=hierarchy["account"]["id"],
+        role="VIEWER",
+        project_id=hierarchy["project"]["id"],
+        email="comment-reader@example.com",
+    )
+    outsider = create_member(db_session, account_id=hierarchy["account"]["id"], email="no-access@example.com")
 
     create_comment(client, "TASK", task["id"], "General update")
 
     assert notification_types(db_session, other_member) == ["COMMENT_ADDED"]
+    # Members without access to the project do not hear about it.
+    assert notification_types(db_session, outsider) == []
 
 
 def test_decision_approved_creates_notification(client: TestClient, db_session: Session) -> None:
     hierarchy = create_work_hierarchy(client)
     other_member = create_member(db_session, account_id=hierarchy["account"]["id"], email="decision-reader@example.com")
+    grant_access(
+        db_session,
+        account_id=hierarchy["account"]["id"],
+        role="VIEWER",
+        portfolio_id=hierarchy["portfolio"]["id"],
+        email="decision-reader@example.com",
+    )
     decision_response = client.post(
         f"/api/v1/projects/{hierarchy['project']['id']}/decisions",
         json={"title": "Approve launch"},

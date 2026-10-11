@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.models.account import Account
+from app.models.billing import AccountBilling, Invoice
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.schemas.platform import AccountBillingLine, BillingSummary, SeatCounts, SystemStatus
 from app.services.accounts import require_platform_admin
+from app.services.billing import BillingService
 
 
 class PlatformService:
@@ -30,12 +32,22 @@ class PlatformService:
         require_platform_admin(current_user)
         seats_by_account = self.account_members.count_seats_by_account_role()
         pending_by_account = self.account_members.count_pending_invites_by_account()
+        billing_by_account = {b.account_id: b for b in self.db.scalars(select(AccountBilling))}
+        outstanding_by_account = dict(
+            self.db.execute(
+                select(Invoice.account_id, func.sum(Invoice.amount_remaining))
+                .where(Invoice.status == "open")
+                .group_by(Invoice.account_id)
+            ).all()
+        )
 
         lines = []
         for account in self.accounts.list_all():
             seats = SeatCounts(**seats_by_account.get(account.id, {}))
             viewer_seats = seats.VIEWER
             full_seats = sum(seats.model_dump().values()) - viewer_seats
+            billing = billing_by_account.get(account.id)
+            state = BillingService.state(billing)
             lines.append(
                 AccountBillingLine(
                     account_id=account.id,
@@ -47,6 +59,11 @@ class PlatformService:
                     viewer_seats=viewer_seats,
                     pending_invites=pending_by_account.get(account.id, 0),
                     monthly_total_cents=self.monthly_total_cents(full_seats=full_seats, viewer_seats=viewer_seats),
+                    billing_enabled=state["billing_enabled"],
+                    subscription_status=billing.subscription_status if billing else None,
+                    past_due=state["past_due"],
+                    read_only=state["read_only"],
+                    outstanding_cents=int(outstanding_by_account.get(account.id) or 0),
                 )
             )
 

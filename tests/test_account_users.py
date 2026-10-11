@@ -253,38 +253,6 @@ def test_owner_can_invite_user(client: TestClient, db_session: Session) -> None:
     assert membership.role == AccountMemberRole.MEMBER.value
 
 
-def test_admin_can_invite_user(client: TestClient, db_session: Session) -> None:
-    account = create_account(client, name="Invite Admin", slug="invite-admin")
-    set_current_user_role(db_session, account["id"], AccountMemberRole.ADMIN)
-
-    response = invite_user(client, account["id"], email="admin-invite@example.com", role="VIEWER")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "CREATED"
-    assert body["role"] == "VIEWER"
-
-
-@pytest.mark.parametrize(
-    "role",
-    [AccountMemberRole.MANAGER, AccountMemberRole.MEMBER, AccountMemberRole.VIEWER],
-)
-def test_non_admin_roles_cannot_invite_user(
-    client: TestClient,
-    db_session: Session,
-    role: AccountMemberRole,
-) -> None:
-    account = create_account(client, name=f"Invite Blocked {role.value}", slug=f"invite-blocked-{role.value.lower()}")
-    set_current_user_role(db_session, account["id"], role)
-    make_current_user_regular(client, db_session)
-
-    response = invite_user(client, account["id"], email=f"blocked-{role.value.lower()}@example.com")
-
-    assert response.status_code == 403
-    assert response.json()["message"] == "Insufficient account role."
-    assert db_session.scalar(select(User).where(User.email == f"blocked-{role.value.lower()}@example.com")) is None
-
-
 def test_invite_rejects_invalid_email(client: TestClient, db_session: Session) -> None:
     account = create_account(client, name="Invite Invalid Email", slug="invite-invalid-email")
 
@@ -302,10 +270,10 @@ def test_invite_rejects_invalid_role(client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_invite_rejects_owner_role(client: TestClient) -> None:
-    account = create_account(client, name="Invite Owner Role", slug="invite-owner-role")
+def test_invite_rejects_retired_admin_role(client: TestClient) -> None:
+    account = create_account(client, name="Invite Admin Role", slug="invite-admin-role")
 
-    response = invite_user(client, account["id"], email="owner-role@example.com", role="OWNER")
+    response = invite_user(client, account["id"], email="admin-role@example.com", role="ADMIN")
 
     assert response.status_code == 422
 
@@ -340,7 +308,7 @@ def test_duplicate_membership_does_not_create_duplicate(client: TestClient, db_s
     first_response = invite_user(client, account["id"], email="duplicate@example.com", role="MEMBER")
     assert first_response.status_code == 200
 
-    second_response = invite_user(client, account["id"], email="duplicate@example.com", role="ADMIN")
+    second_response = invite_user(client, account["id"], email="duplicate@example.com", role="OWNER")
 
     assert second_response.status_code == 200
     body = second_response.json()
@@ -370,14 +338,14 @@ def test_duplicate_membership_updates_role_when_requested(client: TestClient, db
         client,
         account["id"],
         email="update-role@example.com",
-        role="ADMIN",
+        role="OWNER",
         update_existing=True,
     )
 
     assert second_response.status_code == 200
     body = second_response.json()
     assert body["status"] == "UPDATED"
-    assert body["role"] == "ADMIN"
+    assert body["role"] == "OWNER"
     user = db_session.scalar(select(User).where(User.email == "update-role@example.com"))
     assert user is not None
     membership = db_session.scalar(
@@ -387,7 +355,7 @@ def test_duplicate_membership_updates_role_when_requested(client: TestClient, db
         )
     )
     assert membership is not None
-    assert membership.role == AccountMemberRole.ADMIN.value
+    assert membership.role == AccountMemberRole.OWNER.value
 
 
 def test_bulk_invite_handles_mixed_success_failure(client: TestClient, db_session: Session) -> None:
@@ -399,7 +367,7 @@ def test_bulk_invite_handles_mixed_success_failure(client: TestClient, db_sessio
             "users": [
                 {"email": "bulk-one@example.com", "full_name": "Bulk One", "role": "MEMBER"},
                 {"email": "bad-email", "full_name": "Bad Email", "role": "MEMBER"},
-                {"email": "owner-bulk@example.com", "full_name": "Owner Bulk", "role": "OWNER"},
+                {"email": "admin-bulk@example.com", "full_name": "Admin Bulk", "role": "ADMIN"},
                 {"email": "bulk-two@example.com", "full_name": "Bulk Two", "role": "VIEWER"},
             ]
         },
@@ -414,7 +382,7 @@ def test_bulk_invite_handles_mixed_success_failure(client: TestClient, db_sessio
     assert [result["status"] for result in body["results"]] == ["CREATED", "FAILED", "FAILED", "CREATED"]
     assert db_session.scalar(select(User).where(User.email == "bulk-one@example.com")) is not None
     assert db_session.scalar(select(User).where(User.email == "bulk-two@example.com")) is not None
-    assert db_session.scalar(select(User).where(User.email == "owner-bulk@example.com")) is None
+    assert db_session.scalar(select(User).where(User.email == "admin-bulk@example.com")) is None
 
 
 def test_bulk_invite_does_not_fail_entire_request_for_one_bad_row(client: TestClient, db_session: Session) -> None:
@@ -530,3 +498,36 @@ def test_account_users_include_role_and_sign_in_state(client: TestClient, db_ses
     assert users["pending@example.com"]["role"] == "VIEWER"
     assert users["pending@example.com"]["has_signed_in"] is False
     assert users["dev@example.com"]["role"] == "OWNER"
+
+
+def test_last_owner_cannot_be_demoted(client: TestClient) -> None:
+    account = create_account(client, name="Solo Owner", slug="solo-owner")
+
+    response = invite_user(client, account["id"], email="dev@example.com", role="MEMBER", update_existing=True)
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "An account needs at least one owner."
+
+
+def test_owner_can_be_demoted_when_another_owner_remains(client: TestClient) -> None:
+    account = create_account(client, name="Two Owners", slug="two-owners")
+    assert invite_user(client, account["id"], email="second@example.com", role="OWNER").status_code == 200
+
+    response = invite_user(client, account["id"], email="second@example.com", role="MEMBER", update_existing=True)
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "MEMBER"
+
+
+def test_bulk_invite_reports_last_owner_demotion_as_failed(client: TestClient) -> None:
+    account = create_account(client, name="Bulk Owner", slug="bulk-owner")
+
+    response = client.post(
+        f"/api/v1/accounts/{account['id']}/users/bulk-invite",
+        json={"users": [{"email": "dev@example.com", "role": "VIEWER"}], "update_existing": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["failed"] == 1
+    assert body["results"][0]["error"] == "An account needs at least one owner."

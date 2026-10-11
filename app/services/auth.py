@@ -141,7 +141,7 @@ def email_is_verified(claims: dict[str, Any]) -> bool:
     return claims.get("email_verified") in (True, "true", "True")
 
 
-def sync_cognito_user(db: Session, claims: dict[str, Any]) -> User:
+def sync_cognito_user(db: Session, claims: dict[str, Any], settings: Settings | None = None) -> User:
     cognito_sub = str(claims["sub"])
     email = str(claims["email"])
     full_name = claims.get("name")
@@ -159,12 +159,19 @@ def sync_cognito_user(db: Session, claims: dict[str, Any]) -> User:
                     AuthErrorCode.ACCOUNT_CONFLICT,
                     "This email is already linked to another sign-in. Verify your email or contact an administrator.",
                 )
+            first_sign_in = existing.cognito_sub is None
             existing.cognito_sub = cognito_sub
             user = existing
         else:
+            first_sign_in = False
             user = user_repository.create(cognito_sub=cognito_sub, email=email, full_name=full_name)
         db.commit()
         db.refresh(user)
+        if first_sign_in and settings is not None:
+            # An invite just turned into a seat in every account they belong to.
+            from app.services.billing import BillingService
+
+            BillingService(db, settings=settings).sync_seats_for_user(user.id)
         return user
 
     # Only sync a name Cognito actually has; never blank out a name edited in the app.
@@ -217,7 +224,7 @@ def get_current_user(
         require_csrf_header(request)
 
     claims = validate_cognito_token(token, settings)
-    user = sync_cognito_user(db, claims)
+    user = sync_cognito_user(db, claims, settings)
     if not user.is_active:
         raise AppHTTPException(
             status.HTTP_403_FORBIDDEN,

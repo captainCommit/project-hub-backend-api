@@ -31,14 +31,14 @@ from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.attachments import AttachmentRepository
 from app.schemas.attachments import AttachmentPresignedUploadCreate
+from app.services.access import access_for
 from app.services.activity import ActivityLogService
 
 
 logger = logging.getLogger(__name__)
 
-ATTACHMENT_WRITE_ROLES = {
+ACCOUNT_WRITE_ROLES = {
     AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
     AccountMemberRole.MANAGER.value,
     AccountMemberRole.MEMBER.value,
 }
@@ -67,6 +67,7 @@ class ResolvedAttachmentEntity:
     entity_type: str
     entity_id: UUID
     account_id: UUID
+    record: Any
 
 
 def get_s3_client(settings: Settings) -> Any:
@@ -92,11 +93,7 @@ class AttachmentService:
         current_user: User,
     ) -> dict[str, object]:
         target = self.resolve_attachment_entity(entity_type=entity_type, entity_id=entity_id)
-        self.require_account_role(
-            account_id=target.account_id,
-            user_id=current_user.id,
-            allowed_roles=ATTACHMENT_WRITE_ROLES,
-        )
+        self.require_target_access(target, current_user, contribute=True)
         self.require_s3_bucket()
 
         attachment_id = uuid4()
@@ -156,7 +153,7 @@ class AttachmentService:
         pagination: PaginationParams | None = None,
     ) -> list[Attachment] | dict[str, object]:
         target = self.resolve_attachment_entity(entity_type=entity_type, entity_id=entity_id)
-        self.require_account_member(account_id=target.account_id, user_id=current_user.id)
+        self.require_target_access(target, current_user)
         sort_value = validate_sort(sort, allowed_fields={"created_at"}, default="-created_at")
         if pagination and pagination.paginated:
             attachments, total = self.attachments.list_for_entity_paginated(
@@ -174,7 +171,7 @@ class AttachmentService:
 
     def create_presigned_download(self, *, attachment_id: UUID, current_user: User) -> dict[str, str]:
         attachment = self.get_attachment_or_404(attachment_id)
-        self.require_account_member(account_id=attachment.account_id, user_id=current_user.id)
+        self.require_attachment_access(attachment, current_user)
         self.require_s3_bucket()
         download_url = get_s3_client(self.settings).generate_presigned_url(
             "get_object",
@@ -185,11 +182,7 @@ class AttachmentService:
 
     def delete_attachment(self, *, attachment_id: UUID, current_user: User) -> None:
         attachment = self.get_attachment_or_404(attachment_id)
-        self.require_account_role(
-            account_id=attachment.account_id,
-            user_id=current_user.id,
-            allowed_roles=ATTACHMENT_WRITE_ROLES,
-        )
+        self.require_attachment_access(attachment, current_user, contribute=True)
         self.delete_s3_object_if_configured(attachment)
         ActivityLogService(self.db).record(
             account_id=attachment.account_id,
@@ -221,6 +214,7 @@ class AttachmentService:
             entity_type=normalized_entity_type,
             entity_id=entity_id,
             account_id=target.account_id,
+            record=target,
         )
 
     def get_attachment_or_404(self, attachment_id: UUID) -> Attachment:
@@ -253,17 +247,18 @@ class AttachmentService:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="file_name cannot be empty.")
         return sanitized[:255]
 
-    def require_account_member(self, *, account_id: UUID, user_id: UUID) -> str:
-        account = self.accounts.get_by_id(account_id)
-        if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account access denied.")
-        return membership.role
+    def require_target_access(
+        self, target: ResolvedAttachmentEntity, current_user: User, *, contribute: bool = False
+    ) -> None:
+        """Seeing attachments needs view access to what they hang off; adding or removing needs edit access."""
+        scope = access_for(self.db, account_id=target.account_id, user=current_user)
+        if target.entity_type == "SUPPORT_TICKET":
+            # Support tickets belong to the account, not to a project.
+            if contribute and scope.account_role not in ACCOUNT_WRITE_ROLES:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")
+            return
+        scope.require_entity(target.entity_type, target.record, contribute=contribute)
 
-    def require_account_role(self, *, account_id: UUID, user_id: UUID, allowed_roles: set[str]) -> str:
-        membership_role = self.require_account_member(account_id=account_id, user_id=user_id)
-        if membership_role not in allowed_roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")
-        return membership_role
+    def require_attachment_access(self, attachment: Attachment, current_user: User, *, contribute: bool = False) -> None:
+        target = self.resolve_attachment_entity(entity_type=attachment.entity_type, entity_id=attachment.entity_id)
+        self.require_target_access(target, current_user, contribute=contribute)

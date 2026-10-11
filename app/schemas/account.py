@@ -10,7 +10,7 @@ from app.schemas.account_user import normalize_and_validate_email
 class AccountCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str = Field(min_length=1, max_length=255)
-    # When set, this person is invited as the account's ADMIN instead of the creator becoming OWNER.
+    # When set, this person is invited as the account's OWNER instead of the creator becoming OWNER.
     admin_email: str | None = Field(default=None, min_length=3, max_length=255)
     admin_full_name: str | None = Field(default=None, max_length=255)
 

@@ -11,6 +11,7 @@ from app.models.notification import NotificationType
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
+from app.services.access import access_for
 from app.services.notifications import NotificationService
 
 
@@ -25,7 +26,7 @@ class MentionService:
 
     def list_comment_mentions(self, *, comment_id: UUID, current_user: User) -> list[CommentMention]:
         comment = self.get_comment_or_404(comment_id)
-        self.require_account_member(account_id=comment.account_id, user_id=current_user.id)
+        access_for(self.db, account_id=comment.account_id, user=current_user).require_entity("COMMENT", comment)
         return list(
             self.db.scalars(
                 select(CommentMention)
@@ -94,11 +95,3 @@ class MentionService:
         if comment is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found.")
         return comment
-
-    def require_account_member(self, *, account_id: UUID, user_id: UUID) -> None:
-        account = self.accounts.get_by_id(account_id)
-        if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account access denied.")

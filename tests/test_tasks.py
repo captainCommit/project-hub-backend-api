@@ -25,7 +25,7 @@ from app.models.task import Task
 from app.models.task_assignment import TaskAssignment
 from app.models.task_predecessor import TaskPredecessor
 from app.models.user import User
-from tests.helpers import assert_error_response
+from tests.helpers import assert_error_response, grant_existing_portfolios
 
 
 @pytest.fixture()
@@ -117,6 +117,7 @@ def set_current_user_role(db_session: Session, account_id: str | UUID, role: Acc
     assert membership is not None
     membership.role = role.value
     db_session.commit()
+    grant_existing_portfolios(db_session, account_id, role)
 
 
 def get_task_option_id(
@@ -163,7 +164,7 @@ def test_viewer_cannot_create_task(client: TestClient, db_session: Session) -> N
     )
 
     assert response.status_code == 403
-    assert response.json()["message"] == "Insufficient account role."
+    assert response.json()["message"] == "Insufficient project permission."
 
 
 def test_request_id_header_is_returned(client: TestClient) -> None:
@@ -563,7 +564,7 @@ def test_viewer_cannot_bulk_update_tasks(client: TestClient, db_session: Session
     )
 
     assert response.status_code == 403
-    assert response.json()["message"] == "Insufficient account role."
+    assert response.json()["message"] == "Insufficient project permission."
 
 
 def test_bulk_update_rolls_back_if_one_task_is_invalid(client: TestClient, db_session: Session) -> None:
@@ -731,7 +732,7 @@ def test_viewer_cannot_bulk_delete_tasks(client: TestClient, db_session: Session
     )
 
     assert response.status_code == 403
-    assert response.json()["message"] == "Insufficient account role."
+    assert response.json()["message"] == "Insufficient project permission."
 
 
 def test_non_member_cannot_bulk_delete_tasks(client: TestClient, db_session: Session) -> None:
@@ -875,7 +876,7 @@ def test_viewer_cannot_reorder_tasks(client: TestClient, db_session: Session) ->
     )
 
     assert response.status_code == 403
-    assert response.json()["message"] == "Insufficient account role."
+    assert response.json()["message"] == "Insufficient project permission."
 
 
 def test_reorder_is_atomic(client: TestClient, db_session: Session) -> None:
@@ -1129,7 +1130,7 @@ def test_viewer_cannot_update_board_position(client: TestClient, db_session: Ses
     )
 
     assert response.status_code == 403
-    assert response.json()["message"] == "Insufficient account role."
+    assert response.json()["message"] == "Insufficient project permission."
 
 
 def test_project_gantt_excludes_soft_deleted_and_includes_predecessors_resources(

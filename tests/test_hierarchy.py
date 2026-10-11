@@ -18,6 +18,7 @@ from app.models.option_value import OptionValue
 from app.models.portfolio import Portfolio
 from app.models.user import User
 from app.services.auth import DEV_USER_EMAIL
+from tests.helpers import grant_access
 
 
 @pytest.fixture()
@@ -213,6 +214,7 @@ def test_account_member_can_read_portfolio_program_project(
     program = create_program(client, portfolio["id"])
     project = create_project(client, program["id"])
     set_current_user_role(db_session, account["id"], AccountMemberRole.VIEWER)
+    grant_access(db_session, account_id=account["id"], role="VIEWER", portfolio_id=portfolio["id"])
 
     portfolio_response = client.get(f"/api/v1/portfolios/{portfolio['id']}")
     program_response = client.get(f"/api/v1/programs/{program['id']}")
@@ -221,6 +223,80 @@ def test_account_member_can_read_portfolio_program_project(
     assert portfolio_response.status_code == 200
     assert program_response.status_code == 200
     assert project_response.status_code == 200
+
+
+def test_member_without_a_grant_sees_nothing(client: TestClient, db_session: Session) -> None:
+    account = create_account(client)
+    portfolio = create_portfolio(client, account["id"])
+    program = create_program(client, portfolio["id"])
+    project = create_project(client, program["id"])
+    set_current_user_role(db_session, account["id"], AccountMemberRole.MEMBER)
+
+    assert client.get(f"/api/v1/projects/{project['id']}").status_code == 403
+    assert client.get(f"/api/v1/programs/{program['id']}").status_code == 403
+    assert client.get(f"/api/v1/accounts/{account['id']}/portfolios").json() == []
+    assert client.get(f"/api/v1/accounts/{account['id']}/sidebar").json() == {"portfolios": []}
+
+
+def test_project_grant_shows_only_that_project_and_its_parents(client: TestClient, db_session: Session) -> None:
+    account = create_account(client)
+    portfolio = create_portfolio(client, account["id"])
+    program = create_program(client, portfolio["id"])
+    project = create_project(client, program["id"], name="Granted")
+    hidden = create_project(client, program["id"], name="Hidden")
+    other_program = create_program(client, portfolio["id"], name="Other Program")
+    set_current_user_role(db_session, account["id"], AccountMemberRole.MEMBER)
+    grant_access(db_session, account_id=account["id"], role="VIEWER", project_id=project["id"])
+
+    sidebar = client.get(f"/api/v1/accounts/{account['id']}/sidebar").json()
+
+    [visible_portfolio] = sidebar["portfolios"]
+    [visible_program] = visible_portfolio["programs"]
+    assert visible_program["id"] == program["id"]
+    assert [p["name"] for p in visible_program["projects"]] == ["Granted"]
+    assert client.get(f"/api/v1/projects/{hidden['id']}").status_code == 403
+    assert client.get(f"/api/v1/programs/{other_program['id']}").status_code == 403
+    assert client.get(f"/api/v1/programs/{program['id']}/overview").json()["project_count"] == 1
+    # Seeing a project's program for navigation gives no say over the program itself.
+    assert client.patch(f"/api/v1/programs/{program['id']}", json={"name": "Renamed"}).status_code == 403
+
+
+def test_managers_run_their_program_but_not_the_portfolio(client: TestClient, db_session: Session) -> None:
+    account = create_account(client)
+    portfolio = create_portfolio(client, account["id"])
+    program = create_program(client, portfolio["id"])
+    set_current_user_role(db_session, account["id"], AccountMemberRole.MANAGER)
+    grant_access(db_session, account_id=account["id"], role="MANAGER", program_id=program["id"])
+
+    created = client.post(f"/api/v1/programs/{program['id']}/projects", json={"name": "New"})
+    assert created.status_code == 201
+    assert client.patch(f"/api/v1/projects/{created.json()['id']}", json={"name": "Renamed"}).status_code == 200
+    assert client.post(f"/api/v1/portfolios/{portfolio['id']}/programs", json={"name": "Nope"}).status_code == 403
+    assert client.post(f"/api/v1/accounts/{account['id']}/portfolios", json={"name": "Nope"}).status_code == 403
+
+
+def test_member_with_financials_can_change_budget_only(client: TestClient, db_session: Session) -> None:
+    account = create_account(client)
+    portfolio = create_portfolio(client, account["id"])
+    program = create_program(client, portfolio["id"])
+    project = create_project(client, program["id"])
+    set_current_user_role(db_session, account["id"], AccountMemberRole.MEMBER)
+    grant_access(db_session, account_id=account["id"], role="MEMBER", project_id=project["id"], modules=["FINANCIALS"])
+
+    assert client.patch(f"/api/v1/projects/{project['id']}", json={"budget": "5000"}).status_code == 200
+    assert client.patch(f"/api/v1/projects/{project['id']}", json={"name": "Renamed"}).status_code == 403
+
+
+def test_grants_never_exceed_the_account_role(client: TestClient, db_session: Session) -> None:
+    account = create_account(client)
+    portfolio = create_portfolio(client, account["id"])
+    program = create_program(client, portfolio["id"])
+    project = create_project(client, program["id"])
+    set_current_user_role(db_session, account["id"], AccountMemberRole.VIEWER)
+    grant_access(db_session, account_id=account["id"], role="MANAGER", portfolio_id=portfolio["id"])
+
+    assert client.get(f"/api/v1/projects/{project['id']}").status_code == 200
+    assert client.patch(f"/api/v1/projects/{project['id']}", json={"name": "Renamed"}).status_code == 403
 
 
 def test_non_member_is_blocked_from_reading_portfolio(

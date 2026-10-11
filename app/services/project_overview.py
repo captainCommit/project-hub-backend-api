@@ -18,6 +18,7 @@ from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.project_overview import ProjectOverviewRepository
+from app.services.access import access_for
 
 
 TASK_COMPLETED_KEYS = {"complete", "completed", "done"}
@@ -43,7 +44,7 @@ class ProjectOverviewService:
 
     def get_project_overview(self, *, project_id: UUID, current_user: User) -> dict[str, object]:
         project = self.get_project_or_404(project_id)
-        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project)
 
         today = self.overview.today()
         task_rows = self.overview.list_project_tasks(project.id)
@@ -352,11 +353,3 @@ class ProjectOverviewService:
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
         return project
-
-    def require_account_member(self, *, account_id: UUID, user_id: UUID) -> None:
-        account = self.accounts.get_by_id(account_id)
-        if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account access denied.")

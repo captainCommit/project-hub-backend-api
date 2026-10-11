@@ -16,7 +16,7 @@ from app.schemas.options import OptionSetCreate, OptionSetUpdate, OptionValueCre
 from app.services.option_defaults import DEFAULT_OPTION_SETS
 
 
-OPTION_WRITE_ROLES = {AccountMemberRole.OWNER.value, AccountMemberRole.ADMIN.value}
+OPTION_WRITE_ROLES = {AccountMemberRole.OWNER.value}
 
 
 def normalize_key(value: str) -> str:

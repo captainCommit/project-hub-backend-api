@@ -13,6 +13,7 @@ import app.models  # noqa: F401
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.main import app
+from tests.helpers import grant_existing_portfolios
 from app.models.account import Account
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.option_set import OptionSet
@@ -162,6 +163,7 @@ def set_current_user_role(db_session: Session, account_id: str | UUID, role: Acc
     assert membership is not None
     membership.role = role.value
     db_session.commit()
+    grant_existing_portfolios(db_session, account_id, role)
 
 
 def get_dashboard(client: TestClient, account_id: str, **params: object) -> dict:

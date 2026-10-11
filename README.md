@@ -321,6 +321,32 @@ uvicorn app.main:app --reload
 {"status":"ok","database":"connected"}
 ```
 
+## Billing (Stripe)
+
+Accounts are billed per seat per month: owners, managers and members at `SEAT_PRICE_CENTS`, viewers at
+`VIEWER_SEAT_PRICE_CENTS` (CAD by default). A seat is an active member who has signed in; pending
+invites are free. Billing is off for every account until a platform admin turns it on in the admin portal.
+
+Setup, once per Stripe mode (test first, then live):
+
+1. Put the secret key in `.env` as `STRIPE_SECRET_KEY` and run `python scripts/setup_stripe_prices.py`.
+   Copy the two printed price IDs into `STRIPE_FULL_SEAT_PRICE_ID` and `STRIPE_VIEWER_SEAT_PRICE_ID`.
+2. In Stripe, add a webhook endpoint for `<APP_URL>/api/v1/billing/stripe-webhook` with the events
+   `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`,
+   `customer.subscription.deleted`, `invoice.created`, `invoice.finalized`, `invoice.updated`,
+   `invoice.paid`, `invoice.payment_failed`, `invoice.voided`, `invoice.marked_uncollectible` and
+   `invoice.upcoming`. Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+3. In Stripe's subscription settings, set "if all retries for a payment fail" to **mark the subscription
+   as unpaid**. An unpaid or cancelled subscription makes the account read-only until it is paid.
+4. Enable the customer portal (Settings, Billing, Customer portal) so owners can update cards and see invoices.
+5. Set `APP_URL` to the UI's address so Checkout and the portal can send people back.
+
+Deployed, the two secrets live in SSM SecureStrings `/project-hub/<stage>/stripe-secret-key` and
+`/project-hub/<stage>/stripe-webhook-secret`; the price IDs and `APP_URL` are GitHub `dev` environment
+variables. Until the secrets exist, the API starts normally and billing reports that payments aren't set up.
+For local webhook testing, `stripe listen --forward-to localhost:8000/api/v1/billing/stripe-webhook`
+prints a signing secret to use.
+
 ## AWS Lambda
 
 The application exposes a Mangum handler in `app/main.py`:

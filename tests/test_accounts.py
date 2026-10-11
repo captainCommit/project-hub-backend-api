@@ -303,7 +303,7 @@ def test_owner_and_admin_can_update_account_settings(client: TestClient, db_sess
     admin_account_id = UUID(admin_response.json()["id"])
     membership = db_session.scalar(select(AccountMember).where(AccountMember.account_id == admin_account_id))
     assert membership is not None
-    membership.role = AccountMemberRole.ADMIN.value
+    membership.role = AccountMemberRole.OWNER.value
     db_session.commit()
 
     admin_update_response = client.patch(
@@ -404,7 +404,7 @@ def test_create_account_with_admin_email_invites_that_admin(client: TestClient, 
         .where(AccountMember.account_id == account_id)
     ).all()
     # The creating platform admin is not added; the named person is the admin.
-    assert members == [("boss@client.example", "Boss", AccountMemberRole.ADMIN.value)]
+    assert members == [("boss@client.example", "Boss", AccountMemberRole.OWNER.value)]
     assert db_session.scalar(select(AccountSettings).where(AccountSettings.account_id == account_id)) is not None
 
 
@@ -433,7 +433,7 @@ def test_platform_admin_lists_every_account_with_its_admins(client: TestClient, 
     assert [account["slug"] for account in body] == ["alpha", "beta"]
     assert body[0]["member_count"] == 1
     assert [(a["email"], a["role"]) for a in body[0]["admins"]] == [(DEV_USER_EMAIL, "OWNER")]
-    assert [(a["email"], a["role"]) for a in body[1]["admins"]] == [("admin@beta.example", "ADMIN")]
+    assert [(a["email"], a["role"]) for a in body[1]["admins"]] == [("admin@beta.example", "OWNER")]
 
 
 def test_regular_users_cannot_list_every_account(client: TestClient, db_session: Session) -> None:
@@ -468,9 +468,9 @@ def test_billing_counts_signed_in_members_and_prices_viewers_at_half(client: Tes
 
     assert response.status_code == 200
     body = response.json()
-    assert (body["currency"], body["seat_price_cents"], body["viewer_seat_price_cents"]) == ("USD", 2000, 1000)
+    assert (body["currency"], body["seat_price_cents"], body["viewer_seat_price_cents"]) == ("CAD", 2000, 1000)
     [line] = body["accounts"]
-    assert line["seats"] == {"OWNER": 0, "ADMIN": 0, "MANAGER": 1, "MEMBER": 1, "VIEWER": 2}
+    assert line["seats"] == {"OWNER": 0, "MANAGER": 1, "MEMBER": 1, "VIEWER": 2}
     assert (line["full_seats"], line["viewer_seats"], line["pending_invites"]) == (2, 2, 2)
     assert line["monthly_total_cents"] == 2 * 2000 + 2 * 1000
     assert body["monthly_total_cents"] == line["monthly_total_cents"]
@@ -500,3 +500,48 @@ def test_regular_users_cannot_see_billing_or_system(client: TestClient, db_sessi
 
     assert client.get("/api/v1/admin/billing").status_code == 403
     assert client.get("/api/v1/admin/system").status_code == 403
+
+
+def audit_actions(client: TestClient, **query: str) -> list[tuple[str, str | None, str | None]]:
+    response = client.get("/api/v1/admin/audit", params=query)
+    assert response.status_code == 200
+    return [(e["action"], e["account_name"], e["target"]) for e in response.json()["items"]]
+
+
+def test_platform_admin_actions_on_other_accounts_are_audited(client: TestClient) -> None:
+    account_id = client.post(
+        "/api/v1/accounts", json={"name": "Acme", "slug": "acme", "admin_email": "boss@acme.example"}
+    ).json()["id"]
+
+    assert client.get(f"/api/v1/accounts/{account_id}/users").status_code == 200
+    invite = {"email": "new@acme.example", "role": "MEMBER"}
+    assert client.post(f"/api/v1/accounts/{account_id}/users/invite", json=invite).status_code == 200
+    promote = {"email": "new@acme.example", "role": "MANAGER", "update_existing": True}
+    assert client.post(f"/api/v1/accounts/{account_id}/users/invite", json=promote).status_code == 200
+    bulk = {"users": [{"email": "v@acme.example", "role": "VIEWER"}]}
+    assert client.post(f"/api/v1/accounts/{account_id}/users/bulk-invite", json=bulk).status_code == 200
+
+    assert audit_actions(client) == [
+        ("account.users_bulk_invited", "Acme", None),
+        ("account.user_role_changed", "Acme", "new@acme.example"),
+        ("account.user_invited", "Acme", "new@acme.example"),
+        ("account.users_viewed", "Acme", None),
+        ("account.created", "Acme", "boss@acme.example"),
+    ]
+    assert len(audit_actions(client, account_id=account_id)) == 5
+
+
+def test_platform_admin_working_in_own_account_is_not_audited(client: TestClient) -> None:
+    account_id = client.post("/api/v1/accounts", json={"name": "Mine", "slug": "mine"}).json()["id"]
+
+    client.get(f"/api/v1/accounts/{account_id}/users")
+    client.post(f"/api/v1/accounts/{account_id}/users/invite", json={"email": "x@mine.example", "role": "MEMBER"})
+
+    assert audit_actions(client) == [("account.created", "Mine", None)]
+
+
+def test_regular_users_cannot_read_audit_log(client: TestClient, db_session: Session) -> None:
+    client.get("/api/v1/me")
+    make_current_user_regular(db_session)
+
+    assert client.get("/api/v1/admin/audit").status_code == 403

@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginated_response, validate_sort
-from app.models.account_member import AccountMemberRole
+from app.models.access_grant import ProjectModule
 from app.models.option_value import OptionValue
 from app.models.project import Project
 from app.models.sprint import Sprint
@@ -32,17 +32,11 @@ from app.schemas.tasks import (
     TaskReorderRequest,
     TaskUpdate,
 )
+from app.services.access import access_for
 from app.services.activity import ActivityLogService
 from app.services.notifications import NotificationService
 from app.models.notification import NotificationType
 
-
-TASK_WRITE_ROLES = {
-    AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
-    AccountMemberRole.MANAGER.value,
-    AccountMemberRole.MEMBER.value,
-}
 
 
 class TaskService:
@@ -64,7 +58,7 @@ class TaskService:
         pagination: PaginationParams | None = None,
     ) -> list[dict[str, object]] | dict[str, object]:
         project = self.get_project_or_404(project_id)
-        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        self.require_project_access(project.id, current_user)
         sort_value = validate_sort(
             sort,
             allowed_fields={"sort_order", "created_at", "updated_at", "name"},
@@ -90,12 +84,12 @@ class TaskService:
 
     def get_project_board(self, *, project_id: UUID, current_user: User) -> dict[str, object]:
         project = self.get_project_or_404(project_id)
-        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        self.require_project_access(project.id, current_user)
         return self.build_board(project_id=project.id, account_id=project.account_id)
 
     def get_sprint_board(self, *, sprint_id: UUID, current_user: User) -> dict[str, object]:
         sprint = self.get_sprint_or_404(sprint_id)
-        self.require_account_member(account_id=sprint.account_id, user_id=current_user.id)
+        self.require_project_access(sprint.project_id, current_user)
         return self.build_board(project_id=sprint.project_id, account_id=sprint.account_id, sprint_id=sprint.id)
 
     def update_board_position(
@@ -106,11 +100,7 @@ class TaskService:
         current_user: User,
     ) -> dict[str, object]:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         project = self.get_project_or_404(task.project_id)
         status_id = None
         if position_in.status_id is not None:
@@ -147,7 +137,7 @@ class TaskService:
 
     def get_project_gantt(self, *, project_id: UUID, current_user: User) -> dict[str, object]:
         project = self.get_project_or_404(project_id)
-        self.require_account_member(account_id=project.account_id, user_id=current_user.id)
+        self.require_project_access(project.id, current_user)
         tasks = self.tasks.list_tasks_for_gantt(project.id)
         option_ids = {task.task_type_id for task in tasks if task.task_type_id is not None}
         options = self.tasks.get_option_values_by_ids(option_ids)
@@ -184,7 +174,7 @@ class TaskService:
         program_id: UUID | None = None,
         assigned_to: UUID | None = None,
     ) -> dict[str, object]:
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=account_id, user=current_user)
         if days < 0:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="days must be greater than or equal to 0.")
         if project_id is not None:
@@ -212,6 +202,9 @@ class TaskService:
             program_id=program_id,
             assigned_to=assigned_to,
         )
+        visible = scope.visible_project_ids()
+        if visible is not None:
+            rows = [row for row in rows if row[0].project_id in visible]
         tasks = [task for task, _project, _program in rows]
         option_ids = {task.status_id for task in tasks if task.status_id is not None}
         options = self.tasks.get_option_values_by_ids(option_ids)
@@ -248,16 +241,12 @@ class TaskService:
 
     def get_task(self, *, task_id: UUID, current_user: User) -> dict[str, object]:
         task = self.get_task_or_404(task_id)
-        self.require_account_member(account_id=task.account_id, user_id=current_user.id)
+        self.require_project_access(task.project_id, current_user)
         return self.enrich_task(task)
 
     def create_task(self, *, project_id: UUID, task_in: TaskCreate, current_user: User) -> dict[str, object]:
         project = self.get_project_or_404(project_id)
-        self.require_account_role(
-            account_id=project.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(project.id, current_user, module=ProjectModule.TASKS)
         self.validate_parent_task(project_id=project_id, parent_task_id=task_in.parent_task_id)
         self.validate_sprint(project=project, sprint_id=task_in.sprint_id)
         status_id = self.resolve_task_option_id(
@@ -312,11 +301,7 @@ class TaskService:
 
     def update_task(self, *, task_id: UUID, task_in: TaskUpdate, current_user: User) -> dict[str, object]:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         project = self.get_project_or_404(task.project_id)
         changes = task_in.model_dump(exclude_unset=True)
         self.prepare_task_update_changes(task=task, project=project, changes=changes)
@@ -353,11 +338,7 @@ class TaskService:
         current_user: User,
     ) -> list[dict[str, object]]:
         project = self.get_project_or_404(project_id)
-        self.require_account_role(
-            account_id=project.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(project.id, current_user, module=ProjectModule.TASKS)
         task_ids = [update.id for update in bulk_in.updates]
         if len(set(task_ids)) != len(task_ids):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duplicate task update id.")
@@ -425,11 +406,7 @@ class TaskService:
         current_user: User,
     ) -> None:
         project = self.get_project_or_404(project_id)
-        self.require_account_role(
-            account_id=project.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(project.id, current_user, module=ProjectModule.TASKS)
         task_ids = bulk_in.task_ids
         if len(set(task_ids)) != len(task_ids):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duplicate task id.")
@@ -474,11 +451,7 @@ class TaskService:
 
     def delete_task(self, *, task_id: UUID, current_user: User) -> None:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         if self.tasks.has_non_deleted_children([task.id]):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -515,11 +488,7 @@ class TaskService:
         current_user: User,
     ) -> list[dict[str, object]]:
         project = self.get_project_or_404(project_id)
-        self.require_account_role(
-            account_id=project.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(project.id, current_user, module=ProjectModule.TASKS)
         task_ids = [item.id for item in reorder_in.tasks]
         if len(set(task_ids)) != len(task_ids):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duplicate task reorder id.")
@@ -563,11 +532,7 @@ class TaskService:
 
     def move_task(self, *, task_id: UUID, move_in: TaskMoveRequest, current_user: User) -> dict[str, object]:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         self.assert_valid_parent(
             project_id=task.project_id,
             task_id=task.id,
@@ -589,11 +554,7 @@ class TaskService:
 
     def indent_task(self, *, task_id: UUID, current_user: User) -> dict[str, object]:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         previous_sibling = self.previous_sibling(task)
         if previous_sibling is None:
             raise HTTPException(
@@ -624,11 +585,7 @@ class TaskService:
 
     def outdent_task(self, *, task_id: UUID, current_user: User) -> dict[str, object]:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         if task.parent_task_id is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot outdent a root task.")
         old_parent = self.get_task_or_404(task.parent_task_id)
@@ -662,11 +619,7 @@ class TaskService:
         current_user: User,
     ) -> TaskAssignment:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         assignment = self.tasks.create_assignment(
             account_id=task.account_id,
             task_id=task.id,
@@ -691,7 +644,7 @@ class TaskService:
 
     def list_assignments(self, *, task_id: UUID, current_user: User) -> list[TaskAssignment]:
         task = self.get_task_or_404(task_id)
-        self.require_account_member(account_id=task.account_id, user_id=current_user.id)
+        self.require_project_access(task.project_id, current_user)
         return self.tasks.list_assignments_for_tasks([task.id]).get(task.id, [])
 
     def update_assignment(
@@ -704,10 +657,8 @@ class TaskService:
         assignment = self.tasks.get_assignment(assignment_id)
         if assignment is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task assignment not found.")
-        self.require_account_role(
-            account_id=assignment.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
+        self.require_project_access(
+            self.get_task_or_404(assignment.task_id).project_id, current_user, module=ProjectModule.TASKS
         )
         changes = assignment_in.model_dump(exclude_unset=True)
         if "resource_name" in changes and changes["resource_name"] is None:
@@ -726,17 +677,16 @@ class TaskService:
         project_id: UUID | None = None,
         sprint_id: UUID | None = None,
     ) -> list[dict[str, object]]:
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=account_id, user=current_user)
         tasks = self.tasks.list_tasks_for_account(account_id, project_id=project_id, sprint_id=sprint_id)
+        visible = scope.visible_project_ids()
+        if visible is not None:
+            tasks = [task for task in tasks if task.project_id in visible]
         return self.enrich_tasks(tasks)
 
     def delete_assignment(self, *, task_id: UUID, assignment_id: UUID, current_user: User) -> None:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         assignment = self.tasks.get_assignment(assignment_id)
         if assignment is None or assignment.task_id != task.id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task assignment not found.")
@@ -751,11 +701,7 @@ class TaskService:
         current_user: User,
     ) -> TaskPredecessor:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         predecessor_task = self.get_task_or_404(predecessor_in.predecessor_task_id)
         if predecessor_task.id == task.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task cannot be its own predecessor.")
@@ -784,11 +730,7 @@ class TaskService:
 
     def delete_predecessor(self, *, task_id: UUID, predecessor_id: UUID, current_user: User) -> None:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=TASK_WRITE_ROLES,
-        )
+        self.require_project_access(task.project_id, current_user, module=ProjectModule.TASKS)
         predecessor = self.tasks.get_predecessor(predecessor_id)
         if predecessor is None or predecessor.task_id != task.id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task predecessor not found.")
@@ -1187,22 +1129,9 @@ class TaskService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found.")
         return task
 
-    def require_account_member(self, *, account_id: UUID, user_id: UUID) -> None:
-        account = self.accounts.get_by_id(account_id)
-        if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account access denied.")
-
-    def require_account_role(
-        self,
-        *,
-        account_id: UUID,
-        user_id: UUID,
-        allowed_roles: set[str],
+    def require_project_access(
+        self, project_id: UUID, current_user: User, *, module: ProjectModule | None = None
     ) -> None:
-        self.require_account_member(account_id=account_id, user_id=user_id)
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None or membership.role not in allowed_roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")
+        """View access to the project, or edit access to `module` in it."""
+        project = self.get_project_or_404(project_id)
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project, module=module)

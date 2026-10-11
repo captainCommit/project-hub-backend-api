@@ -12,6 +12,7 @@ import app.models  # noqa: F401
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.main import app
+from tests.helpers import grant_access, grant_existing_portfolios
 from app.models.account import Account
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.portfolio import Portfolio
@@ -144,6 +145,7 @@ def set_current_user_role(db_session: Session, account_id: str | UUID, role: Acc
     assert membership is not None
     membership.role = role.value
     db_session.commit()
+    grant_existing_portfolios(db_session, account_id, role)
 
 
 def test_search_project_by_exact_name(client: TestClient) -> None:
@@ -291,3 +293,27 @@ def test_non_member_gets_no_results(client: TestClient, db_session: Session) -> 
 
     assert response.status_code == 200
     assert response.json() == {"results": []}
+
+def test_search_only_returns_what_grants_cover(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client, program_name="Searchable Program", project_name="Granted Project")
+    hidden_project = client.post(
+        f"/api/v1/programs/{hierarchy['program']['id']}/projects", json={"name": "Hidden Project"}
+    ).json()
+    create_task(client, hierarchy["project"]["id"], "Granted Widget Task")
+    create_task(client, hidden_project["id"], "Hidden Widget Task")
+    other_portfolio = client.post(
+        f"/api/v1/accounts/{hierarchy['account']['id']}/portfolios", json={"name": "Hidden Portfolio"}
+    ).json()
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+    grant_existing_portfolios(db_session, hierarchy["account"]["id"], "OWNER")  # clear the broad grants
+    grant_access(db_session, account_id=hierarchy["account"]["id"], role="VIEWER", project_id=hierarchy["project"]["id"])
+
+    def titles(q: str, entity_types: str) -> list[str]:
+        response = client.get("/api/v1/search", params={"q": q, "entity_types": entity_types})
+        assert response.status_code == 200
+        return [result["title"] for result in response.json()["results"]]
+
+    assert titles("Widget Task", "TASK") == ["Granted Widget Task"]
+    assert titles("Project", "PROJECT") == ["Granted Project"]
+    assert titles("Searchable Program", "PROGRAM") == ["Searchable Program"]
+    assert other_portfolio["name"] not in titles("Portfolio", "PORTFOLIO")

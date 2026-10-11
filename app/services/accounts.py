@@ -15,9 +15,10 @@ from app.schemas.account import AccountAdminContact, AccountCreate, AccountRead,
 from app.schemas.account_user import AccountUserInviteCreate, AccountUserInviteRole
 from app.services.account_users import AccountUserService, CognitoInviteError
 from app.services.options import OptionService
+from app.services.platform_audit import PlatformAuditAction, record_platform_action
 
 
-EDIT_ACCOUNT_ROLES = {AccountMemberRole.OWNER.value, AccountMemberRole.ADMIN.value}
+EDIT_ACCOUNT_ROLES = {AccountMemberRole.OWNER.value}
 
 
 class AccountService:
@@ -43,7 +44,7 @@ class AccountService:
                     invite_in=AccountUserInviteCreate(
                         email=account_in.admin_email,
                         full_name=account_in.admin_full_name,
-                        role=AccountUserInviteRole.ADMIN,
+                        role=AccountUserInviteRole.OWNER,
                     ),
                 )
             else:
@@ -54,6 +55,14 @@ class AccountService:
                 )
             self.account_settings.create_default(account.id)
             OptionService(self.db).seed_defaults_for_account(account.id)
+            record_platform_action(
+                self.db,
+                actor=current_user,
+                action=PlatformAuditAction.ACCOUNT_CREATED,
+                account=account,
+                target=account_in.admin_email,
+                details={"slug": account.slug},
+            )
             self.db.commit()
             self.db.refresh(account)
         except IntegrityError as exc:

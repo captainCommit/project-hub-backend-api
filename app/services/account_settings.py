@@ -14,7 +14,7 @@ from app.repositories.accounts import AccountRepository
 from app.schemas.account_settings import AccountHolidayCreate, AccountHolidayUpdate, AccountSettingsUpdate
 
 
-ACCOUNT_SETTINGS_WRITE_ROLES = {AccountMemberRole.OWNER.value, AccountMemberRole.ADMIN.value}
+ACCOUNT_SETTINGS_WRITE_ROLES = {AccountMemberRole.OWNER.value}
 
 
 class AccountSettingsService:

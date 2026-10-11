@@ -35,6 +35,14 @@ provider:
     # The pool is invite-only, so adding a user must create them in Cognito (AdminCreateUser emails the invite).
     COGNITO_INVITE_ENABLED: "true"
     COGNITO_APP_CLIENT_SECRET_PARAM: /project-hub/${sls:stage}/cognito-app-client-secret
+    # Stripe: secrets in SSM (read at startup; billing stays switched off until they exist), price IDs from
+    # scripts/setup_stripe_prices.py, and the UI's URL for Checkout and the billing portal to return to.
+    STRIPE_SECRET_KEY_PARAM: /project-hub/${sls:stage}/stripe-secret-key
+    STRIPE_WEBHOOK_SECRET_PARAM: /project-hub/${sls:stage}/stripe-webhook-secret
+    STRIPE_FULL_SEAT_PRICE_ID: ${env:STRIPE_FULL_SEAT_PRICE_ID, ''}
+    STRIPE_VIEWER_SEAT_PRICE_ID: ${env:STRIPE_VIEWER_SEAT_PRICE_ID, ''}
+    BILLING_CURRENCY: CAD
+    APP_URL: ${env:APP_URL, ''}
     S3_BUCKET_NAME:
       Ref: AttachmentsBucket
   iam:

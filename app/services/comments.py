@@ -26,20 +26,15 @@ from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.comments import CommentRepository
 from app.schemas.comments import CommentCreate, CommentUpdate
+from app.services.access import access_for
 from app.services.activity import ActivityLogService
 from app.services.mentions import MentionService
 from app.services.notifications import NotificationService
 from app.models.notification import NotificationType
 
 
-COMMENT_WRITE_ROLES = {
-    AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
-    AccountMemberRole.MANAGER.value,
-    AccountMemberRole.MEMBER.value,
-}
 
-COMMENT_ADMIN_ROLES = {AccountMemberRole.OWNER.value, AccountMemberRole.ADMIN.value}
+COMMENT_ADMIN_ROLES = {AccountMemberRole.OWNER.value}
 
 COMMENT_ENTITY_MODELS: dict[str, type[Any]] = {
     "PORTFOLIO": Portfolio,
@@ -63,6 +58,7 @@ class ResolvedCommentEntity:
     entity_type: str
     entity_id: UUID
     account_id: UUID
+    record: Any
 
 
 class CommentService:
@@ -82,7 +78,7 @@ class CommentService:
         pagination: PaginationParams | None = None,
     ) -> list[Comment] | dict[str, object]:
         target = self.resolve_comment_entity(entity_type=entity_type, entity_id=entity_id)
-        self.require_account_member(account_id=target.account_id, user_id=current_user.id)
+        self.require_target_access(target, current_user)
         sort_value = validate_sort(sort, allowed_fields={"created_at"}, default="created_at")
         if pagination and pagination.paginated:
             comments, total = self.comments.list_for_entity_paginated(
@@ -103,11 +99,7 @@ class CommentService:
         current_user: User,
     ) -> Comment:
         target = self.resolve_comment_entity(entity_type=entity_type, entity_id=entity_id)
-        self.require_account_role(
-            account_id=target.account_id,
-            user_id=current_user.id,
-            allowed_roles=COMMENT_WRITE_ROLES,
-        )
+        self.require_target_access(target, current_user, contribute=True)
         if comment_in.parent_comment_id is not None:
             parent = self.comments.get(comment_in.parent_comment_id)
             if parent is None or parent.entity_type != target.entity_type or parent.entity_id != target.entity_id:
@@ -147,11 +139,8 @@ class CommentService:
 
     def update_comment(self, *, comment_id: UUID, comment_in: CommentUpdate, current_user: User) -> Comment:
         comment = self.get_comment_or_404(comment_id)
-        membership_role = self.require_account_role(
-            account_id=comment.account_id,
-            user_id=current_user.id,
-            allowed_roles=COMMENT_WRITE_ROLES,
-        )
+        target = self.resolve_comment_entity(entity_type=comment.entity_type, entity_id=comment.entity_id)
+        membership_role = self.require_target_access(target, current_user, contribute=True)
         self.require_comment_owner_or_admin(
             comment=comment,
             current_user=current_user,
@@ -165,11 +154,8 @@ class CommentService:
 
     def delete_comment(self, *, comment_id: UUID, current_user: User) -> None:
         comment = self.get_comment_or_404(comment_id)
-        membership_role = self.require_account_role(
-            account_id=comment.account_id,
-            user_id=current_user.id,
-            allowed_roles=COMMENT_WRITE_ROLES,
-        )
+        target = self.resolve_comment_entity(entity_type=comment.entity_type, entity_id=comment.entity_id)
+        membership_role = self.require_target_access(target, current_user, contribute=True)
         self.require_comment_owner_or_admin(
             comment=comment,
             current_user=current_user,
@@ -202,6 +188,7 @@ class CommentService:
             entity_type=normalized_entity_type,
             entity_id=entity_id,
             account_id=target.account_id,
+            record=target,
         )
 
     def get_comment_or_404(self, comment_id: UUID) -> Comment:
@@ -226,23 +213,13 @@ class CommentService:
             detail="Cannot modify another user's comment.",
         )
 
-    def require_account_member(self, *, account_id: UUID, user_id: UUID) -> str:
-        account = self.accounts.get_by_id(account_id)
-        if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-        membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
-        if membership is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account access denied.")
-        return membership.role
-
-    def require_account_role(
-        self,
-        *,
-        account_id: UUID,
-        user_id: UUID,
-        allowed_roles: set[str],
+    def require_target_access(
+        self, target: ResolvedCommentEntity, current_user: User, *, contribute: bool = False
     ) -> str:
-        membership_role = self.require_account_member(account_id=account_id, user_id=user_id)
-        if membership_role not in allowed_roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")
-        return membership_role
+        """Reading comments needs view access to the target; writing needs edit access to its module.
+
+        Returns the user's account role.
+        """
+        scope = access_for(self.db, account_id=target.account_id, user=current_user)
+        scope.require_entity(target.entity_type, target.record, contribute=contribute)
+        return scope.account_role

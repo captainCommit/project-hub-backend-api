@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import ColumnElement, Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
@@ -85,6 +85,7 @@ class RaidRepository:
         assigned_to: UUID | None = None,
         search: str | None = None,
         search_fields: Iterable[str] = (),
+        visible: ColumnElement[bool] | None = None,
     ) -> list[Any]:
         statement = self.list_items_for_account_statement(
             model_cls,
@@ -97,6 +98,7 @@ class RaidRepository:
             assigned_to=assigned_to,
             search=search,
             search_fields=search_fields,
+            visible=visible,
         )
         return list(self.db.scalars(statement).all())
 
@@ -114,6 +116,7 @@ class RaidRepository:
         assigned_to: UUID | None = None,
         search: str | None = None,
         search_fields: Iterable[str] = (),
+        visible: ColumnElement[bool] | None = None,
     ) -> tuple[list[Any], int]:
         statement = self.list_items_for_account_statement(
             model_cls,
@@ -126,6 +129,7 @@ class RaidRepository:
             assigned_to=assigned_to,
             search=search,
             search_fields=search_fields,
+            visible=visible,
         )
         items, total = paginate_statement(self.db, statement, pagination)
         return items, total
@@ -143,8 +147,11 @@ class RaidRepository:
         assigned_to: UUID | None = None,
         search: str | None = None,
         search_fields: Iterable[str] = (),
+        visible: ColumnElement[bool] | None = None,
     ) -> Select[Any]:
         statement = select(model_cls).where(model_cls.account_id == account_id)
+        if visible is not None:
+            statement = statement.where(visible)
         if project_id is not None:
             statement = statement.where(model_cls.project_id == project_id)
         if program_id is not None and hasattr(model_cls, "program_id"):

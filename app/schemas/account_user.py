@@ -7,13 +7,14 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.account_member import AccountMemberRole
+from app.schemas.access import InviteAccess
 
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class AccountUserInviteRole(str, Enum):
-    ADMIN = "ADMIN"
+    OWNER = "OWNER"
     MANAGER = "MANAGER"
     MEMBER = "MEMBER"
     VIEWER = "VIEWER"
@@ -38,6 +39,8 @@ class AccountUserInviteCreate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     role: AccountUserInviteRole
     update_existing: bool = False
+    # Optional: the portfolio, program or project they start on, at the invited role. Ignored for owners.
+    access: InviteAccess | None = None
 
     @field_validator("email")
     @classmethod

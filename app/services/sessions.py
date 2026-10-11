@@ -121,7 +121,7 @@ def start_session(
         error_code=SessionErrorCode.LOGIN_FAILED,
         message="This sign-in link is invalid or has expired. Please sign in again.",
     )
-    user = sync_cognito_user(db, validate_cognito_token(tokens["id_token"], settings, tokens.get("access_token")))
+    user = sync_cognito_user(db, validate_cognito_token(tokens["id_token"], settings, tokens.get("access_token")), settings)
     set_session_cookies(response, settings, tokens)
     return user
 

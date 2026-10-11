@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.access_grant import ProjectModule
 from app.models.account_member import AccountMemberRole
 from app.models.account_settings import DEFAULT_NON_WORKING_WEEKDAYS
 from app.models.option_value import OptionValue
@@ -35,21 +36,15 @@ from app.schemas.resources import (
     ResourceTimeOffUpdate,
     ResourceUpdate,
 )
+from app.services.access import access_for
 from app.services.activity import ActivityLogService
 
 
 RESOURCE_WRITE_ROLES = {
     AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
     AccountMemberRole.MANAGER.value,
 }
 
-RESOURCE_ALLOCATION_WRITE_ROLES = {
-    AccountMemberRole.OWNER.value,
-    AccountMemberRole.ADMIN.value,
-    AccountMemberRole.MANAGER.value,
-    AccountMemberRole.MEMBER.value,
-}
 
 RESOURCE_TIME_OFF_WRITE_ROLES = RESOURCE_WRITE_ROLES
 HOURS_QUANTIZER = Decimal("0.01")
@@ -313,11 +308,7 @@ class ResourceService:
         current_user: User,
     ) -> ResourceAllocation:
         task = self.get_task_or_404(task_id)
-        self.require_account_role(
-            account_id=task.account_id,
-            user_id=current_user.id,
-            allowed_roles=RESOURCE_ALLOCATION_WRITE_ROLES,
-        )
+        self.require_task_project_access(task, current_user, module=ProjectModule.TASKS)
         resource = self.validate_allocation_resource(
             resource_id=allocation_in.resource_id,
             account_id=task.account_id,
@@ -355,11 +346,7 @@ class ResourceService:
         current_user: User,
     ) -> ResourceAllocation:
         allocation = self.get_allocation_or_404(allocation_id)
-        self.require_account_role(
-            account_id=allocation.account_id,
-            user_id=current_user.id,
-            allowed_roles=RESOURCE_ALLOCATION_WRITE_ROLES,
-        )
+        self.require_task_project_access(self.get_task_or_404(allocation.task_id), current_user, module=ProjectModule.TASKS)
         changes = allocation_in.model_dump(exclude_unset=True)
         if "resource_id" in changes:
             resource = self.validate_allocation_resource(
@@ -396,11 +383,7 @@ class ResourceService:
 
     def delete_allocation(self, *, allocation_id: UUID, current_user: User) -> None:
         allocation = self.get_allocation_or_404(allocation_id)
-        self.require_account_role(
-            account_id=allocation.account_id,
-            user_id=current_user.id,
-            allowed_roles=RESOURCE_ALLOCATION_WRITE_ROLES,
-        )
+        self.require_task_project_access(self.get_task_or_404(allocation.task_id), current_user, module=ProjectModule.TASKS)
         try:
             ActivityLogService(self.db).record(
                 account_id=allocation.account_id,
@@ -428,7 +411,9 @@ class ResourceService:
         program_id: UUID | None = None,
     ) -> dict[str, object]:
         self.validate_allocation_date_range(start_date=start_date, end_date=end_date)
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        access = access_for(self.db, account_id=account_id, user=current_user)
+        access.require_visible_filters(program_id=program_id, project_id=project_id)
+        visible_projects = access.visible_project_ids()
         if resource_id is not None:
             self.validate_resource_belongs_to_account(resource_id=resource_id, account_id=account_id)
         if project_id is not None:
@@ -476,6 +461,21 @@ class ResourceService:
                     holiday_dates=holiday_dates,
                 )
             entry = entries[resource.id]
+            if visible_projects is not None and project.id not in visible_projects:
+                entry["allocations"].append(
+                    {
+                        "id": allocation.id,
+                        "task": None,
+                        "project": None,
+                        "program": None,
+                        "restricted": True,
+                        "allocated_hours": allocation.allocated_hours,
+                        "start_date": allocation.start_date,
+                        "end_date": allocation.end_date,
+                    }
+                )
+                entry["total_allocated_hours"] += allocation.allocated_hours or Decimal("0")
+                continue
             entry["allocations"].append(
                 {
                     "id": allocation.id,
@@ -572,7 +572,8 @@ class ResourceService:
         program_id: UUID | None = None,
     ) -> dict[str, object]:
         self.validate_allocation_date_range(start_date=start_date, end_date=end_date)
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        access = access_for(self.db, account_id=account_id, user=current_user)
+        access.require_visible_filters(program_id=program_id, project_id=project_id)
         if resource_id is not None:
             self.validate_resource_belongs_to_account(resource_id=resource_id, account_id=account_id)
         if project_id is not None:
@@ -609,7 +610,8 @@ class ResourceService:
         resource_id: UUID | None = None,
     ) -> dict[str, object]:
         self.validate_allocation_date_range(start_date=start_date, end_date=end_date)
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        access = access_for(self.db, account_id=account_id, user=current_user)
+        access.require_visible_filters(program_id=program_id, project_id=project_id)
         if resource_id is not None:
             self.validate_resource_belongs_to_account(resource_id=resource_id, account_id=account_id)
         if project_id is not None:
@@ -636,6 +638,7 @@ class ResourceService:
         ]
 
         task_contexts = self.resource_analysis_task_contexts(
+            visible_project_ids=access.visible_project_ids(),
             account_id=account_id,
             start_date=start_date,
             end_date=end_date,
@@ -678,7 +681,7 @@ class ResourceService:
 
     def get_task_resource_recommendations(self, *, task_id: UUID, current_user: User) -> list[dict[str, object]]:
         task = self.get_task_or_404(task_id)
-        self.require_account_member(account_id=task.account_id, user_id=current_user.id)
+        self.require_task_project_access(task, current_user)
         start_date = task.start_date or task.finish_date or date.today()
         end_date = task.finish_date or task.start_date or start_date
         self.validate_allocation_date_range(start_date=start_date, end_date=end_date)
@@ -875,6 +878,7 @@ class ResourceService:
     def resource_analysis_task_contexts(
         self,
         *,
+        visible_project_ids: set[UUID] | None = None,
         account_id: UUID,
         start_date: date,
         end_date: date,
@@ -889,6 +893,8 @@ class ResourceService:
             project_id=project_id,
             program_id=program_id,
         )
+        if visible_project_ids is not None:
+            rows = [row for row in rows if row[0].project_id in visible_project_ids]
         tasks = [task for task, _project, _program in rows]
         task_ids = [task.id for task in tasks]
         assignments_by_task = self.tasks.list_assignments_for_tasks(task_ids)
@@ -1672,6 +1678,14 @@ class ResourceService:
         if time_off is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource time off not found.")
         return time_off
+
+    def require_task_project_access(
+        self, task: Task, current_user: User, *, module: ProjectModule | None = None
+    ) -> None:
+        project = self.db.get(Project, task.project_id)
+        if project is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+        access_for(self.db, account_id=task.account_id, user=current_user).require_project(project, module=module)
 
     def get_task_or_404(self, task_id: UUID) -> Task:
         task = self.tasks.get_task(task_id)

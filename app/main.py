@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.errors import error_response, register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.request_context import REQUEST_ID_HEADER, generate_request_id, reset_request_id, set_request_id
+from app.routers.access import router as access_router
 from app.routers.accounts import router as accounts_router
 from app.routers.account_settings import router as account_settings_router
 from app.routers.account_users import router as account_users_router
@@ -20,6 +21,7 @@ from app.routers.activity import router as activity_router
 from app.routers.admin import router as admin_router
 from app.routers.attachments import router as attachments_router
 from app.routers.auth import router as auth_router
+from app.routers.billing import router as billing_router
 from app.routers.collaboration import router as collaboration_router
 from app.routers.comments import router as comments_router
 from app.routers.dashboard import router as dashboard_router
@@ -142,6 +144,8 @@ app.include_router(accounts_router)
 app.include_router(admin_router)
 app.include_router(account_settings_router)
 app.include_router(account_users_router)
+app.include_router(access_router)
+app.include_router(billing_router)
 app.include_router(options_router)
 app.include_router(dashboard_router)
 app.include_router(hierarchy_router)
