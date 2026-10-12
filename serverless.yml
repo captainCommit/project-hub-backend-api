@@ -43,6 +43,13 @@ provider:
     STRIPE_VIEWER_SEAT_PRICE_ID: ${env:STRIPE_VIEWER_SEAT_PRICE_ID, ''}
     BILLING_CURRENCY: CAD
     APP_URL: ${env:APP_URL, ''}
+    # Notification emails (SES). Until EMAIL_FROM is set to a verified SES identity, nothing is queued or sent.
+    EMAIL_FROM: ${env:EMAIL_FROM, ''}
+    SES_CONFIGURATION_SET:
+      Ref: EmailConfigurationSet
+    # Signs unsubscribe links.
+    EMAIL_TOKEN_SECRET:
+      Fn::Sub: "{{resolve:secretsmanager:${EmailTokenSecret}:SecretString:value}}"
     S3_BUCKET_NAME:
       Ref: AttachmentsBucket
   iam:
@@ -64,6 +71,13 @@ provider:
           Resource:
             - Fn::Sub: arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${env:COGNITO_USER_POOL_ID, ''}
         - Effect: Allow
+          Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+          Resource:
+            - Fn::Sub: arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*
+            - Fn::Sub: arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${EmailConfigurationSet}
+        - Effect: Allow
           Action: ssm:GetParameter
           Resource:
             - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/project-hub/${sls:stage}/*
@@ -82,6 +96,36 @@ functions:
       - httpApi:
           path: /{proxy+}
           method: ANY
+
+  # Notification emails are queued on the notification row during the request and sent from here
+  # (app/worker.py), so SES never slows down or breaks an API call.
+  notificationEmails:
+    handler: app.worker.deliver_handler
+    description: Sends queued "right away" notification emails.
+    memorySize: 1024
+    timeout: 60
+    events:
+      - schedule: rate(1 minute)
+
+  # Hourly, because "8 am" happens at a different UTC hour in each person's timezone.
+  morningNotifications:
+    handler: app.worker.morning_handler
+    description: Creates due-soon reminders and sends daily digests for people whose digest hour has come.
+    memorySize: 1024
+    timeout: 300
+    events:
+      - schedule: cron(5 * * * ? *)
+
+  sesEvents:
+    handler: app.worker.ses_events_handler
+    description: Records SES hard bounces and complaints so those addresses aren't emailed again.
+    memorySize: 512
+    timeout: 30
+    events:
+      - sns:
+          arn:
+            Ref: EmailEventsTopic
+          topicName: ${self:service}-${sls:stage}-email-events
 
 package:
   patterns:
@@ -137,6 +181,61 @@ resources:
           GenerateStringKey: value
           PasswordLength: 48
           ExcludePunctuation: true
+
+    EmailTokenSecret:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        Name: /project-hub/${sls:stage}/email-token
+        Description: Signs the unsubscribe links in notification emails.
+        GenerateSecretString:
+          SecretStringTemplate: "{}"
+          GenerateStringKey: value
+          PasswordLength: 48
+          ExcludePunctuation: true
+
+    # Every notification email is sent with this configuration set, which publishes bounces and complaints.
+    EmailConfigurationSet:
+      Type: AWS::SES::ConfigurationSet
+      Properties:
+        Name: ${self:service}-${sls:stage}
+
+    EmailEventsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-${sls:stage}-email-events
+
+    EmailEventsTopicPolicy:
+      Type: AWS::SNS::TopicPolicy
+      Properties:
+        Topics: [{ Ref: EmailEventsTopic }]
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: AllowSesPublish
+              Effect: Allow
+              Principal:
+                Service: ses.amazonaws.com
+              Action: sns:Publish
+              Resource:
+                Ref: EmailEventsTopic
+              Condition:
+                StringEquals:
+                  AWS:SourceAccount:
+                    Ref: AWS::AccountId
+
+    EmailEventDestination:
+      Type: AWS::SES::ConfigurationSetEventDestination
+      DependsOn: EmailEventsTopicPolicy
+      Properties:
+        ConfigurationSetName:
+          Ref: EmailConfigurationSet
+        EventDestination:
+          Name: bounces-and-complaints
+          Enabled: true
+          MatchingEventTypes: [bounce, complaint]
+          SnsDestination:
+            TopicARN:
+              Ref: EmailEventsTopic
 
     UiBucket:
       Type: AWS::S3::Bucket
@@ -360,6 +459,26 @@ resources:
         Period: 300
         EvaluationPeriods: 1
         Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions: [{ Ref: AlarmTopic }]
+        OKActions: [{ Ref: AlarmTopic }]
+
+    NotificationEmailsErrorsAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${sls:stage}-notification-emails-errors
+        AlarmDescription: The notification email sender crashed or timed out three runs in a row.
+        Namespace: AWS/Lambda
+        MetricName: Errors
+        Dimensions:
+          - Name: FunctionName
+            Value:
+              Ref: NotificationEmailsLambdaFunction
+        Statistic: Sum
+        Period: 180
+        EvaluationPeriods: 1
+        Threshold: 3
         ComparisonOperator: GreaterThanOrEqualToThreshold
         TreatMissingData: notBreaching
         AlarmActions: [{ Ref: AlarmTopic }]

@@ -254,3 +254,45 @@ def test_activity_records_are_ordered_newest_first(client: TestClient) -> None:
     assert response.status_code == 200
     activity = response.json()
     assert [item["action"] for item in activity[:2]] == ["UPDATED", "CREATED"]
+
+
+def test_activity_is_described_in_plain_words(client: TestClient, db_session: Session) -> None:
+    from app.models.option_set import OptionSet
+    from app.models.option_value import OptionValue
+
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Write launch plan")
+    high = db_session.scalar(
+        select(OptionValue)
+        .join(OptionSet, OptionSet.id == OptionValue.option_set_id)
+        .where(
+            OptionSet.account_id == UUID(hierarchy["account"]["id"]),
+            OptionSet.entity_type == "TASK",
+            OptionSet.name == "PRIORITY",
+        )
+        .order_by(OptionValue.sort_order)
+    )
+    assert high is not None
+    client.patch(f"/api/v1/tasks/{task['id']}", json={"priority_id": str(high.id)})
+    client.patch(f"/api/v1/tasks/{task['id']}", json={"finish_date": "2026-10-09", "percent_complete": 100})
+    create_comment(client, "TASK", task["id"], "Hello")
+
+    response = client.get(f"/api/v1/projects/{hierarchy['project']['id']}/audit")
+
+    assert response.status_code == 200
+    entries = response.json()
+    def find(field: str) -> dict:
+        return next(e for e in entries if field in (e["new_values"] or {}))
+
+    comment, dates, priority = find("body"), find("finish_date"), find("priority_id")
+    assert comment["action"] == "COMMENTED"
+    assert comment["entity_name"] == "Write launch plan"
+    assert comment["actor_name"]
+    assert comment["changes"] == [{"field": "body", "label": "Comment", "old": None, "new": "Hello"}]
+    assert {(c["label"], c["old"], c["new"]) for c in dates["changes"]} == {
+        ("Due date", None, "Oct 9, 2026"),
+        ("Progress", "0%", "100%"),
+    }
+    assert priority["changes"] == [{"field": "priority_id", "label": "Priority", "old": None, "new": high.label}]
+    # The raw values are still there for anything that reads them.
+    assert priority["new_values"] == {"priority_id": str(high.id)}

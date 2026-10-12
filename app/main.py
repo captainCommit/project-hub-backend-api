@@ -26,6 +26,7 @@ from app.routers.collaboration import router as collaboration_router
 from app.routers.comments import router as comments_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.delivery import router as delivery_router
+from app.routers.email import router as email_router
 from app.routers.health import router as health_router
 from app.routers.hierarchy import router as hierarchy_router
 from app.routers.me import router as me_router
@@ -156,6 +157,7 @@ app.include_router(resources_router)
 app.include_router(skills_router)
 app.include_router(search_router)
 app.include_router(notifications_router)
+app.include_router(email_router)
 app.include_router(sprints_router)
 app.include_router(delivery_router)
 app.include_router(comments_router)

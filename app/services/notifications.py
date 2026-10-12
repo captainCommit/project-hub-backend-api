@@ -4,16 +4,20 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.notification import Notification, NotificationType
+from app.core.config import get_settings
+from app.models.notification import EmailStatus, Notification, NotificationType
+from app.models.notification_preference import EmailFrequency
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.services.access import can_see_entity
+from app.services.notification_preferences import NotificationPreferenceService
 
 
 class NotificationService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.account_members = AccountMemberRepository(db)
+        self.preferences = NotificationPreferenceService(db)
 
     def create_notification(
         self,
@@ -32,19 +36,32 @@ class NotificationService:
         if self.account_members.get_for_user(account_id=account_id, user_id=user_id) is None:
             return None
 
+        type_value = notification_type.value if isinstance(notification_type, NotificationType) else notification_type
         notification = Notification(
             account_id=account_id,
             user_id=user_id,
             entity_type=entity_type.strip().upper(),
             entity_id=entity_id,
-            notification_type=(notification_type.value if isinstance(notification_type, NotificationType) else notification_type),
+            notification_type=type_value,
             title=title,
             message=message,
+            email_status=self.initial_email_status(user_id, type_value),
         )
         self.db.add(notification)
         self.db.flush()
         self.db.refresh(notification)
         return notification
+
+    def initial_email_status(self, user_id: UUID, notification_type: str) -> str | None:
+        """Queue the email channel. The delivery worker sends it after the request commits (app/worker.py)."""
+        if not get_settings().email_enabled:
+            return None
+        frequency = self.preferences.frequency_for(user_id, notification_type)
+        if frequency == EmailFrequency.IMMEDIATE:
+            return EmailStatus.PENDING.value
+        if frequency == EmailFrequency.DIGEST:
+            return EmailStatus.DIGEST.value
+        return None
 
     def create_for_account_members(
         self,

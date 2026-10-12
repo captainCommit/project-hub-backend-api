@@ -347,6 +347,38 @@ variables. Until the secrets exist, the API starts normally and billing reports 
 For local webhook testing, `stripe listen --forward-to localhost:8000/api/v1/billing/stripe-webhook`
 prints a signing secret to use.
 
+## Notification emails (SES)
+
+Every in-app notification can also be emailed. Each person picks, per category (mentions, assignments,
+due soon, status changes, comments), **right away**, **daily digest** or **off** under Account > Notifications,
+plus the hour and timezone for their digest. Every email links to the item and carries a signed unsubscribe
+link (and one-click `List-Unsubscribe` headers).
+
+How it runs:
+
+- `NotificationService.create_notification` only marks the notification's `email_status` (`PENDING` or
+  `DIGEST`) in the same transaction. Nothing is sent during the request.
+- `app/worker.py` runs as separate Lambdas: `notificationEmails` every minute sends `PENDING` emails;
+  `morningNotifications` hourly creates `DUE_SOON` reminders (tasks assigned to the person, due today or
+  tomorrow, from the My work due-tasks query) and sends digests once each person's local digest hour has come.
+- At send time the worker re-checks the person's settings, account membership, access to the item, and the
+  `email_suppressions` table. Failed sends are retried up to 5 times.
+- SES publishes hard bounces and complaints through the `project-hub-api-<stage>` configuration set to SNS;
+  `sesEvents` adds those addresses to `email_suppressions`.
+
+Email stays off until `EMAIL_FROM` is set (with `EMAIL_TOKEN_SECRET` and `APP_URL`). Setup:
+
+1. In SES (ca-central-1), verify the sender: a domain identity with the DKIM CNAMEs, plus SPF and a DMARC
+   record on that domain. A single verified email address works for testing.
+2. Request production access for SES. In the sandbox, SES only delivers to verified addresses.
+3. Set the GitHub `dev` environment variable `EMAIL_FROM`, e.g. `Project Hub <notifications@your-domain>`, and
+   deploy. The stack creates the token secret (`/project-hub/<stage>/email-token`), the configuration set, and
+   the SNS topic.
+
+Locally, set `EMAIL_FROM`, `EMAIL_TOKEN_SECRET` and `APP_URL` in `.env`, then run the jobs by hand, e.g.
+`python -c "from app.worker import deliver_handler; print(deliver_handler({}, None))"` (uses your AWS
+credentials to call SES).
+
 ## AWS Lambda
 
 The application exposes a Mangum handler in `app/main.py`:

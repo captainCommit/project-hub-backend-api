@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class NotificationRead(BaseModel):
@@ -24,3 +25,30 @@ class NotificationListResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+EmailFrequencyValue = Literal["IMMEDIATE", "DIGEST", "OFF"]
+
+
+class NotificationPreferencesRead(BaseModel):
+    mentions: EmailFrequencyValue
+    assignments: EmailFrequencyValue
+    due_soon: EmailFrequencyValue
+    status_changes: EmailFrequencyValue
+    comments: EmailFrequencyValue
+    timezone: str
+    digest_hour: int
+    email: str
+    # False when the server has no email sender set up: settings save, but nothing is sent yet.
+    email_available: bool
+    # SES reported a hard bounce or spam complaint for this address, so nothing is sent to it.
+    email_suppressed: bool
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    mentions: EmailFrequencyValue | None = None
+    assignments: EmailFrequencyValue | None = None
+    due_soon: EmailFrequencyValue | None = None
+    status_changes: EmailFrequencyValue | None = None
+    comments: EmailFrequencyValue | None = None
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    digest_hour: int | None = Field(default=None, ge=0, le=23)

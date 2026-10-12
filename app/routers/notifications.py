@@ -5,8 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.notifications import NotificationListResponse, NotificationRead
+from app.schemas.notifications import (
+    NotificationListResponse,
+    NotificationPreferencesRead,
+    NotificationPreferencesUpdate,
+    NotificationRead,
+)
 from app.services.auth import get_current_user
+from app.services.notification_preferences import NotificationPreferenceService
 from app.services.notifications import NotificationService
 
 
@@ -44,3 +50,20 @@ def mark_all_notifications_read(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, int]:
     return NotificationService(db).mark_all_read(current_user=current_user)
+
+@router.get("/me/notification-preferences", response_model=NotificationPreferencesRead)
+def read_notification_preferences(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return NotificationPreferenceService(db).read(current_user)
+
+
+@router.patch("/me/notification-preferences", response_model=NotificationPreferencesRead)
+def update_notification_preferences(
+    preferences_in: NotificationPreferencesUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    changes = {field: value for field, value in preferences_in.model_dump(exclude_unset=True).items() if value is not None}
+    return NotificationPreferenceService(db).update(current_user, changes)

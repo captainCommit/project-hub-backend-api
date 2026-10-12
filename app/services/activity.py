@@ -34,6 +34,7 @@ from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.activity import ActivityLogRepository
 from app.services.access import access_for, hidden_entity_types
+from app.services.activity_display import describe_activity
 
 
 # Account-wide records: any member of the account can see their history.
@@ -144,7 +145,7 @@ class ActivityLogService:
         current_user: User,
         sort: str | None = None,
         pagination: PaginationParams | None = None,
-    ) -> list[ActivityLog] | dict[str, object]:
+    ) -> list[dict[str, Any]] | dict[str, object]:
         target = self.resolve_activity_entity(entity_type=entity_type, entity_id=entity_id)
         scope = access_for(self.db, account_id=target.account_id, user=current_user)
         if target.entity_type not in ACCOUNT_LEVEL_ENTITIES:
@@ -157,8 +158,11 @@ class ActivityLogService:
                 sort=sort_value,
                 pagination=pagination,
             )
-            return paginated_response(items=activity, total=total, pagination=pagination)
-        return self.activity.list_for_entity(entity_type=target.entity_type, entity_id=target.entity_id, sort=sort_value)
+            return paginated_response(
+                items=describe_activity(self.db, target.account_id, activity), total=total, pagination=pagination
+            )
+        activity = self.activity.list_for_entity(entity_type=target.entity_type, entity_id=target.entity_id, sort=sort_value)
+        return describe_activity(self.db, target.account_id, activity)
 
     def list_project_activity(
         self,
@@ -167,7 +171,7 @@ class ActivityLogService:
         current_user: User,
         sort: str | None = None,
         pagination: PaginationParams | None = None,
-    ) -> list[ActivityLog] | dict[str, object]:
+    ) -> list[dict[str, Any]] | dict[str, object]:
         project = self.db.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
@@ -181,8 +185,11 @@ class ActivityLogService:
                 pagination=pagination,
                 exclude_entity_types=hidden,
             )
-            return paginated_response(items=activity, total=total, pagination=pagination)
-        return self.activity.list_for_project(project.id, sort=sort_value, exclude_entity_types=hidden)
+            return paginated_response(
+                items=describe_activity(self.db, project.account_id, activity), total=total, pagination=pagination
+            )
+        activity = self.activity.list_for_project(project.id, sort=sort_value, exclude_entity_types=hidden)
+        return describe_activity(self.db, project.account_id, activity)
 
     def resolve_activity_entity(self, *, entity_type: str, entity_id: UUID) -> ResolvedActivityEntity:
         normalized_entity_type = entity_type.strip().upper()

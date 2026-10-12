@@ -38,6 +38,9 @@ jobs:
       STRIPE_FULL_SEAT_PRICE_ID: ${{ vars.STRIPE_FULL_SEAT_PRICE_ID }}
       STRIPE_VIEWER_SEAT_PRICE_ID: ${{ vars.STRIPE_VIEWER_SEAT_PRICE_ID }}
       APP_URL: ${{ vars.APP_URL }}
+      # Sender for notification emails, e.g. "Project Hub <notifications@example.com>"; must be verified in SES.
+      # Leave unset to keep email off.
+      EMAIL_FROM: ${{ vars.EMAIL_FROM }}
       # Inbox for CloudWatch alarm emails (confirm the SNS subscription once).
       ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
 

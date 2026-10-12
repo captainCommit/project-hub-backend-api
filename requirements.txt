@@ -12,3 +12,4 @@ python-jose[cryptography]
 requests
 boto3
 stripe==15.6.1
+tzdata

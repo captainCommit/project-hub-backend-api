@@ -13,8 +13,10 @@ from app.models.comment_mention import CommentMention
 from app.models.decision import Decision
 from app.models.decision_option import DecisionOption
 from app.models.dependency import Dependency
+from app.models.email_suppression import EmailSuppression
 from app.models.health_check import HealthCheck
-from app.models.notification import Notification, NotificationType
+from app.models.notification import EmailStatus, Notification, NotificationType
+from app.models.notification_preference import EmailFrequency, NotificationPreference
 from app.models.issue import Issue
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
@@ -59,11 +61,15 @@ __all__ = [
     "Decision",
     "DecisionOption",
     "Dependency",
+    "EmailFrequency",
+    "EmailStatus",
+    "EmailSuppression",
     "HealthCheck",
     "Invoice",
     "Issue",
     "Notification",
     "NotificationType",
+    "NotificationPreference",
     "OptionSet",
     "OptionValue",
     "PlatformAuditEvent",

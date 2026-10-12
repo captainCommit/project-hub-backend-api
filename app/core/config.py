@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     stripe_viewer_seat_price_id: str = Field(default="", validation_alias="STRIPE_VIEWER_SEAT_PRICE_ID")
     # Where Stripe Checkout and the billing portal send people back to (the UI's origin).
     app_url: str = Field(default="http://localhost:3000", validation_alias="APP_URL")
+    # Notification emails go out through SES. Without a sender address and token secret, no email is queued.
+    email_from: str = Field(default="", validation_alias="EMAIL_FROM")
+    # SES configuration set that publishes bounces and complaints (see serverless.yml); optional locally.
+    ses_configuration_set: str = Field(default="", validation_alias="SES_CONFIGURATION_SET")
+    # Signs unsubscribe links. Deployed: generated in Secrets Manager.
+    email_token_secret: str = Field(default="", validation_alias="EMAIL_TOKEN_SECRET")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -73,6 +79,10 @@ class Settings(BaseSettings):
     @property
     def stripe_enabled(self) -> bool:
         return bool(self.stripe_secret_key and self.stripe_full_seat_price_id and self.stripe_viewer_seat_price_id)
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.email_from and self.email_token_secret and self.app_url)
 
     @property
     def cors_origin_list(self) -> list[str]:
