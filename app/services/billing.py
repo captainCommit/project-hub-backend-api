@@ -166,6 +166,9 @@ class BillingService:
         line_items = [{"price": self.settings.stripe_full_seat_price_id, "quantity": max(full, 1)}]
         if viewer:
             line_items.append({"price": self.settings.stripe_viewer_seat_price_id, "quantity": viewer})
+        if self.settings.stripe_ai_usage_price_id:
+            # Metered: platform AI usage past the free allowance (nothing for accounts that don't use it).
+            line_items.append({"price": self.settings.stripe_ai_usage_price_id})
         return gateway.create_checkout_session(
             customer_id=billing.stripe_customer_id,
             account_id=str(account_id),
@@ -221,10 +224,11 @@ class BillingService:
         elif event_type.startswith("customer.subscription."):
             self.on_subscription_changed(obj, deleted=event_type == "customer.subscription.deleted")
         elif event_type == "invoice.upcoming":
-            # Last chance to get seat counts right before Stripe bills.
+            # Last chance to get seat counts and AI usage right before Stripe bills.
             billing = self.billing_for_customer(obj.get("customer"))
             if billing is not None:
                 self.sync_seats(billing.account_id)
+                self.report_ai_usage(billing.account_id, gateway)
         elif event_type.startswith("invoice."):
             self.on_invoice(obj)
         self.db.add(StripeEvent(id=event["id"], type=event_type))
@@ -286,7 +290,7 @@ class BillingService:
         period_source = subscription if subscription.get("current_period_end") else (items[0] if items else {})
         billing.current_period_start = from_timestamp(period_source.get("current_period_start"))
         billing.current_period_end = from_timestamp(period_source.get("current_period_end"))
-        billing.full_seat_item_id = billing.viewer_seat_item_id = None
+        billing.full_seat_item_id = billing.viewer_seat_item_id = billing.ai_usage_item_id = None
         billing.billed_full_seats = billing.billed_viewer_seats = 0
         for item in items:
             price_id = (item.get("price") or {}).get("id")
@@ -296,6 +300,37 @@ class BillingService:
             elif price_id == self.settings.stripe_viewer_seat_price_id:
                 billing.viewer_seat_item_id = item.get("id")
                 billing.billed_viewer_seats = int(item.get("quantity") or 0)
+            elif price_id and price_id == self.settings.stripe_ai_usage_price_id:
+                billing.ai_usage_item_id = item.get("id")
+
+    def report_ai_usage(self, account_id: UUID, gateway: StripeGateway) -> None:
+        from app.services.ai.usage_billing import AiUsageReporter
+
+        try:
+            AiUsageReporter(self.db, self.settings, gateway=gateway).report_account(account_id)
+        except Exception:
+            self.db.rollback()
+            logger.exception("AI usage report failed", extra={"account_id": str(account_id)})
+
+    def ensure_ai_usage_item(self, account_id: UUID) -> bool:
+        """Add the metered AI usage line to a live subscription that doesn't have it yet (subscribed before AI
+        existed). Returns whether the subscription now has it."""
+        billing = self.db.get(AccountBilling, account_id)
+        if billing is None or billing.ai_usage_item_id:
+            return bool(billing and billing.ai_usage_item_id)
+        if (
+            not self.settings.stripe_ai_usage_price_id
+            or not billing.billing_enabled
+            or not billing.stripe_subscription_id
+            or billing.subscription_status not in LIVE_SUBSCRIPTION_STATUSES
+        ):
+            return False
+        subscription = self.gateway().add_subscription_item(
+            billing.stripe_subscription_id, self.settings.stripe_ai_usage_price_id
+        )
+        self.apply_subscription(billing, subscription)
+        self.db.commit()
+        return bool(billing.ai_usage_item_id)
 
     # Helpers
 

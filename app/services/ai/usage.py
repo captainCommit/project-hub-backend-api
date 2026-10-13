@@ -31,6 +31,10 @@ def month_start(now: datetime | None = None) -> datetime:
     return datetime(now.year, now.month, 1, tzinfo=UTC)
 
 
+def next_month_start(start: datetime) -> datetime:
+    return datetime(start.year + start.month // 12, start.month % 12 + 1, 1, tzinfo=UTC)
+
+
 @dataclass(frozen=True)
 class MonthUsage:
     month_start: datetime
@@ -77,10 +81,16 @@ def can_bill_usage(db: Session, settings: Settings, account_id: UUID) -> bool:
 def platform_usage(
     db: Session, settings: Settings, access: AiPlatformAccess, *, now: datetime | None = None
 ) -> MonthUsage:
+    """Usage in the calendar month containing `now` (default: this month)."""
     start = month_start(now)
     runs = db.execute(
         select(AiRun.input_tokens + AiRun.output_tokens, AiRun.charge_cents)
-        .where(AiRun.account_id == access.account_id, AiRun.source == "PLATFORM", AiRun.created_at >= start)
+        .where(
+            AiRun.account_id == access.account_id,
+            AiRun.source == "PLATFORM",
+            AiRun.created_at >= start,
+            AiRun.created_at < next_month_start(start),
+        )
         .order_by(AiRun.created_at, AiRun.id)
     ).all()
     tokens = sum(int(t or 0) for t, _ in runs)

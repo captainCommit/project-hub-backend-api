@@ -379,6 +379,57 @@ Locally, set `EMAIL_FROM`, `EMAIL_TOKEN_SECRET` and `APP_URL` in `.env`, then ru
 `python -c "from app.worker import deliver_handler; print(deliver_handler({}, None))"` (uses your AWS
 credentials to call SES).
 
+## AI assistant
+
+The assistant (the AIAssistant page and the floating widget) answers questions about project data. It is not
+tied to one AI company: each account uses either its **own model key** or, if it has none, a **model Project Hub
+provides**. It only reads, and only what the person asking can see: its tools call the same services as the API
+endpoints, as that person (`app/services/ai/tools.py`).
+
+Providers (`app/services/ai/providers.py`): OpenAI, Anthropic, Google Gemini, Azure OpenAI, and any
+OpenAI-compatible endpoint (OpenRouter, Groq, Mistral, self-hosted Ollama or vLLM). Two small adapters cover
+them: OpenAI Chat Completions and Anthropic Messages. The model must support tool calling.
+
+How a question is answered:
+
+- `POST /api/v1/ai/conversations/{id}/messages` stores the question, queues a run and returns 202 at once.
+- The `aiAssistant` Lambda (`app.worker.ai_run_handler`), started with an asynchronous invoke, calls the model
+  and the tools until it answers: at most `AI_MAX_MODEL_CALLS` (8) calls and `AI_RUN_TIMEOUT_SECONDS` (120).
+  The chat polls the conversation while the run is active. Locally (no `AI_WORKER_FUNCTION`) the question is
+  answered in-process after the response is sent.
+- `aiHousekeeping` runs hourly: fails runs whose worker died, deletes conversations past the account's
+  retention (owners choose; 90 days by default), and reports platform usage to Stripe.
+
+**Own keys (BYOK).** Owners connect a provider under Account > AI assistant. Saving sends one tiny request that
+must come back as a tool call. Keys are encrypted with the `AiKeysKmsKey` KMS key, with the account id as
+encryption context; the API role can only encrypt and only `AiWorkerRole` can decrypt. Locally,
+`AI_LOCAL_KEY_SECRET` stands in for KMS (refused outside `ENVIRONMENT=local`).
+
+**Platform models.** An owner requests Project Hub's model, accepting that usage past the free allowance is
+billed. A platform admin (Admin > AI) adds the models with their cost per million tokens and a margin, then
+switches the model on per account with an allowance (free tokens or a credit, default from
+`AI_DEFAULT_ALLOWANCE_KIND` / `AI_DEFAULT_ALLOWANCE_AMOUNT`) and an optional monthly cap. An account's own key
+always wins, and a broken own key never falls back to the platform model. The platform's provider keys are
+SSM SecureStrings, never in the database:
+
+    aws ssm put-parameter --type SecureString --name /project-hub/dev/ai/openai-api-key --value sk-...
+    aws ssm put-parameter --type SecureString --name /project-hub/dev/ai/anthropic-api-key --value sk-ant-...
+
+Locally set `AI_PLATFORM_OPENAI_API_KEY` / `AI_PLATFORM_ANTHROPIC_API_KEY` / `AI_PLATFORM_GEMINI_API_KEY` instead.
+
+**Billing platform usage.** Each platform run stores its charge (cost plus margin). Usage past the allowance is
+invoiced through a Stripe billing meter, 1 unit = 1 cent:
+
+1. Run `python scripts/setup_stripe_ai_usage.py` and put the printed ID in `STRIPE_AI_USAGE_PRICE_ID`
+   (GitHub `dev` variable when deployed).
+2. New subscriptions get the metered line at checkout; existing ones get it when a platform admin switches the
+   model on, or at the next hourly report.
+3. Every hour, and on Stripe's `invoice.upcoming`, only the whole cents not yet reported are sent; event
+   identifiers make retries safe.
+
+Without the price ID (or a live subscription), usage can't be invoiced, so the allowance is the limit and the
+assistant pauses until the next month.
+
 ## AWS Lambda
 
 The application exposes a Mangum handler in `app/main.py`:

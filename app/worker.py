@@ -79,11 +79,16 @@ def ai_run_handler(event: dict[str, Any], context: Any) -> dict[str, str]:
 
 
 def ai_housekeeping_handler(event: dict[str, Any], context: Any) -> dict[str, int]:
-    """Hourly: mark runs whose worker died as failed, and delete conversations past their account's retention."""
+    """Hourly: mark runs whose worker died as failed, delete conversations past their account's retention, and
+    report platform AI usage to Stripe."""
     from app.services.ai.conversations import ConversationService
+    from app.services.ai.usage_billing import AiUsageReporter
 
+    settings = get_settings()
     with SessionLocal() as db:
-        service = ConversationService(db, get_settings())
+        service = ConversationService(db, settings)
         counts = {"stale_runs": service.fail_stale_runs(), "expired_conversations": service.delete_expired()}
+        usage = AiUsageReporter(db, settings).report_all()
+    counts.update({f"usage_{key}": value for key, value in usage.items()})
     logger.info("AI housekeeping", extra=counts)
     return counts

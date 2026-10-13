@@ -5,6 +5,7 @@ bill. A platform admin then switches it on, picking the model, the allowance (to
 monthly cap. Platform admins see terms and usage numbers only, never conversations or project data.
 """
 
+import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 from functools import lru_cache
@@ -31,6 +32,8 @@ from app.services.activity import ActivityLogService
 from app.services.ai.providers import Provider, ProviderConfig, ResolvedModel
 from app.services.ai.usage import MonthUsage, platform_usage
 from app.services.platform_audit import record_platform_action
+
+logger = logging.getLogger(__name__)
 
 
 class PlatformAiAction:
@@ -269,7 +272,22 @@ class PlatformAiService:
             },
         )
         self.db.commit()
+        if access.status == AiPlatformAccessStatus.ENABLED.value:
+            self.add_usage_line(account_id)
         return self.account_dict(access, account)
+
+    def add_usage_line(self, account_id: UUID) -> None:
+        """Best effort: put the metered AI line on the account's subscription now rather than at the next report."""
+        from app.services.billing import BillingService
+        from app.services.stripe_gateway import StripeNotConfigured
+
+        try:
+            BillingService(self.db, settings=self.settings).ensure_ai_usage_item(account_id)
+        except StripeNotConfigured:
+            pass
+        except Exception:
+            self.db.rollback()
+            logger.exception("Adding the AI usage line failed", extra={"account_id": str(account_id)})
 
     def account_dict(self, access: AiPlatformAccess, account: Account) -> dict[str, object]:
         model = self.db.get(AiPlatformModel, access.platform_model_id) if access.platform_model_id else None

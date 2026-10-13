@@ -259,3 +259,21 @@ class AiPlatformAccess(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class AiUsageReport(Base):
+    """How much of an account's platform AI usage for a month has been reported to Stripe, in whole cents.
+
+    Each hour only the difference is sent, so a usage event is never counted twice.
+    """
+
+    __tablename__ = "ai_usage_reports"
+
+    account_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    month_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    reported_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

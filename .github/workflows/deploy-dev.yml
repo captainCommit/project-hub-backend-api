@@ -37,6 +37,9 @@ jobs:
       COGNITO_DOMAIN: ${{ vars.COGNITO_DOMAIN }}
       STRIPE_FULL_SEAT_PRICE_ID: ${{ vars.STRIPE_FULL_SEAT_PRICE_ID }}
       STRIPE_VIEWER_SEAT_PRICE_ID: ${{ vars.STRIPE_VIEWER_SEAT_PRICE_ID }}
+      # Metered price for platform AI usage (scripts/setup_stripe_ai_usage.py). Unset: AI usage isn't invoiced,
+      # so accounts on the platform model stop at their free allowance.
+      STRIPE_AI_USAGE_PRICE_ID: ${{ vars.STRIPE_AI_USAGE_PRICE_ID }}
       APP_URL: ${{ vars.APP_URL }}
       # Sender for notification emails, e.g. "Project Hub <notifications@example.com>"; must be verified in SES.
       # Leave unset to keep email off.

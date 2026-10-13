@@ -41,6 +41,7 @@ provider:
     STRIPE_WEBHOOK_SECRET_PARAM: /project-hub/${sls:stage}/stripe-webhook-secret
     STRIPE_FULL_SEAT_PRICE_ID: ${env:STRIPE_FULL_SEAT_PRICE_ID, ''}
     STRIPE_VIEWER_SEAT_PRICE_ID: ${env:STRIPE_VIEWER_SEAT_PRICE_ID, ''}
+    STRIPE_AI_USAGE_PRICE_ID: ${env:STRIPE_AI_USAGE_PRICE_ID, ''}
     BILLING_CURRENCY: CAD
     APP_URL: ${env:APP_URL, ''}
     # Notification emails (SES). Until EMAIL_FROM is set to a verified SES identity, nothing is queued or sent.
