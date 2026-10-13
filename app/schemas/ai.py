@@ -35,6 +35,7 @@ class AiSettingsRead(BaseModel):
     assistant_enabled: bool
     retention_days: int
     key: AiKeyRead | None
+    platform: "AiPlatformInfo"
     # False when this server has nowhere safe to keep keys (no KMS key configured).
     key_storage_available: bool
 
@@ -88,3 +89,109 @@ class AiChatMessageRead(BaseModel):
 class AiConversationDetail(AiConversationRead):
     messages: list[AiChatMessageRead]
     active_run_id: UUID | None
+
+
+# Platform-provided models -------------------------------------------------------------------------------
+
+PlatformProviderValue = Literal["OPENAI", "ANTHROPIC", "GEMINI"]
+PlatformAccessStatusValue = Literal["REQUESTED", "ENABLED", "DISABLED", "DECLINED"]
+AllowanceKindValue = Literal["TOKENS", "CREDIT"]
+
+
+class AiUsageRead(BaseModel):
+    month_start: datetime
+    tokens: int
+    charge_cents: float
+    billable_cents: float
+    allowance_kind: AllowanceKindValue
+    allowance_amount: int
+    allowance_left: int
+    cap_cents: int | None
+    can_bill: bool
+    limit_reached: bool
+
+
+class AiPlatformInfo(BaseModel):
+    """What an owner sees about the platform model for their account."""
+
+    status: PlatformAccessStatusValue | None
+    model_label: str | None
+    requested_at: datetime | None
+    usage: AiUsageRead | None
+    currency: str
+
+
+class AiPlatformRequest(BaseModel):
+    # The owner accepts that usage past the allowance is added to the bill and that data goes to the provider.
+    accept_terms: bool
+
+
+class AiPlatformModelRead(BaseModel):
+    id: UUID
+    label: str
+    provider: PlatformProviderValue
+    model: str
+    input_cost_per_mtok_cents: float
+    output_cost_per_mtok_cents: float
+    margin_percent: float
+    is_active: bool
+    # Whether the platform's key for this provider is configured on the server.
+    key_configured: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AiPlatformModelCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=100)
+    provider: PlatformProviderValue
+    model: str = Field(min_length=1, max_length=200)
+    input_cost_per_mtok_cents: float = Field(ge=0)
+    output_cost_per_mtok_cents: float = Field(ge=0)
+    margin_percent: float = Field(default=30, ge=0, le=1000)
+    is_active: bool = True
+
+
+class AiPlatformModelUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=100)
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    input_cost_per_mtok_cents: float | None = Field(default=None, ge=0)
+    output_cost_per_mtok_cents: float | None = Field(default=None, ge=0)
+    margin_percent: float | None = Field(default=None, ge=0, le=1000)
+    is_active: bool | None = None
+
+
+class AiPlatformAccountRead(BaseModel):
+    """One account's platform AI, for platform admins: terms and usage only, never conversations."""
+
+    account_id: UUID
+    account_name: str
+    status: PlatformAccessStatusValue
+    platform_model_id: UUID | None
+    model_label: str | None
+    allowance_kind: AllowanceKindValue
+    allowance_amount: int
+    monthly_cap_cents: int | None
+    has_own_key: bool
+    requested_at: datetime | None
+    requested_by_email: str | None
+    decided_at: datetime | None
+    usage: AiUsageRead
+
+
+class AiPlatformAccessUpdate(BaseModel):
+    status: Literal["ENABLED", "DISABLED", "DECLINED"]
+    platform_model_id: UUID | None = None
+    allowance_kind: AllowanceKindValue | None = None
+    allowance_amount: int | None = Field(default=None, ge=0)
+    monthly_cap_cents: int | None = Field(default=None, ge=0)
+    # Explicitly remove the cap (monthly_cap_cents=null alone means "unchanged").
+    clear_cap: bool = False
+
+
+class AiPlatformDefaults(BaseModel):
+    allowance_kind: AllowanceKindValue
+    allowance_amount: int
+    currency: str
+
+
+AiSettingsRead.model_rebuild()

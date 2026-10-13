@@ -22,13 +22,15 @@ from app.models.account import Account
 from app.models.ai import AiConversation, AiMessage, AiRun, AiRunStatus
 from app.models.user import User
 from app.services.access import access_for
-from app.services.ai.account_settings import AiSettingsService, ResolvedModel
+from app.services.ai.account_settings import AiSettingsService
 from app.services.ai.endpoints import Resolver, resolve_host
+from app.services.ai.platform import PlatformAiService, PlatformLimitReached
 from app.services.ai.providers import (
     ChatModel,
     ErrorKind,
     ProviderConfig,
     ProviderError,
+    ResolvedModel,
     Transport,
     chat_model,
     requests_transport,
@@ -66,14 +68,18 @@ GENERIC_ERROR = "Something went wrong while answering. Try again."
 NOT_SET_UP_ERROR = "The assistant isn't set up for this account."
 TOO_MANY_STEPS_ERROR = "That needed more lookups than allowed for one question. Try asking something narrower."
 TIMEOUT_ERROR = "That took too long to answer. Try asking something narrower."
+LIMIT_REACHED_ERROR = "This account has used its AI allowance for the month."
 
 ModelResolver = Callable[[Session, Settings, UUID], ResolvedModel | None]
 ModelFactory = Callable[[ProviderConfig], ChatModel]
 
 
 def resolve_model(db: Session, settings: Settings, account_id: UUID) -> ResolvedModel | None:
-    """The account's own key if it has one."""
-    return AiSettingsService(db, settings).resolve_byok(account_id)
+    """The account's own key if it has one, else a platform model if one is switched on.
+
+    A broken own key never falls back to the platform model: that would start billing the account unasked.
+    """
+    return AiSettingsService(db, settings).resolve_byok(account_id) or PlatformAiService(db, settings).resolve(account_id)
 
 
 class RunFailed(Exception):
@@ -138,12 +144,16 @@ class AssistantRunner:
         except HTTPException as exc:
             raise RunFailed("NO_ACCESS", "You're no longer a member of this account.") from exc
 
-        resolved = self.model_resolver(self.db, self.settings, run.account_id)
+        try:
+            resolved = self.model_resolver(self.db, self.settings, run.account_id)
+        except PlatformLimitReached as exc:
+            raise RunFailed("LIMIT_REACHED", LIMIT_REACHED_ERROR) from exc
         if resolved is None:
             raise RunFailed("NOT_SET_UP", NOT_SET_UP_ERROR)
         run.source = resolved.source
         run.provider = resolved.config.provider.value
         run.model = resolved.config.model
+        run.platform_model_id = resolved.platform_model_id
         self.db.commit()
 
         model = chat_model(resolved.config, transport=self.transport, resolver=self.resolver)
@@ -165,6 +175,7 @@ class AssistantRunner:
             run.model_calls += 1
             run.input_tokens += reply.input_tokens
             run.output_tokens += reply.output_tokens
+            run.charge_cents = (run.charge_cents or 0) + resolved.charge_cents(reply.input_tokens, reply.output_tokens)
 
             if not reply.tool_calls:
                 self.add_message(conversation, run, {"role": "assistant", "content": reply.text.strip()})

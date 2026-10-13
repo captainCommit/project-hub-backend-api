@@ -12,6 +12,13 @@ from app.schemas.ai import (
     AiConversationDetail,
     AiConversationRead,
     AiKeyUpdate,
+    AiPlatformAccessUpdate,
+    AiPlatformAccountRead,
+    AiPlatformDefaults,
+    AiPlatformModelCreate,
+    AiPlatformModelRead,
+    AiPlatformModelUpdate,
+    AiPlatformRequest,
     AiQuestionCreate,
     AiSettingsRead,
     AiSettingsUpdate,
@@ -22,7 +29,9 @@ from app.services.ai.conversations import ConversationService
 from app.services.ai.dispatch import DispatchFailed, Dispatcher, dispatch_run
 from app.services.ai.endpoints import Resolver, resolve_host
 from app.services.ai.providers import Transport, requests_transport
+from app.services.ai.platform import PlatformAiService
 from app.services.ai.runner import AssistantRunner
+from app.services.accounts import require_platform_admin
 from app.services.auth import get_current_user
 
 
@@ -170,3 +179,92 @@ def ask_ai(
         AssistantRunner(service.db, service.settings).fail(run, "FAILED", "The assistant couldn't start. Try again.")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="The assistant couldn't start. Try again.") from exc
     return service.present(service.get(conversation_id=conversation_id, current_user=current_user))
+
+
+# Platform-provided models ----------------------------------------------------------------------------------
+
+
+def platform_service(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> PlatformAiService:
+    return PlatformAiService(db, settings)
+
+
+@router.post("/accounts/{account_id}/ai/platform-request", response_model=AiSettingsRead, summary="Ask for the platform model (owners)")
+def request_platform_model(
+    account_id: UUID,
+    request_in: AiPlatformRequest,
+    platform: PlatformAiService = Depends(platform_service),
+    service: AiSettingsService = Depends(settings_service),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    platform.request(account_id=account_id, current_user=current_user, accept_terms=request_in.accept_terms)
+    return service.read(account_id=account_id, current_user=current_user)
+
+
+@router.delete("/accounts/{account_id}/ai/platform-request", response_model=AiSettingsRead, summary="Withdraw the request or stop using the platform model (owners)")
+def cancel_platform_model(
+    account_id: UUID,
+    platform: PlatformAiService = Depends(platform_service),
+    service: AiSettingsService = Depends(settings_service),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    platform.cancel(account_id=account_id, current_user=current_user)
+    return service.read(account_id=account_id, current_user=current_user)
+
+
+@router.get("/admin/ai/models", response_model=list[AiPlatformModelRead], summary="Platform models and prices (platform admins)")
+def list_platform_models(
+    platform: PlatformAiService = Depends(platform_service),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    require_platform_admin(current_user)
+    return platform.list_models()
+
+
+@router.post("/admin/ai/models", response_model=AiPlatformModelRead, status_code=status.HTTP_201_CREATED, summary="Offer a platform model (platform admins)")
+def create_platform_model(
+    model_in: AiPlatformModelCreate,
+    platform: PlatformAiService = Depends(platform_service),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    require_platform_admin(current_user)
+    return platform.create_model(actor=current_user, model_in=model_in)
+
+
+@router.patch("/admin/ai/models/{model_id}", response_model=AiPlatformModelRead, summary="Change a platform model's prices or availability (platform admins)")
+def update_platform_model(
+    model_id: UUID,
+    changes: AiPlatformModelUpdate,
+    platform: PlatformAiService = Depends(platform_service),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    require_platform_admin(current_user)
+    return platform.update_model(actor=current_user, model_id=model_id, changes=changes)
+
+
+@router.get("/admin/ai/defaults", response_model=AiPlatformDefaults, summary="Starting allowance for new accounts (platform admins)")
+def get_platform_ai_defaults(
+    platform: PlatformAiService = Depends(platform_service),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    require_platform_admin(current_user)
+    return platform.defaults()
+
+
+@router.get("/admin/ai/accounts", response_model=list[AiPlatformAccountRead], summary="Accounts that asked for or use the platform model (platform admins)")
+def list_platform_ai_accounts(
+    platform: PlatformAiService = Depends(platform_service),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    require_platform_admin(current_user)
+    return platform.list_accounts()
+
+
+@router.put("/admin/ai/accounts/{account_id}", response_model=AiPlatformAccountRead, summary="Switch the platform model on or off for an account and set its terms (platform admins)")
+def decide_platform_ai_account(
+    account_id: UUID,
+    decision: AiPlatformAccessUpdate,
+    platform: PlatformAiService = Depends(platform_service),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    require_platform_admin(current_user)
+    return platform.decide(actor=current_user, account_id=account_id, decision=decision)

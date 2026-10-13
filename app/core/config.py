@@ -79,6 +79,19 @@ class Settings(BaseSettings):
     ai_run_timeout_seconds: int = Field(default=120, validation_alias="AI_RUN_TIMEOUT_SECONDS")
     ai_max_reply_tokens: int = Field(default=1500, validation_alias="AI_MAX_REPLY_TOKENS")
     ai_questions_per_hour: int = Field(default=20, validation_alias="AI_QUESTIONS_PER_HOUR")
+    # Platform-provided models: the platform's own provider keys. Deployed they are SSM SecureStrings named
+    # <prefix><provider>-api-key (e.g. /project-hub/dev/ai/openai-api-key), read by the AI worker when needed;
+    # locally the AI_PLATFORM_<PROVIDER>_API_KEY variables can be set instead.
+    ai_platform_key_param_prefix: str = Field(default="", validation_alias="AI_PLATFORM_KEY_PARAM_PREFIX")
+    ai_platform_openai_api_key: str = Field(default="", validation_alias="AI_PLATFORM_OPENAI_API_KEY")
+    ai_platform_anthropic_api_key: str = Field(default="", validation_alias="AI_PLATFORM_ANTHROPIC_API_KEY")
+    ai_platform_gemini_api_key: str = Field(default="", validation_alias="AI_PLATFORM_GEMINI_API_KEY")
+    # What a platform admin starts from when switching a platform model on for an account (changeable per account).
+    ai_default_allowance_kind: Literal["TOKENS", "CREDIT"] = Field(default="TOKENS", validation_alias="AI_DEFAULT_ALLOWANCE_KIND")
+    ai_default_allowance_amount: int = Field(default=10_000, validation_alias="AI_DEFAULT_ALLOWANCE_AMOUNT")
+    # Metered Stripe price for platform AI usage (1 unit = 1 cent), created by scripts/setup_stripe_prices.py.
+    stripe_ai_usage_price_id: str = Field(default="", validation_alias="STRIPE_AI_USAGE_PRICE_ID")
+    stripe_ai_meter_event_name: str = Field(default="project_hub_ai_usage", validation_alias="STRIPE_AI_METER_EVENT_NAME")
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -15,8 +15,10 @@ Messages are plain dicts so they can be stored as JSON:
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from decimal import Decimal
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
+from uuid import UUID
 
 from app.services.ai.endpoints import Resolver, UnsafeEndpoint, check_endpoint, resolve_host
 
@@ -56,6 +58,21 @@ class ProviderConfig:
     # Azure OpenAI: the resource endpoint. Custom: the base URL that /chat/completions is added to.
     base_url: str | None = None
     azure_api_version: str | None = None
+
+
+@dataclass(frozen=True)
+class ResolvedModel:
+    """The model a question will be answered with, and (for platform models) what its tokens cost."""
+
+    source: Literal["BYOK", "PLATFORM"]
+    config: ProviderConfig
+    platform_model_id: UUID | None = None
+    # Cents per million tokens, margin included. Zero for the account's own key: its provider bills it.
+    input_cents_per_mtok: Decimal = Decimal("0")
+    output_cents_per_mtok: Decimal = Decimal("0")
+
+    def charge_cents(self, input_tokens: int, output_tokens: int) -> Decimal:
+        return (input_tokens * self.input_cents_per_mtok + output_tokens * self.output_cents_per_mtok) / Decimal(1_000_000)
 
 
 @dataclass(frozen=True)

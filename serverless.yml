@@ -58,6 +58,9 @@ provider:
       Fn::GetAtt: [AiKeysKmsKey, Arn]
     # Questions are answered by the aiAssistant function, started asynchronously by the API.
     AI_WORKER_FUNCTION: ${self:service}-${sls:stage}-aiAssistant
+    # The platform's own provider keys for platform-provided models: SSM SecureStrings named
+    # <prefix><provider>-api-key (openai, anthropic, gemini), read by the AI worker only when needed.
+    AI_PLATFORM_KEY_PARAM_PREFIX: /project-hub/${sls:stage}/ai/
   iam:
     role:
       statements:

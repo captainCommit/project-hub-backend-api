@@ -136,7 +136,13 @@ class BillingService:
             "cancel_at_period_end": bool(billing and billing.cancel_at_period_end),
             "has_payment_account": bool(billing and billing.stripe_customer_id),
             "invoices": list(invoices),
+            "ai_usage": self.ai_usage(account_id),
         }
+
+    def ai_usage(self, account_id: UUID) -> dict[str, object] | None:
+        from app.services.ai.platform import PlatformAiService
+
+        return PlatformAiService(self.db, self.settings).owner_view(account_id)["usage"]  # type: ignore[return-value]
 
     def start_checkout(self, *, account_id: UUID, current_user: User) -> str:
         self.require_owner(account_id, current_user)

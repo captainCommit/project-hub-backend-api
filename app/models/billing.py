@@ -27,6 +27,8 @@ class AccountBilling(Base):
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     full_seat_item_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     viewer_seat_item_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The metered line that platform AI usage is reported to (see app.services.ai.usage).
+    ai_usage_item_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     subscription_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.ai import AiUsageRead
+
 
 class BillingState(BaseModel):
     """Enough for banners: whether the account is billed, needs a card, is behind, or is locked."""
@@ -45,6 +47,8 @@ class AccountBillingRead(BillingState):
     cancel_at_period_end: bool
     has_payment_account: bool
     invoices: list[InvoiceRead]
+    # This month's platform AI usage, when the account uses a platform-provided model.
+    ai_usage: AiUsageRead | None = None
 
 
 class RedirectRead(BaseModel):

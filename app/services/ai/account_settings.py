@@ -1,9 +1,7 @@
 """Owners' assistant settings: switching it on or off, chat retention, and the account's own model key."""
 
 import logging
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -18,12 +16,14 @@ from app.services.access import access_for
 from app.services.activity import ActivityLogService
 from app.services.ai.endpoints import Resolver, UnsafeEndpoint, check_endpoint, resolve_host
 from app.services.ai.keys import KeyCipher, KeyStorageUnavailable, key_cipher, last4
+from app.services.ai.platform import PlatformAiService
 from app.services.ai.providers import (
     PROVIDER_LABELS,
     PROVIDERS_WITH_ENDPOINT,
     Provider,
     ProviderConfig,
     ProviderError,
+    ResolvedModel,
     Transport,
     check_connection,
     requests_transport,
@@ -32,15 +32,6 @@ from app.services.ai.providers import (
 logger = logging.getLogger(__name__)
 
 KEY_STORAGE_UNAVAILABLE = "This server isn't set up to store model keys yet. Ask your Project Hub administrator."
-
-
-@dataclass(frozen=True)
-class ResolvedModel:
-    """The model a question will be answered with."""
-
-    source: Literal["BYOK", "PLATFORM"]
-    config: ProviderConfig
-    platform_model_id: UUID | None = None
 
 
 class AiSettingsService:
@@ -81,6 +72,17 @@ class AiSettingsService:
                 "provider_label": PROVIDER_LABELS[Provider(row.provider)],
                 "model": row.model,
             }
+        # No key of its own: a platform model, if a platform admin has switched one on.
+        reason, platform_model = PlatformAiService(self.db, self.settings).availability(account_id)
+        if platform_model is not None:
+            return {
+                **result,
+                "available": reason is None,
+                "source": "PLATFORM",
+                "reason": reason,
+                "provider_label": PROVIDER_LABELS[Provider(platform_model.provider)],
+                "model": platform_model.model,
+            }
         return {**result, "reason": "NOT_SET_UP"}
 
     # Owners
@@ -108,6 +110,7 @@ class AiSettingsService:
             "assistant_enabled": row.assistant_enabled,
             "retention_days": row.retention_days,
             "key": key,
+            "platform": PlatformAiService(self.db, self.settings).owner_view(account_id),
             "key_storage_available": self.key_storage_available(),
         }
 

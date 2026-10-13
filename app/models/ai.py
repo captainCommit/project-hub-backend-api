@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -12,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     String,
     UniqueConstraint,
     Uuid,
@@ -131,6 +134,12 @@ class AiRun(Base):
     model_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Platform runs only: the model used and what its tokens cost the account, margin included, before the
+    # monthly allowance. Kept per run so a price change never rewrites past usage.
+    platform_model_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("ai_platform_models.id", ondelete="SET NULL"), nullable=True
+    )
+    charge_cents: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False, default=Decimal("0"), server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), server_default=func.now()
     )
@@ -161,4 +170,92 @@ class AiMessage(Base):
     content: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), server_default=func.now()
+    )
+
+
+PLATFORM_PROVIDERS = ("OPENAI", "ANTHROPIC", "GEMINI")
+
+
+class AiPlatformModel(Base):
+    """A model the platform offers to accounts without their own key, with what it costs and what we charge.
+
+    Costs are the provider's price in the billing currency's cents per million tokens; the charge adds margin_percent.
+    The platform's keys live in SSM (/project-hub/<stage>/ai/<provider>-api-key), never in the database.
+    """
+
+    __tablename__ = "ai_platform_models"
+    __table_args__ = (
+        CheckConstraint(
+            "provider in (" + ", ".join(f"'{p}'" for p in PLATFORM_PROVIDERS) + ")", name="ck_ai_platform_models_provider"
+        ),
+        CheckConstraint(
+            "input_cost_per_mtok_cents >= 0 and output_cost_per_mtok_cents >= 0 and margin_percent >= 0",
+            name="ck_ai_platform_models_prices",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    input_cost_per_mtok_cents: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    output_cost_per_mtok_cents: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    margin_percent: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False, default=Decimal("30"), server_default="30")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AiPlatformAccessStatus(str, Enum):
+    # The owner asked for the platform model (and accepted the charges and data notice).
+    REQUESTED = "REQUESTED"
+    # A platform admin switched it on.
+    ENABLED = "ENABLED"
+    # Switched off, by a platform admin or the owner.
+    DISABLED = "DISABLED"
+    # A platform admin turned the request down.
+    DECLINED = "DECLINED"
+
+
+class AllowanceKind(str, Enum):
+    # A number of free tokens each month.
+    TOKENS = "TOKENS"
+    # A free amount each month, in the billing currency's cents.
+    CREDIT = "CREDIT"
+
+
+class AiPlatformAccess(Base):
+    """One account's use of a platform model: the owner's request, the admin's decision, and the monthly terms."""
+
+    __tablename__ = "ai_platform_access"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('REQUESTED', 'ENABLED', 'DISABLED', 'DECLINED')", name="ck_ai_platform_access_status"
+        ),
+        CheckConstraint("allowance_kind in ('TOKENS', 'CREDIT')", name="ck_ai_platform_access_allowance_kind"),
+        CheckConstraint("allowance_amount >= 0", name="ck_ai_platform_access_allowance_amount"),
+        CheckConstraint("monthly_cap_cents is null or monthly_cap_cents >= 0", name="ck_ai_platform_access_cap"),
+    )
+
+    account_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    platform_model_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("ai_platform_models.id", ondelete="SET NULL"), nullable=True
+    )
+    allowance_kind: Mapped[str] = mapped_column(String(10), nullable=False, default=AllowanceKind.TOKENS.value)
+    # Tokens or cents, depending on allowance_kind.
+    allowance_amount: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # Most the account can be charged for AI in a month, after the allowance. Empty: no cap.
+    monthly_cap_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
