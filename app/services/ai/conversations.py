@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.models.ai import AiAccountSettings, AiConversation, AiMessage, AiRun, AiRunStatus, DEFAULT_RETENTION_DAYS
+from app.models.ai import AiAccountSettings, AiConversation, AiMessage, AiReport, AiRun, AiRunStatus, DEFAULT_RETENTION_DAYS
 from app.models.user import User
 from app.services.access import access_for
 from app.services.ai.account_settings import AiSettingsService
@@ -34,6 +34,26 @@ STALE_RUN_ERROR = "That took too long to answer. Try again."
 def stale_after(settings: Settings) -> timedelta:
     """A run still unfinished this long after it was created has died (the worker's own limit is shorter)."""
     return timedelta(seconds=settings.ai_run_timeout_seconds + 60)
+
+
+def require_ai_available(db: Session, settings: Settings, *, account_id: UUID, current_user: User) -> None:
+    availability = AiSettingsService(db, settings).status(account_id=account_id, current_user=current_user)
+    if not availability["available"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=UNAVAILABLE_MESSAGES.get(str(availability["reason"]), UNAVAILABLE_MESSAGES["NOT_SET_UP"]),
+        )
+
+
+def require_under_hourly_limit(db: Session, settings: Settings, *, current_user: User) -> None:
+    """Questions and reports share one hourly limit per person."""
+    hour_ago = datetime.now(UTC) - timedelta(hours=1)
+    asked = db.scalar(select(func.count()).select_from(AiRun).where(AiRun.user_id == current_user.id, AiRun.created_at >= hour_ago))
+    if (asked or 0) >= settings.ai_questions_per_hour:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"You've asked the assistant for {asked} answers or reports in the last hour, the most allowed. Try again a little later.",
+        )
 
 
 class ConversationService:
@@ -83,26 +103,11 @@ class ConversationService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=f"Keep questions under {MAX_QUESTION_CHARS} characters."
             )
-        availability = AiSettingsService(self.db, self.settings).status(
-            account_id=conversation.account_id, current_user=current_user
-        )
-        if not availability["available"]:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=UNAVAILABLE_MESSAGES.get(str(availability["reason"]), UNAVAILABLE_MESSAGES["NOT_SET_UP"]),
-            )
+        require_ai_available(self.db, self.settings, account_id=conversation.account_id, current_user=current_user)
         self.fail_stale_runs(conversation_id=conversation.id)
         if self.active_run(conversation.id) is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Wait for the current answer to finish.")
-        hour_ago = datetime.now(UTC) - timedelta(hours=1)
-        asked = self.db.scalar(
-            select(func.count()).select_from(AiRun).where(AiRun.user_id == current_user.id, AiRun.created_at >= hour_ago)
-        )
-        if (asked or 0) >= self.settings.ai_questions_per_hour:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"You've asked {asked} questions in the last hour, the most allowed. Try again a little later.",
-            )
+        require_under_hourly_limit(self.db, self.settings, current_user=current_user)
 
         run = AiRun(conversation_id=conversation.id, account_id=conversation.account_id, user_id=current_user.id)
         self.db.add(run)
@@ -133,7 +138,9 @@ class ConversationService:
             )
         )
 
-    def fail_stale_runs(self, *, conversation_id: UUID | None = None, now: datetime | None = None) -> int:
+    def fail_stale_runs(
+        self, *, conversation_id: UUID | None = None, run_id: UUID | None = None, now: datetime | None = None
+    ) -> int:
         """Runs whose worker died (timed out or never started) would otherwise show as 'thinking' forever."""
         now = now or datetime.now(UTC)
         statement = update(AiRun).where(
@@ -142,6 +149,8 @@ class ConversationService:
         )
         if conversation_id is not None:
             statement = statement.where(AiRun.conversation_id == conversation_id)
+        if run_id is not None:
+            statement = statement.where(AiRun.id == run_id)
         result = self.db.execute(
             statement.values(
                 status=AiRunStatus.FAILED.value, error_kind="TIMEOUT", error=STALE_RUN_ERROR, progress=None, finished_at=now
@@ -207,16 +216,18 @@ class ConversationService:
     # Housekeeping (hourly)
 
     def delete_expired(self, *, now: datetime | None = None) -> int:
-        """Delete conversations untouched for longer than their account keeps them."""
+        """Delete conversations untouched, and reports written, longer ago than their account keeps them."""
         now = now or datetime.now(UTC)
         retention = dict(self.db.execute(select(AiAccountSettings.account_id, AiAccountSettings.retention_days)).all())
-        account_ids = self.db.scalars(select(AiConversation.account_id).distinct()).all()
+        account_ids = set(self.db.scalars(select(AiConversation.account_id).distinct()).all())
+        account_ids |= set(self.db.scalars(select(AiReport.account_id).distinct()).all())
         deleted = 0
         for account_id in account_ids:
             cutoff = now - timedelta(days=retention.get(account_id, DEFAULT_RETENTION_DAYS))
-            result = self.db.execute(
-                delete(AiConversation).where(AiConversation.account_id == account_id, AiConversation.updated_at < cutoff)
-            )
-            deleted += int(result.rowcount or 0)  # type: ignore[attr-defined]
+            for statement in (
+                delete(AiConversation).where(AiConversation.account_id == account_id, AiConversation.updated_at < cutoff),
+                delete(AiReport).where(AiReport.account_id == account_id, AiReport.created_at < cutoff),
+            ):
+                deleted += int(self.db.execute(statement).rowcount or 0)  # type: ignore[attr-defined]
         self.db.commit()
         return deleted

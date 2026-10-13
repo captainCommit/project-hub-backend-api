@@ -139,7 +139,7 @@ functions:
   # accounts' model keys.
   aiAssistant:
     handler: app.worker.ai_run_handler
-    description: Answers one AI assistant question, calling the account's model and the read-only tools.
+    description: Answers one AI assistant question or writes one report, with the account's model.
     memorySize: 1024
     # The run gives up after AI_RUN_TIMEOUT_SECONDS (120); the extra time lets it record why.
     timeout: 150

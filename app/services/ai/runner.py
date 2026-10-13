@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.models.account import Account
-from app.models.ai import AiConversation, AiMessage, AiRun, AiRunStatus
+from app.models.ai import AiConversation, AiMessage, AiReport, AiRun, AiRunStatus
 from app.models.user import User
 from app.services.access import access_for
 from app.services.ai.account_settings import AiSettingsService
@@ -29,6 +29,7 @@ from app.services.ai.providers import (
     ChatModel,
     ErrorKind,
     ProviderConfig,
+    ModelReply,
     ProviderError,
     ResolvedModel,
     Transport,
@@ -108,7 +109,10 @@ class AssistantRunner:
         self.clock = clock
 
     def run(self, run_id: UUID) -> str:
-        """Answer the run's question. Returns the final status. Safe to call twice: only a QUEUED run is taken."""
+        """Answer the run's question, or write its report. Returns the final status.
+
+        Safe to call twice: only a QUEUED run is taken.
+        """
         claimed = self.db.execute(
             update(AiRun)
             .where(AiRun.id == run_id, AiRun.status == AiRunStatus.QUEUED.value)
@@ -136,8 +140,9 @@ class AssistantRunner:
     def answer(self, run: AiRun) -> None:
         started = self.clock()
         conversation = self.db.get(AiConversation, run.conversation_id) if run.conversation_id else None
+        report = self.db.scalar(select(AiReport).where(AiReport.run_id == run.id)) if conversation is None else None
         user = self.db.get(User, run.user_id) if run.user_id else None
-        if conversation is None or user is None or not user.is_active:
+        if (conversation is None and report is None) or user is None or not user.is_active:
             raise RunFailed("FAILED", GENERIC_ERROR)
         try:
             scope = access_for(self.db, account_id=run.account_id, user=user)
@@ -157,6 +162,12 @@ class AssistantRunner:
         self.db.commit()
 
         model = chat_model(resolved.config, transport=self.transport, resolver=self.resolver)
+        if report is not None:
+            from app.services.ai.reports import write_report
+
+            write_report(self, run, report, user=user, model=model, resolved=resolved, started=started)
+            return
+        assert conversation is not None
         system = self.system_prompt(run.account_id, user, scope.account_role)
         messages = self.history(conversation.id)
         ctx = ToolContext(db=self.db, account_id=run.account_id, user=user)
@@ -172,17 +183,11 @@ class AssistantRunner:
                 max_tokens=self.settings.ai_max_reply_tokens,
                 timeout=min(60.0, remaining),
             )
-            run.model_calls += 1
-            run.input_tokens += reply.input_tokens
-            run.output_tokens += reply.output_tokens
-            run.charge_cents = (run.charge_cents or 0) + resolved.charge_cents(reply.input_tokens, reply.output_tokens)
+            self.record_usage(run, resolved, reply)
 
             if not reply.tool_calls:
                 self.add_message(conversation, run, {"role": "assistant", "content": reply.text.strip()})
-                run.status = AiRunStatus.DONE.value
-                run.progress = None
-                run.finished_at = datetime.now(UTC)
-                self.db.commit()
+                self.finish(run)
                 return
             if call_number == self.settings.ai_max_model_calls:
                 self.db.commit()
@@ -206,6 +211,18 @@ class AssistantRunner:
             self.db.commit()
 
     # Helpers
+
+    def record_usage(self, run: AiRun, resolved: ResolvedModel, reply: ModelReply) -> None:
+        run.model_calls += 1
+        run.input_tokens += reply.input_tokens
+        run.output_tokens += reply.output_tokens
+        run.charge_cents = (run.charge_cents or 0) + resolved.charge_cents(reply.input_tokens, reply.output_tokens)
+
+    def finish(self, run: AiRun) -> None:
+        run.status = AiRunStatus.DONE.value
+        run.progress = None
+        run.finished_at = datetime.now(UTC)
+        self.db.commit()
 
     def history(self, conversation_id: UUID) -> list[dict[str, Any]]:
         """Recent messages, starting at a question so no tool result is cut off from the call that asked for it."""

@@ -64,7 +64,7 @@ def ses_events_handler(event: dict[str, Any], context: Any) -> dict[str, int]:
 
 
 def ai_run_handler(event: dict[str, Any], context: Any) -> dict[str, str]:
-    """Started asynchronously by the API for each question: answers it (app.services.ai.runner).
+    """Started asynchronously by the API for each question or report: answers or writes it (app.services.ai.runner).
 
     Runs as AiWorkerRole, the only role that can decrypt accounts' own model keys.
     """

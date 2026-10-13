@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any
@@ -9,6 +9,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     LargeBinary,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     func,
@@ -168,6 +170,45 @@ class AiMessage(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), server_default=func.now()
+    )
+
+
+REPORT_SCOPES = ("PROJECT", "PROGRAM", "PORTFOLIO")
+
+
+class AiReport(Base):
+    """A written report (status report, health summary, what changed) on a project, program or portfolio.
+
+    Like a conversation it belongs to the person who asked for it: it was written from what they can see, so
+    nobody else can open it. Its progress, outcome and usage are on its run.
+    """
+
+    __tablename__ = "ai_reports"
+    __table_args__ = (
+        CheckConstraint(
+            "scope_type in (" + ", ".join(f"'{s}'" for s in REPORT_SCOPES) + ")", name="ck_ai_reports_scope_type"
+        ),
+        Index("ix_ai_reports_user_scope_created", "user_id", "scope_type", "scope_id", "created_at"),
+        Index("ix_ai_reports_account_created", "account_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("ai_runs.id", ondelete="SET NULL"), nullable=True)
+    scope_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # The project, program or portfolio (not a foreign key: it is one of three tables).
+    scope_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    # Its name when the report was written, so the list still reads well after a rename.
+    scope_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    report_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    # Changes from this day on are what the report calls "this period".
+    since: Mapped[date] = mapped_column(Date, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Markdown, once written.
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), server_default=func.now()
     )

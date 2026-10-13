@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -89,6 +89,40 @@ class AiChatMessageRead(BaseModel):
 class AiConversationDetail(AiConversationRead):
     messages: list[AiChatMessageRead]
     active_run_id: UUID | None
+
+
+# Written reports ---------------------------------------------------------------------------------------
+
+ReportScopeValue = Literal["PROJECT", "PROGRAM", "PORTFOLIO"]
+ReportTypeValue = Literal["weekly_status", "steering_committee", "executive_summary", "raid", "health", "changes"]
+
+
+class AiReportCreate(BaseModel):
+    scope_type: ReportScopeValue
+    scope_id: UUID
+    report_type: ReportTypeValue
+    # Start of the period the report covers (default: a week ago).
+    since: date | None = None
+    # Write a fresh one even if the same report was written a few minutes ago.
+    regenerate: bool = False
+
+
+class AiReportRead(BaseModel):
+    id: UUID
+    scope_type: ReportScopeValue
+    scope_id: UUID
+    scope_name: str
+    report_type: str
+    title: str
+    since: date
+    status: Literal["QUEUED", "RUNNING", "DONE", "FAILED"]
+    progress: str | None = None
+    error: str | None = None
+    # Markdown; only on a finished report, and not in lists.
+    content: str | None = None
+    model: str | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
 
 
 # Platform-provided models -------------------------------------------------------------------------------

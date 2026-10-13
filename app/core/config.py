@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     ai_run_timeout_seconds: int = Field(default=120, validation_alias="AI_RUN_TIMEOUT_SECONDS")
     ai_max_reply_tokens: int = Field(default=1500, validation_alias="AI_MAX_REPLY_TOKENS")
     ai_questions_per_hour: int = Field(default=20, validation_alias="AI_QUESTIONS_PER_HOUR")
+    # Written reports (status reports, health summaries): longest report, and how long an identical request
+    # reuses the last one instead of paying for it again.
+    ai_max_report_tokens: int = Field(default=3000, validation_alias="AI_MAX_REPORT_TOKENS")
+    ai_report_reuse_minutes: int = Field(default=30, validation_alias="AI_REPORT_REUSE_MINUTES")
     # Platform-provided models: the platform's own provider keys. Deployed they are SSM SecureStrings named
     # <prefix><provider>-api-key (e.g. /project-hub/dev/ai/openai-api-key), read by the AI worker when needed;
     # locally the AI_PLATFORM_<PROVIDER>_API_KEY variables can be set instead.

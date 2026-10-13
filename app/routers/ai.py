@@ -1,11 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
-from app.models.ai import AiConversation
+from app.models.ai import AiConversation, AiRun
 from app.models.user import User
 from app.schemas.ai import (
     AiConversationCreate,
@@ -20,6 +20,9 @@ from app.schemas.ai import (
     AiPlatformModelUpdate,
     AiPlatformRequest,
     AiQuestionCreate,
+    AiReportCreate,
+    AiReportRead,
+    ReportScopeValue,
     AiSettingsRead,
     AiSettingsUpdate,
     AiStatusRead,
@@ -30,6 +33,7 @@ from app.services.ai.dispatch import DispatchFailed, Dispatcher, dispatch_run
 from app.services.ai.endpoints import Resolver, resolve_host
 from app.services.ai.providers import Transport, requests_transport
 from app.services.ai.platform import PlatformAiService
+from app.services.ai.reports import ReportService
 from app.services.ai.runner import AssistantRunner
 from app.services.accounts import require_platform_admin
 from app.services.auth import get_current_user
@@ -179,6 +183,77 @@ def ask_ai(
         AssistantRunner(service.db, service.settings).fail(run, "FAILED", "The assistant couldn't start. Try again.")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="The assistant couldn't start. Try again.") from exc
     return service.present(service.get(conversation_id=conversation_id, current_user=current_user))
+
+
+# Written reports ----------------------------------------------------------------------------------------
+
+
+def report_service(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> ReportService:
+    return ReportService(db, settings)
+
+
+@router.get("/accounts/{account_id}/ai/reports", response_model=list[AiReportRead], summary="Your recent reports, optionally for one project, program or portfolio")
+def list_ai_reports(
+    account_id: UUID,
+    scope_type: ReportScopeValue | None = Query(default=None),
+    scope_id: UUID | None = Query(default=None),
+    service: ReportService = Depends(report_service),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    return service.list(account_id=account_id, current_user=current_user, scope_type=scope_type, scope_id=scope_id)
+
+
+@router.post(
+    "/accounts/{account_id}/ai/reports",
+    response_model=AiReportRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Ask for a report; it is written in the background (a recent identical one is returned instead)",
+)
+def create_ai_report(
+    account_id: UUID,
+    report_in: AiReportCreate,
+    background: BackgroundTasks,
+    service: ReportService = Depends(report_service),
+    dispatcher: Dispatcher = Depends(get_ai_dispatcher),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    report, is_new = service.create(
+        account_id=account_id,
+        current_user=current_user,
+        scope_type=report_in.scope_type,
+        scope_id=report_in.scope_id,
+        report_type=report_in.report_type,
+        since=report_in.since,
+        regenerate=report_in.regenerate,
+    )
+    if is_new and report.run_id is not None:
+        try:
+            dispatcher(report.run_id, background)
+        except DispatchFailed as exc:
+            run = service.db.get(AiRun, report.run_id)
+            if run is not None:
+                AssistantRunner(service.db, service.settings).fail(run, "FAILED", "The report couldn't start. Try again.")
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="The report couldn't start. Try again.") from exc
+    return service.present(service.get(report_id=report.id, current_user=current_user))
+
+
+@router.get("/ai/reports/{report_id}", response_model=AiReportRead, summary="A report (polled while it is being written)")
+def get_ai_report(
+    report_id: UUID,
+    service: ReportService = Depends(report_service),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return service.present(service.get(report_id=report_id, current_user=current_user))
+
+
+@router.delete("/ai/reports/{report_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a report")
+def delete_ai_report(
+    report_id: UUID,
+    service: ReportService = Depends(report_service),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    service.delete(report_id=report_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # Platform-provided models ----------------------------------------------------------------------------------

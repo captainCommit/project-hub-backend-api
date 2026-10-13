@@ -400,6 +400,16 @@ How a question is answered:
 - `aiHousekeeping` runs hourly: fails runs whose worker died, deletes conversations past the account's
   retention (owners choose; 90 days by default), and reports platform usage to Stripe.
 
+**Written reports** (`app/services/ai/reports.py`): weekly status, steering committee, executive summary, RAID,
+program/portfolio health, and "what changed since". `POST /api/v1/accounts/{id}/ai/reports` queues a run on the
+same worker. Instead of a tool loop, the worker gathers the data first, as the person asking
+(`report_context.py`: overview, the tasks a report talks about, open and recently closed register items, sprints,
+and the period's activity), then makes one model call that returns Markdown. Parts the person can't see are left
+out with a note. Controls on cost: at most `MAX_CONTEXT_CHARS` of data and `AI_MAX_REPORT_TOKENS` (3000) of reply;
+an identical request within `AI_REPORT_REUSE_MINUTES` (30) gets the stored report back; reports share the hourly
+limit with questions. Reports belong to whoever asked and follow the conversation retention. The UI turns the
+Markdown into a preview, a PDF or a PowerPoint.
+
 **Own keys (BYOK).** Owners connect a provider under Account > AI assistant. Saving sends one tiny request that
 must come back as a tool call. Keys are encrypted with the `AiKeysKmsKey` KMS key, with the account id as
 encryption context; the API role can only encrypt and only `AiWorkerRole` can decrypt. Locally,
