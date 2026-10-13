@@ -9,7 +9,7 @@ import base64
 import hashlib
 import hmac
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from html import escape
 from typing import Any
@@ -17,7 +17,7 @@ from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -28,7 +28,9 @@ from app.models.comment import Comment
 from app.models.decision_option import DecisionOption
 from app.models.email_suppression import EmailSuppression
 from app.models.notification import EmailStatus, Notification, NotificationType
-from app.models.notification_preference import EMAIL_CATEGORY_DEFAULTS, EmailFrequency
+from app.models.notification_preference import EmailFrequency
+from app.models.option_set import OptionSet
+from app.models.option_value import OptionValue
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.tasks import TaskRepository
@@ -36,6 +38,8 @@ from app.services.access import COMMENTABLE_MODELS, access_for, can_see_entity
 from app.services.email_sender import EmailSender, OutgoingEmail
 from app.services.notification_preferences import (
     CATEGORY_LABELS,
+    MY_WORK_SUMMARY,
+    UNSUBSCRIBE_CATEGORIES,
     NotificationPreferenceService,
     category_for,
     zone_for,
@@ -50,7 +54,14 @@ CLAIM_TIMEOUT = timedelta(minutes=10)
 # Don't remind someone about the same task twice in a row.
 DUE_SOON_REPEAT_AFTER = timedelta(days=3)
 DIGEST_ITEM_LIMIT = 50
+# The My work summary lists at most this many tasks or mentions per section.
+SUMMARY_SECTION_LIMIT = 15
+# Same window as the My work page, so the email and the page agree.
+MY_WORK_HORIZON_DAYS = 60
+# Unread mentions from the last day count as new.
+NEW_MENTION_WINDOW = timedelta(days=1)
 SETTINGS_PATH = "/Account?tab=notifications"
+MY_WORK_PATH = "/"
 
 # Records without their own detail page open on the screen that lists them, like the notification bell.
 LIST_PAGES = {
@@ -109,7 +120,7 @@ def read_unsubscribe_token(secret: str, token: str) -> tuple[UUID, str] | None:
         if not secret or not hmac.compare_digest(_unb64(signature), expected):
             return None
         user_id, category = _unb64(body).decode().split(":", 1)
-        if category != "all" and category not in EMAIL_CATEGORY_DEFAULTS:
+        if category != "all" and category not in UNSUBSCRIBE_CATEGORIES:
             return None
         return UUID(user_id), category
     except (ValueError, UnicodeDecodeError):
@@ -279,22 +290,160 @@ class DigestEntry:
     account_name: str
 
 
-def render_digest_email(*, settings: Settings, user: User, entries: list[DigestEntry]) -> OutgoingEmail:
+@dataclass(frozen=True)
+class SummaryTask:
+    task_id: UUID
+    name: str
+    project_name: str
+    path: str
+    days: int  # from today; negative when overdue
+    blocked: bool
+    account_name: str
+
+
+@dataclass
+class MyWorkSummary:
+    """What My work would show this morning, across every account the person belongs to (IN-2)."""
+
+    overdue: list[SummaryTask] = field(default_factory=list)
+    due_today: list[SummaryTask] = field(default_factory=list)
+    # Blocked tasks that aren't already listed as overdue or due today.
+    blocked: list[SummaryTask] = field(default_factory=list)
+    mentions: list[DigestEntry] = field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not (self.overdue or self.due_today or self.blocked or self.mentions)
+
+    def task_ids(self) -> set[UUID]:
+        return {task.task_id for task in self.overdue + self.due_today + self.blocked}
+
+    def account_names(self) -> set[str]:
+        tasks = self.overdue + self.due_today + self.blocked
+        return {task.account_name for task in tasks} | {entry.account_name for entry in self.mentions}
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def digest_subject(summary: MyWorkSummary | None, update_count: int) -> str:
+    parts: list[str] = []
+    if summary is not None:
+        if summary.overdue:
+            parts.append(f"{len(summary.overdue)} overdue")
+        if summary.due_today:
+            parts.append(f"{len(summary.due_today)} due today")
+        if summary.blocked:
+            parts.append(f"{len(summary.blocked)} blocked")
+        if summary.mentions:
+            parts.append(_plural(len(summary.mentions), "new mention"))
+    if update_count:
+        parts.append(_plural(update_count, "update"))
+    return "Your Project Hub digest: " + ", ".join(parts)
+
+
+def _when(task: SummaryTask) -> str:
+    if task.days < 0:
+        return f"{_plural(-task.days, 'day')} overdue"
+    if task.days == 0:
+        return "Due today"
+    if task.days == 1:
+        return "Due tomorrow"
+    return f"Due in {task.days} days"
+
+
+def _section_heading(title: str, count: int) -> str:
+    return (
+        f'<p style="margin:24px 0 0;padding-bottom:6px;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:600;'
+        f'color:#64748b;text-transform:uppercase;letter-spacing:.04em">{escape(title)} ({count})</p>'
+    )
+
+
+def _html_line(url: str, heading: str, detail: str) -> str:
+    return (
+        '<p style="margin:12px 0 0;font-size:14px;line-height:20px">'
+        f'<a href="{escape(url)}" style="color:{NAVY};font-weight:600;text-decoration:none">{escape(heading)}</a>'
+        + (f'<br><span style="color:#475569">{escape(detail)}</span>' if detail else "")
+        + "</p>"
+    )
+
+
+def _more(total: int, url: str, where: str, text_lines: list[str], html_parts: list[str]) -> None:
+    hidden = total - SUMMARY_SECTION_LIMIT
+    if hidden > 0:
+        text_lines += [f"…and {hidden} more {where}: {url}", ""]
+        html_parts.append(
+            f'<p style="margin:12px 0 0;font-size:14px;color:#475569">…and {hidden} more '
+            f'<a href="{escape(url)}" style="color:#475569">{escape(where)}</a>.</p>'
+        )
+
+
+def _render_summary(summary: MyWorkSummary, base: str, text_lines: list[str], html_parts: list[str]) -> None:
+    show_account = len(summary.account_names()) > 1
+    for title, tasks in (("Overdue", summary.overdue), ("Due today", summary.due_today), ("Blocked", summary.blocked)):
+        if not tasks:
+            continue
+        text_lines += [f"{title.upper()} ({len(tasks)})", ""]
+        html_parts.append(_section_heading(title, len(tasks)))
+        for task in tasks[:SUMMARY_SECTION_LIMIT]:
+            url = f"{base}{task.path}"
+            details = [task.project_name]
+            if title != "Due today":
+                details.append(_when(task))
+            if task.blocked and title != "Blocked":
+                details.append("Blocked")
+            if show_account:
+                details.append(task.account_name)
+            detail = " · ".join(details)
+            text_lines += [f"- {task.name}", f"  {detail}", f"  {url}", ""]
+            html_parts.append(_html_line(url, task.name, detail))
+        _more(len(tasks), base + MY_WORK_PATH, "in My work", text_lines, html_parts)
+
+    if summary.mentions:
+        mentions = summary.mentions
+        text_lines += [f"NEW MENTIONS ({len(mentions)})", ""]
+        html_parts.append(_section_heading("New mentions", len(mentions)))
+        for entry in mentions[:SUMMARY_SECTION_LIMIT]:
+            url = f"{base}{entry.item.path if entry.item else '/'}"
+            heading = entry.item.label if entry.item else entry.notification.title
+            details = [entry.notification.message or entry.notification.title]
+            if show_account:
+                details.append(entry.account_name)
+            detail = " · ".join(details)
+            text_lines += [f"- {heading}", f"  {detail}", f"  {url}", ""]
+            html_parts.append(_html_line(url, heading, detail))
+        _more(len(mentions), base + "/", "under the bell in Project Hub", text_lines, html_parts)
+
+
+def render_digest_email(
+    *,
+    settings: Settings,
+    user: User,
+    entries: list[DigestEntry],
+    summary: MyWorkSummary | None = None,
+) -> OutgoingEmail:
+    """The daily email: the My work summary (when on and not empty), then notifications queued for the digest."""
+    if summary is not None and summary.is_empty():
+        summary = None
     base = app_base(settings)
     settings_url = f"{base}{SETTINGS_PATH}"
     unsubscribe = unsubscribe_url(settings, user.id, "all")
     shown = entries[:DIGEST_ITEM_LIMIT]
     hidden = len(entries) - len(shown)
-    count = len(entries)
-    subject = f"Your Project Hub digest: {count} update{'s' if count != 1 else ''}"
+    subject = digest_subject(summary, len(entries))
+
+    text_lines = [subject, ""]
+    html_parts = [f'<h1 style="margin:0 0 4px;font-size:20px;line-height:28px;color:{NAVY}">{escape(subject)}</h1>']
+    if summary is not None:
+        _render_summary(summary, base, text_lines, html_parts)
+        if entries:
+            text_lines += [f"OTHER UPDATES ({len(entries)})", ""]
+            html_parts.append(_section_heading("Other updates", len(entries)))
 
     by_account: dict[str, list[DigestEntry]] = {}
     for entry in shown:
         by_account.setdefault(entry.account_name, []).append(entry)
     show_account = len(by_account) > 1
-
-    text_lines = [subject, ""]
-    html_parts = [f'<h1 style="margin:0 0 4px;font-size:20px;line-height:28px;color:{NAVY}">{escape(subject)}</h1>']
     for account_name, account_entries in by_account.items():
         if show_account:
             text_lines += [account_name.upper(), ""]
@@ -309,35 +458,32 @@ def render_digest_email(*, settings: Settings, user: User, entries: list[DigestE
             if entry.notification.message:
                 text_lines += [f"  {entry.notification.message}"]
             text_lines += [f"  {url}", ""]
-            html_parts.append(
-                '<p style="margin:14px 0 0;font-size:14px;line-height:20px">'
-                f'<a href="{escape(url)}" style="color:{NAVY};font-weight:600;text-decoration:none">{escape(heading)}</a>'
-                + (
-                    f'<br><span style="color:#475569">{escape(entry.notification.message)}</span>'
-                    if entry.notification.message
-                    else ""
-                )
-                + "</p>"
-            )
+            html_parts.append(_html_line(url, heading, entry.notification.message or ""))
     if hidden:
         text_lines += [f"…and {hidden} more in Project Hub: {base}/", ""]
         html_parts.append(f'<p style="margin:14px 0 0;font-size:14px;color:#475569">…and {hidden} more.</p>')
-    html_parts.append(f'<p style="margin:20px 0 0">{_button(base + "/", "Open Project Hub")}</p>')
-    text_lines += [
-        "--",
-        "You get this daily digest for the updates you chose. "
-        f"Email settings: {settings_url}",
-        f"Unsubscribe from all Project Hub emails: {unsubscribe}",
-    ]
-    footer = (
-        "You get this daily digest for the updates you chose. "
-        f"{_link(settings_url, 'Email settings')} · {_link(unsubscribe, 'Unsubscribe from all Project Hub emails')}"
-    )
+
+    if summary is not None:
+        button = _button(base + MY_WORK_PATH, "Open My work")
+        why = "You get this daily digest for My work and the updates you chose."
+    else:
+        button = _button(base + "/", "Open Project Hub")
+        why = "You get this daily digest for the updates you chose."
+    html_parts.append(f'<p style="margin:24px 0 0">{button}</p>')
+
+    text_lines += ["--", f"{why} Email settings: {settings_url}"]
+    footer_links = [_link(settings_url, "Email settings")]
+    if summary is not None:
+        stop_summary = unsubscribe_url(settings, user.id, MY_WORK_SUMMARY)
+        text_lines += [f"Stop the My work summary: {stop_summary}"]
+        footer_links.append(_link(stop_summary, "Stop the My work summary"))
+    text_lines += [f"Unsubscribe from all Project Hub emails: {unsubscribe}"]
+    footer_links.append(_link(unsubscribe, "Unsubscribe from all Project Hub emails"))
     return OutgoingEmail(
         to=user.email,
         subject=subject,
         text="\n".join(text_lines),
-        html=_html_page(preheader=subject, content="".join(html_parts), footer=footer),
+        html=_html_page(preheader=subject, content="".join(html_parts), footer=f"{why} " + " · ".join(footer_links)),
         headers={"List-Unsubscribe": f"<{unsubscribe}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"},
     )
 
@@ -438,8 +584,11 @@ class EmailDeliveryService:
         self.db.commit()
         return email_status.value.lower()
 
+    def can_email_user(self, user: User) -> bool:
+        return bool(user.is_active and user.email and not self.preferences.is_suppressed(user.email))
+
     def can_email(self, user: User, notification: Notification) -> bool:
-        if not user.is_active or not user.email or self.preferences.is_suppressed(user.email):
+        if not self.can_email_user(user):
             return False
         if self.account_members.get_for_user(account_id=notification.account_id, user_id=user.id) is None:
             return False
@@ -478,7 +627,9 @@ class EmailDeliveryService:
                 preference.last_due_soon_on = local_today
                 self.db.commit()
             if preference.last_digest_on != local_today and self.sender is not None:
-                sent = self.send_digest(user, now=now)
+                sent = self.send_digest(
+                    user, now=now, local_today=local_today if preference.my_work_summary else None
+                )
                 if sent is not None:
                     counts["digests"] += int(sent)
                     preference = self.preferences.get_or_create(user.id)
@@ -541,8 +692,11 @@ class EmailDeliveryService:
             is not None
         )
 
-    def send_digest(self, user: User, *, now: datetime) -> bool | None:
-        """True: sent. False: nothing to send. None: SES failed, so try again next hour."""
+    def send_digest(self, user: User, *, now: datetime, local_today: date | None = None) -> bool | None:
+        """True: sent. False: nothing to send. None: SES failed, so try again next hour.
+
+        With local_today, the email starts with the person's My work summary for that day.
+        """
         queued = list(
             self.db.scalars(
                 select(Notification)
@@ -566,11 +720,29 @@ class EmailDeliveryService:
                 )
             )
         self.db.commit()
-        if not entries:
+        summary = None
+        if local_today is not None and self.can_email_user(user):
+            summary = self.my_work_summary(
+                user,
+                local_today=local_today,
+                now=now,
+                already_listed={entry.notification.id for entry in entries},
+            )
+        # Due-soon reminders for tasks the summary lists would say the same thing twice; they go out as part of it.
+        in_summary = summary.task_ids() if summary is not None else set()
+        shown = [
+            entry
+            for entry in entries
+            if not (
+                entry.notification.notification_type == NotificationType.DUE_SOON.value
+                and entry.notification.entity_id in in_summary
+            )
+        ]
+        if not shown and (summary is None or summary.is_empty()):
             return False
         assert self.sender is not None
         try:
-            self.sender.send(render_digest_email(settings=self.settings, user=user, entries=entries))
+            self.sender.send(render_digest_email(settings=self.settings, user=user, entries=shown, summary=summary))
         except Exception:
             logger.exception("Digest email failed", extra={"user_id": str(user.id)})
             return None
@@ -579,6 +751,90 @@ class EmailDeliveryService:
             entry.notification.emailed_at = now
         self.db.commit()
         return True
+
+    def my_work_summary(
+        self, user: User, *, local_today: date, now: datetime, already_listed: set[UUID]
+    ) -> MyWorkSummary:
+        """Overdue, due today and blocked tasks assigned to the person, plus unread mentions from the last day.
+
+        Uses My work's due-tasks query, so the email matches the page. Mentions already queued for this digest
+        (already_listed) are left to the updates section.
+        """
+        summary = MyWorkSummary()
+        tasks = TaskRepository(self.db)
+        account_ids = self.db.scalars(
+            select(AccountMember.account_id).where(AccountMember.user_id == user.id).order_by(AccountMember.created_at)
+        ).all()
+        for account_id in account_ids:
+            try:
+                visible = access_for(self.db, account_id=account_id, user=user).visible_project_ids(ProjectModule.TASKS)
+            except HTTPException:
+                continue
+            rows = tasks.list_due_tasks(
+                account_id=account_id,
+                today=local_today,
+                horizon=local_today + timedelta(days=MY_WORK_HORIZON_DAYS),
+                include_overdue=True,
+                include_upcoming=True,
+                assigned_to=user.id,
+            )
+            blocked_ids = self.blocked_status_ids(account_id)
+            for task, project, _program in rows:
+                if visible is not None and task.project_id not in visible:
+                    continue
+                assert task.finish_date is not None  # the query only returns tasks with a finish date
+                item = SummaryTask(
+                    task_id=task.id,
+                    name=_truncate(task.name),
+                    project_name=project.name,
+                    path=f"/projects/{task.project_id}/sheet?task={task.id}",
+                    days=(task.finish_date - local_today).days,
+                    blocked=task.status_id in blocked_ids,
+                    account_name=self.account_name(account_id),
+                )
+                if item.days < 0:
+                    summary.overdue.append(item)
+                elif item.days == 0:
+                    summary.due_today.append(item)
+                elif item.blocked:
+                    summary.blocked.append(item)
+
+        mentions = self.db.scalars(
+            select(Notification)
+            .where(
+                Notification.user_id == user.id,
+                Notification.notification_type == NotificationType.MENTION.value,
+                Notification.is_read.is_(False),
+                Notification.created_at >= now - NEW_MENTION_WINDOW,
+            )
+            .order_by(Notification.created_at, Notification.id)
+        ).all()
+        for notification in mentions:
+            if notification.id in already_listed or not self.can_email(user, notification):
+                continue
+            summary.mentions.append(
+                DigestEntry(
+                    notification=notification,
+                    item=describe_item(self.db, notification.entity_type, notification.entity_id),
+                    account_name=self.account_name(notification.account_id),
+                )
+            )
+        return summary
+
+    def blocked_status_ids(self, account_id: UUID) -> set[UUID]:
+        """Task statuses My work counts as blocked (it compares the value, ignoring case)."""
+        return set(
+            self.db.scalars(
+                select(OptionValue.id)
+                .join(OptionSet, OptionSet.id == OptionValue.option_set_id)
+                .where(
+                    OptionSet.account_id == account_id,
+                    OptionSet.entity_type == "TASK",
+                    OptionSet.name == "STATUS",
+                    func.upper(OptionValue.value) == "BLOCKED",
+                )
+            ).all()
+        )
 
     # SES bounce and complaint events ----------------------------------------------------------------------
 

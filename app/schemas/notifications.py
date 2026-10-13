@@ -37,6 +37,10 @@ class NotificationPreferencesRead(BaseModel):
     comments: EmailFrequencyValue
     timezone: str
     digest_hour: int
+    # False while the timezone is still the default nobody chose; the app then saves the browser's zone.
+    timezone_confirmed: bool
+    # The daily email's summary of My work (overdue, due today, blocked, new mentions).
+    my_work_summary: bool
     email: str
     # False when the server has no email sender set up: settings save, but nothing is sent yet.
     email_available: bool
@@ -52,3 +56,4 @@ class NotificationPreferencesUpdate(BaseModel):
     comments: EmailFrequencyValue | None = None
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
     digest_hour: int | None = Field(default=None, ge=0, le=23)
+    my_work_summary: bool | None = None

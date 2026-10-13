@@ -2,7 +2,7 @@ from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Uuid, func
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -19,7 +19,8 @@ class EmailFrequency(str, Enum):
 EMAIL_CATEGORY_DEFAULTS: dict[str, EmailFrequency] = {
     "mentions": EmailFrequency.IMMEDIATE,
     "assignments": EmailFrequency.IMMEDIATE,
-    "due_soon": EmailFrequency.IMMEDIATE,
+    # The My work summary already lists what is due today, so reminders join the digest unless asked for sooner.
+    "due_soon": EmailFrequency.DIGEST,
     "status_changes": EmailFrequency.DIGEST,
     "comments": EmailFrequency.OFF,
 }
@@ -48,12 +49,16 @@ class NotificationPreference(Base):
     )
     mentions: Mapped[str] = mapped_column(String(10), nullable=False, default=EmailFrequency.IMMEDIATE.value)
     assignments: Mapped[str] = mapped_column(String(10), nullable=False, default=EmailFrequency.IMMEDIATE.value)
-    due_soon: Mapped[str] = mapped_column(String(10), nullable=False, default=EmailFrequency.IMMEDIATE.value)
+    due_soon: Mapped[str] = mapped_column(String(10), nullable=False, default=EmailFrequency.DIGEST.value)
     status_changes: Mapped[str] = mapped_column(String(10), nullable=False, default=EmailFrequency.DIGEST.value)
     comments: Mapped[str] = mapped_column(String(10), nullable=False, default=EmailFrequency.OFF.value)
     # IANA name; the digest and due-soon reminders go out at digest_hour in this zone.
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default=DEFAULT_TIMEZONE)
     digest_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=DEFAULT_DIGEST_HOUR)
+    # False while timezone is still the default; the app then fills in the browser's zone once.
+    timezone_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # The daily email's summary of My work: overdue, due today, blocked, new mentions (IN-2).
+    my_work_summary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     # Local dates of the last morning run, so each happens once a day.
     last_digest_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     last_due_soon_on: Mapped[date | None] = mapped_column(Date, nullable=True)

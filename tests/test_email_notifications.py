@@ -17,6 +17,8 @@ from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.email_suppression import EmailSuppression
 from app.models.notification import Notification
 from app.models.notification_preference import NotificationPreference
+from app.models.option_set import OptionSet
+from app.models.option_value import OptionValue
 from app.models.user import User
 from app.services import notification_preferences as preferences_module
 from app.services import notifications as notifications_module
@@ -328,11 +330,13 @@ def test_preferences_default_and_update(client: TestClient, db_session: Session)
     assert defaults.json() == {
         "mentions": "IMMEDIATE",
         "assignments": "IMMEDIATE",
-        "due_soon": "IMMEDIATE",
+        "due_soon": "DIGEST",
         "status_changes": "DIGEST",
         "comments": "OFF",
         "timezone": "America/Toronto",
         "digest_hour": 8,
+        "timezone_confirmed": False,
+        "my_work_summary": True,
         "email": "alex@example.com",
         "email_available": True,
         "email_suppressed": False,
@@ -340,6 +344,7 @@ def test_preferences_default_and_update(client: TestClient, db_session: Session)
     assert updated.status_code == 200
     assert (updated.json()["comments"], updated.json()["timezone"], updated.json()["digest_hour"]) == ("DIGEST", "Europe/London", 7)
     assert updated.json()["mentions"] == "IMMEDIATE"
+    assert updated.json()["timezone_confirmed"] is True
     assert bad_zone.status_code == 400
     assert bad_value.status_code == 422
     assert bad_hour.status_code == 422
@@ -423,7 +428,7 @@ def test_due_soon_reminders_are_created_once_in_the_local_morning(
     [reminder] = notifications_for(db_session, member)
     assert (reminder.notification_type, reminder.entity_id, reminder.title) == ("DUE_SOON", UUID(tomorrow["id"]), "Task due tomorrow")
     assert reminder.message == "Ship it (Apollo) is due tomorrow."
-    assert reminder.email_status == "PENDING"
+    assert reminder.email_status == "SENT"  # in that morning's digest (the default for due-soon)
     assert unassigned["id"] not in {str(n.entity_id) for n in db_session.scalars(select(Notification))}
     assert db_session.get(NotificationPreference, member.id).last_due_soon_on == LOCAL_TODAY
 
@@ -469,6 +474,146 @@ def test_failed_digest_is_retried_next_hour(client: TestClient, db_session: Sess
     delivery.run_morning(now=MORNING + timedelta(hours=1))
 
     assert len(sender.sent) == 1
+
+
+# Daily digest: My work summary (IN-2) --------------------------------------------------------------------------
+
+
+def task_status_id(db_session: Session, hierarchy: dict, value: str) -> str:
+    option_id = db_session.scalar(
+        select(OptionValue.id)
+        .join(OptionSet, OptionSet.id == OptionValue.option_set_id)
+        .where(
+            OptionSet.account_id == UUID(hierarchy["account"]["id"]),
+            OptionSet.entity_type == "TASK",
+            OptionSet.name == "STATUS",
+            OptionValue.value == value,
+        )
+    )
+    assert option_id is not None
+    return str(option_id)
+
+
+def due_in(days: int) -> str:
+    return str(LOCAL_TODAY + timedelta(days=days))
+
+
+def test_digest_summarizes_my_work(client: TestClient, db_session: Session, delivery, sender) -> None:
+    hierarchy = create_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+    member = create_member(db_session, hierarchy, "alex@example.com")
+    blocked = task_status_id(db_session, hierarchy, "BLOCKED")
+    mine = {
+        "Late report": create_task(client, project_id, "Late report", finish_date=due_in(-3), status_id=blocked),
+        "Standup notes": create_task(client, project_id, "Standup notes", finish_date=due_in(0)),
+        "Vendor contract": create_task(client, project_id, "Vendor contract", finish_date=due_in(5), status_id=blocked),
+        "Next week": create_task(client, project_id, "Next week", finish_date=due_in(7)),
+        "Already done": create_task(client, project_id, "Already done", finish_date=due_in(-1), percent_complete=100),
+    }
+    for task in mine.values():
+        assign(client, task["id"], member)
+    create_task(client, project_id, "Someone else's", finish_date=due_in(-1))
+    client.post(f"/api/v1/entities/TASK/{mine['Next week']['id']}/comments", json={"body": "@alex@example.com thoughts?"})
+
+    counts = delivery.run_morning(now=MORNING)
+
+    assert counts["digests"] == 1
+    [digest] = [email for email in sender.sent if email.subject.startswith("Your Project Hub digest")]
+    assert digest.subject == "Your Project Hub digest: 1 overdue, 1 due today, 1 blocked, 1 new mention"
+    text = digest.text
+    assert text.index("OVERDUE (1)") < text.index("Late report") < text.index("DUE TODAY (1)") < text.index("Standup notes")
+    assert "Apollo · 3 days overdue · Blocked" in text
+    assert text.index("BLOCKED (1)") < text.index("Vendor contract") < text.index("NEW MENTIONS (1)")
+    assert text.index("NEW MENTIONS (1)") < text.index("Next week")  # mentioned on, but not due yet
+    assert f"{APP_URL}/projects/{project_id}/sheet?task={mine['Late report']['id']}" in text
+    assert "Already done" not in text and "Someone else's" not in text
+    assert "Open My work" in digest.html
+    token = text.split("Stop the My work summary: ")[1].split()[0].split("token=")[1]
+    assert read_unsubscribe_token(SECRET, token) == (member.id, "my_work_summary")
+    assert db_session.get(NotificationPreference, member.id).last_digest_on == LOCAL_TODAY
+
+
+def test_digest_combines_my_work_with_queued_updates(client: TestClient, db_session: Session, delivery, sender) -> None:
+    hierarchy = create_hierarchy(client)
+    member = create_member(db_session, hierarchy, "alex@example.com")
+    set_preferences(client, member, assignments="DIGEST")
+    assign(client, create_task(client, hierarchy["project"]["id"], "Overdue thing", finish_date=due_in(-1))["id"], member)
+    delivery.deliver_pending()
+
+    delivery.run_morning(now=MORNING)
+
+    [digest] = sender.sent
+    assert digest.subject == "Your Project Hub digest: 1 overdue, 1 update"
+    assert digest.text.index("OVERDUE (1)") < digest.text.index("OTHER UPDATES (1)")
+    assert "Task assigned to you: Overdue thing" in digest.text
+
+
+def test_due_soon_reminders_are_not_repeated_next_to_the_summary(
+    client: TestClient, db_session: Session, delivery, sender
+) -> None:
+    hierarchy = create_hierarchy(client)
+    member = create_member(db_session, hierarchy, "alex@example.com")
+    for name, days in [("Today's task", 0), ("Tomorrow's task", 1)]:
+        assign(client, create_task(client, hierarchy["project"]["id"], name, finish_date=due_in(days))["id"], member)
+    delivery.deliver_pending()  # assignment emails
+
+    delivery.run_morning(now=MORNING)
+
+    digest = sender.sent[-1]
+    assert digest.subject == "Your Project Hub digest: 1 due today, 1 update"
+    assert digest.text.count("Today's task") == 1
+    assert "Task due tomorrow: Tomorrow's task" in digest.text
+    reminders = [n for n in notifications_for(db_session, member) if n.notification_type == "DUE_SOON"]
+    assert len(reminders) == 2 and {n.email_status for n in reminders} == {"SENT"}
+
+
+def test_my_work_summary_respects_project_access(client: TestClient, db_session: Session, delivery, sender) -> None:
+    hierarchy = create_hierarchy(client)
+    member = create_member(db_session, hierarchy, "alex@example.com")
+    hidden_project = client.post(f"/api/v1/programs/{hierarchy['program']['id']}/projects", json={"name": "Secret"}).json()
+    hidden = create_task(client, hidden_project["id"], "Hidden task", finish_date=due_in(0))
+    assign(client, hidden["id"], member)
+
+    counts = delivery.run_morning(now=MORNING)
+
+    assert counts["digests"] == 0
+    assert sender.sent == []
+
+
+def test_my_work_summary_can_be_turned_off(client: TestClient, db_session: Session, delivery, sender) -> None:
+    hierarchy = create_hierarchy(client)
+    member = create_member(db_session, hierarchy, "alex@example.com")
+    set_preferences(client, member, due_soon="OFF")
+    assign(client, create_task(client, hierarchy["project"]["id"], "Overdue", finish_date=due_in(-2))["id"], member)
+
+    assert set_preferences(client, member, my_work_summary=False)["my_work_summary"] is False
+    counts = delivery.run_morning(now=MORNING)
+
+    assert counts["digests"] == 0
+    assert sender.sent == []
+
+
+def test_my_work_summary_unsubscribe_links(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_hierarchy(client)
+    member = create_member(db_session, hierarchy, "alex@example.com")
+    other = create_member(db_session, hierarchy, "sam@example.com")
+
+    page = client.get("/api/v1/email/unsubscribe", params={"token": make_unsubscribe_token(SECRET, member.id, "my_work_summary")})
+    client.post("/api/v1/email/unsubscribe", params={"token": make_unsubscribe_token(SECRET, member.id, "my_work_summary")})
+    client.post("/api/v1/email/unsubscribe", params={"token": make_unsubscribe_token(SECRET, other.id, "all")})
+
+    assert "your daily My work summary" in page.text
+    preference = db_session.get(NotificationPreference, member.id)
+    assert (preference.my_work_summary, preference.mentions) == (False, "IMMEDIATE")
+    assert db_session.get(NotificationPreference, other.id).my_work_summary is False
+
+
+def test_timezone_is_confirmed_once_set(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_hierarchy(client)
+    member = create_member(db_session, hierarchy, "alex@example.com")
+
+    assert set_preferences(client, member, digest_hour=7)["timezone_confirmed"] is False
+    assert set_preferences(client, member, timezone="America/Vancouver")["timezone_confirmed"] is True
 
 
 # SES bounce / complaint events ---------------------------------------------------------------------------------
