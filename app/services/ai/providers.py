@@ -359,7 +359,14 @@ class AnthropicModel:
                     blocks.append({"type": "tool_use", "id": call["id"], "name": call["name"], "input": call["arguments"]})
                 wire.append({"role": "assistant", "content": blocks or [{"type": "text", "text": ""}]})
             else:
-                wire.append({"role": "user", "content": message.get("content") or ""})
+                text = message.get("content") or ""
+                previous = wire[-1] if wire else None
+                # A question straight after tool results (an earlier run failed mid-way) joins that user turn,
+                # since turns must alternate.
+                if previous and previous["role"] == "user" and isinstance(previous["content"], list):
+                    previous["content"].append({"type": "text", "text": text})
+                else:
+                    wire.append({"role": "user", "content": text})
         return wire
 
     @staticmethod

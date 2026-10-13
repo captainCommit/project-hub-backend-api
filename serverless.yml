@@ -56,6 +56,8 @@ provider:
     # only the AI worker's role (AiWorkerRole) may decrypt.
     AI_KMS_KEY_ID:
       Fn::GetAtt: [AiKeysKmsKey, Arn]
+    # Questions are answered by the aiAssistant function, started asynchronously by the API.
+    AI_WORKER_FUNCTION: ${self:service}-${sls:stage}-aiAssistant
   iam:
     role:
       statements:
@@ -89,6 +91,10 @@ provider:
           Action: kms:Encrypt
           Resource:
             - Fn::GetAtt: [AiKeysKmsKey, Arn]
+        - Effect: Allow
+          Action: lambda:InvokeFunction
+          Resource:
+            - Fn::Sub: arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${self:service}-${sls:stage}-aiAssistant
 
 functions:
   api:
@@ -123,6 +129,28 @@ functions:
     timeout: 300
     events:
       - schedule: cron(5 * * * ? *)
+
+  # Answers one assistant question per invocation (app/services/ai/runner.py). Started asynchronously by the
+  # API, so a slow model never meets the API's 28-second limit. Its own role is the only one that can decrypt
+  # accounts' model keys.
+  aiAssistant:
+    handler: app.worker.ai_run_handler
+    description: Answers one AI assistant question, calling the account's model and the read-only tools.
+    memorySize: 1024
+    # The run gives up after AI_RUN_TIMEOUT_SECONDS (120); the extra time lets it record why.
+    timeout: 150
+    # Failures are recorded on the run; an automatic retry would answer the same question twice.
+    maximumRetryAttempts: 0
+    role: AiWorkerRole
+
+  # Hourly: marks runs whose worker died as failed and deletes conversations past their account's retention.
+  aiHousekeeping:
+    handler: app.worker.ai_housekeeping_handler
+    description: Cleans up stale AI runs and expired conversations.
+    memorySize: 512
+    timeout: 120
+    events:
+      - schedule: cron(15 * * * ? *)
 
   sesEvents:
     handler: app.worker.ses_events_handler
@@ -218,6 +246,37 @@ resources:
                   Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
               Action: kms:*
               Resource: "*"
+
+    # The AI worker's role: everything the API role has that the worker needs, plus decrypting model keys.
+    AiWorkerRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: lambda.amazonaws.com
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        Policies:
+          - PolicyName: ai-worker
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: rds-db:connect
+                  Resource:
+                    - Fn::Sub: arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/project_hub_app
+                - Effect: Allow
+                  Action: ssm:GetParameter
+                  Resource:
+                    - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/project-hub/${sls:stage}/*
+                - Effect: Allow
+                  Action: kms:Decrypt
+                  Resource:
+                    - Fn::GetAtt: [AiKeysKmsKey, Arn]
 
     AiKeysKmsAlias:
       Type: AWS::KMS::Alias

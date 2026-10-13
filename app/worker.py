@@ -61,3 +61,29 @@ def ses_events_handler(event: dict[str, Any], context: Any) -> dict[str, int]:
     if added:
         logger.info("Email addresses suppressed", extra={"added": added})
     return {"suppressed": added}
+
+
+def ai_run_handler(event: dict[str, Any], context: Any) -> dict[str, str]:
+    """Started asynchronously by the API for each question: answers it (app.services.ai.runner).
+
+    Runs as AiWorkerRole, the only role that can decrypt accounts' own model keys.
+    """
+    from uuid import UUID
+
+    from app.services.ai.runner import AssistantRunner
+
+    run_id = UUID(str(event["run_id"]))
+    with SessionLocal() as db:
+        outcome = AssistantRunner(db, get_settings()).run(run_id)
+    return {"run_id": str(run_id), "status": outcome}
+
+
+def ai_housekeeping_handler(event: dict[str, Any], context: Any) -> dict[str, int]:
+    """Hourly: mark runs whose worker died as failed, and delete conversations past their account's retention."""
+    from app.services.ai.conversations import ConversationService
+
+    with SessionLocal() as db:
+        service = ConversationService(db, get_settings())
+        counts = {"stale_runs": service.fail_stale_runs(), "expired_conversations": service.delete_expired()}
+    logger.info("AI housekeeping", extra=counts)
+    return counts

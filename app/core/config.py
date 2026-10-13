@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     # encrypt and the AI worker only decrypt. Locally (ENVIRONMENT=local) a dev secret stands in for KMS.
     ai_kms_key_id: str = Field(default="", validation_alias="AI_KMS_KEY_ID")
     ai_local_key_secret: str = Field(default="local-dev-only-ai-key-secret", validation_alias="AI_LOCAL_KEY_SECRET")
+    # The Lambda that answers questions (app.worker.ai_run_handler), started asynchronously so a slow model never
+    # meets the API's 28-second timeout. Empty (local dev) answers in-process after the response is sent.
+    ai_worker_function: str = Field(default="", validation_alias="AI_WORKER_FUNCTION")
+    # Limits for one question, and per person.
+    ai_max_model_calls: int = Field(default=8, validation_alias="AI_MAX_MODEL_CALLS")
+    ai_run_timeout_seconds: int = Field(default=120, validation_alias="AI_RUN_TIMEOUT_SECONDS")
+    ai_max_reply_tokens: int = Field(default=1500, validation_alias="AI_MAX_REPLY_TOKENS")
+    ai_questions_per_hour: int = Field(default=20, validation_alias="AI_QUESTIONS_PER_HOUR")
 
     model_config = SettingsConfigDict(
         env_file=".env",
