@@ -9,7 +9,7 @@ import base64
 import hashlib
 import hmac
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from html import escape
 from typing import Any
@@ -35,7 +35,7 @@ from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.tasks import TaskRepository
 from app.services.access import COMMENTABLE_MODELS, access_for, can_see_entity
-from app.services.email_sender import EmailSender, OutgoingEmail
+from app.services.email_sender import EmailSender, NoEmailRoute, OutgoingEmail
 from app.services.notification_preferences import (
     CATEGORY_LABELS,
     MY_WORK_SUMMARY,
@@ -555,15 +555,21 @@ class EmailDeliveryService:
             self.db.commit()
             return "retry"
 
-        email = render_notification_email(
-            settings=self.settings,
-            user=user,
-            notification=notification,
-            item=describe_item(self.db, notification.entity_type, notification.entity_id),
-            account_name=self.account_name(notification.account_id),
+        email = replace(
+            render_notification_email(
+                settings=self.settings,
+                user=user,
+                notification=notification,
+                item=describe_item(self.db, notification.entity_type, notification.entity_id),
+                account_name=self.account_name(notification.account_id),
+            ),
+            account_id=notification.account_id,
         )
         try:
             self.sender.send(email)
+        except NoEmailRoute:
+            # Neither SES nor the account's Microsoft 365 mailbox can send it any more.
+            return self.finish(notification, EmailStatus.SKIPPED)
         except Exception:
             notification.email_attempts += 1
             notification.email_claimed_at = None
@@ -600,6 +606,11 @@ class EmailDeliveryService:
             entity_type=notification.entity_type,
             entity_id=notification.entity_id,
         )
+
+    def only_account(self, user_id: UUID) -> UUID | None:
+        """The person's account if they belong to just one; a digest spanning accounts is sent by SES."""
+        account_ids = self.db.scalars(select(AccountMember.account_id).where(AccountMember.user_id == user_id).limit(2)).all()
+        return account_ids[0] if len(account_ids) == 1 else None
 
     def account_name(self, account_id: UUID) -> str:
         if account_id not in self._account_names:
@@ -741,8 +752,11 @@ class EmailDeliveryService:
         if not shown and (summary is None or summary.is_empty()):
             return False
         assert self.sender is not None
+        email = render_digest_email(settings=self.settings, user=user, entries=shown, summary=summary)
         try:
-            self.sender.send(render_digest_email(settings=self.settings, user=user, entries=shown, summary=summary))
+            self.sender.send(replace(email, account_id=self.only_account(user.id)))
+        except NoEmailRoute:
+            return False
         except Exception:
             logger.exception("Digest email failed", extra={"user_id": str(user.id)})
             return None

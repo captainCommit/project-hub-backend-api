@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from typing import Protocol
+from uuid import UUID
 
 from app.core.config import Settings
 
@@ -13,6 +14,12 @@ class OutgoingEmail:
     text: str
     html: str
     headers: dict[str, str] = field(default_factory=dict)
+    # The account the email is about, when it is about one; it may have its own Microsoft 365 mailbox to send from.
+    account_id: UUID | None = None
+
+
+class NoEmailRoute(Exception):
+    """Nothing can send this email: SES isn't set up and the account has no Microsoft 365 mailbox connected."""
 
 
 class EmailSender(Protocol):

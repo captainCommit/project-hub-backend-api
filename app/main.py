@@ -30,6 +30,7 @@ from app.routers.delivery import router as delivery_router
 from app.routers.email import router as email_router
 from app.routers.health import router as health_router
 from app.routers.hierarchy import router as hierarchy_router
+from app.routers.integrations import router as integrations_router
 from app.routers.me import router as me_router
 from app.routers.notifications import router as notifications_router
 from app.routers.options import router as options_router
@@ -151,6 +152,7 @@ app.include_router(billing_router)
 app.include_router(options_router)
 app.include_router(dashboard_router)
 app.include_router(hierarchy_router)
+app.include_router(integrations_router)
 app.include_router(tasks_router)
 app.include_router(raid_router)
 app.include_router(project_logs_router)

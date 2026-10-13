@@ -94,6 +94,8 @@ class NotificationPreferenceService:
         return self.db.get(EmailSuppression, email.strip().lower()) is not None
 
     def read(self, user: User) -> dict[str, object]:
+        from app.services.integrations.mail import can_send_to
+
         preference = self.get_or_default(user.id)
         return {
             **{category: getattr(preference, category) for category in EMAIL_CATEGORY_DEFAULTS},
@@ -102,7 +104,7 @@ class NotificationPreferenceService:
             "timezone_confirmed": preference.timezone_confirmed,
             MY_WORK_SUMMARY: preference.my_work_summary,
             "email": user.email,
-            "email_available": get_settings().email_enabled,
+            "email_available": can_send_to(self.db, get_settings(), user.id),
             "email_suppressed": self.is_suppressed(user.email),
         }
 

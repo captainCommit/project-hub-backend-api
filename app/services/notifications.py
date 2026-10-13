@@ -45,16 +45,22 @@ class NotificationService:
             notification_type=type_value,
             title=title,
             message=message,
-            email_status=self.initial_email_status(user_id, type_value),
+            email_status=self.initial_email_status(user_id, type_value, account_id=account_id),
         )
         self.db.add(notification)
         self.db.flush()
         self.db.refresh(notification)
+        # Slack and Teams direct messages, for people who linked them; sent by the integrations worker.
+        from app.services.integrations.events import queue_direct_messages
+
+        queue_direct_messages(self.db, notification)
         return notification
 
-    def initial_email_status(self, user_id: UUID, notification_type: str) -> str | None:
+    def initial_email_status(self, user_id: UUID, notification_type: str, *, account_id: UUID) -> str | None:
         """Queue the email channel. The delivery worker sends it after the request commits (app/worker.py)."""
-        if not get_settings().email_enabled:
+        from app.services.integrations.mail import can_send_for
+
+        if not can_send_for(self.db, get_settings(), account_id):
             return None
         frequency = self.preferences.frequency_for(user_id, notification_type)
         if frequency == EmailFrequency.IMMEDIATE:

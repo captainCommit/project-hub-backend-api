@@ -62,6 +62,17 @@ provider:
     # The platform's own provider keys for platform-provided models: SSM SecureStrings named
     # <prefix><provider>-api-key (openai, anthropic, gemini), read by the AI worker only when needed.
     AI_PLATFORM_KEY_PARAM_PREFIX: /project-hub/${sls:stage}/ai/
+    # Slack, Teams and Microsoft 365. Tokens customers connect are encrypted with IntegrationKmsKey. The platform's
+    # own app secrets are SSM SecureStrings under INTEGRATION_SECRETS_PATH (slack-client-secret,
+    # slack-signing-secret, microsoft-client-secret, teams-bot-password, state-secret); each integration stays
+    # off until its IDs below and its secrets exist. See README "Integrations".
+    INTEGRATION_KMS_KEY_ID:
+      Fn::GetAtt: [IntegrationKmsKey, Arn]
+    INTEGRATION_SECRETS_PATH: /project-hub/${sls:stage}/integrations/
+    SLACK_CLIENT_ID: ${env:SLACK_CLIENT_ID, ''}
+    MICROSOFT_CLIENT_ID: ${env:MICROSOFT_CLIENT_ID, ''}
+    TEAMS_BOT_APP_ID: ${env:TEAMS_BOT_APP_ID, ''}
+    TEAMS_BOT_TENANT: ${env:TEAMS_BOT_TENANT, 'botframework.com'}
   iam:
     role:
       statements:
@@ -92,9 +103,20 @@ provider:
           Resource:
             - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/project-hub/${sls:stage}/*
         - Effect: Allow
+          Action: ssm:GetParametersByPath
+          Resource:
+            - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/project-hub/${sls:stage}/integrations
+        - Effect: Allow
           Action: kms:Encrypt
           Resource:
             - Fn::GetAtt: [AiKeysKmsKey, Arn]
+        # Slack bot tokens and Microsoft refresh tokens: the API stores and uses them, the workers send with them.
+        - Effect: Allow
+          Action:
+            - kms:Encrypt
+            - kms:Decrypt
+          Resource:
+            - Fn::GetAtt: [IntegrationKmsKey, Arn]
         - Effect: Allow
           Action: lambda:InvokeFunction
           Resource:
@@ -155,6 +177,24 @@ functions:
     timeout: 120
     events:
       - schedule: cron(15 * * * ? *)
+
+  # Slack and Teams: queues channel updates from the activity log and sends queued messages (app/worker.py).
+  integrations:
+    handler: app.worker.integrations_handler
+    description: Sends project updates and direct messages to Slack and Microsoft Teams.
+    memorySize: 1024
+    timeout: 60
+    events:
+      - schedule: rate(1 minute)
+
+  # Keeps connected Outlook calendars in line with people's due dates and milestones.
+  calendarSync:
+    handler: app.worker.calendar_sync_handler
+    description: Updates connected Outlook calendars through Microsoft Graph.
+    memorySize: 1024
+    timeout: 300
+    events:
+      - schedule: rate(15 minutes)
 
   sesEvents:
     handler: app.worker.ses_events_handler
@@ -281,6 +321,31 @@ resources:
                   Action: kms:Decrypt
                   Resource:
                     - Fn::GetAtt: [AiKeysKmsKey, Arn]
+
+    # Encrypts tokens customers connect (Slack bot tokens, Microsoft refresh tokens), with the owning account or
+    # person as encryption context (app/services/integrations/secrets.py).
+    IntegrationKmsKey:
+      Type: AWS::KMS::Key
+      Properties:
+        Description: Encrypts Project Hub integration tokens (Slack, Microsoft 365).
+        EnableKeyRotation: true
+        KeyPolicy:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: EnableIamPolicies
+              Effect: Allow
+              Principal:
+                AWS:
+                  Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+              Action: kms:*
+              Resource: "*"
+
+    IntegrationKmsAlias:
+      Type: AWS::KMS::Alias
+      Properties:
+        AliasName: alias/project-hub-${sls:stage}-integrations
+        TargetKeyId:
+          Ref: IntegrationKmsKey
 
     AiKeysKmsAlias:
       Type: AWS::KMS::Alias

@@ -10,6 +10,17 @@ from app.models.attachment import Attachment
 from app.models.billing import AccountBilling, Invoice, StripeEvent
 from app.models.change_request import ChangeRequest
 from app.models.comment import Comment
+from app.models.integration import (
+    CalendarFeed,
+    CalendarSyncEvent,
+    IntegrationConnection,
+    IntegrationConversation,
+    IntegrationDestination,
+    IntegrationMessage,
+    IntegrationState,
+    IntegrationUserLink,
+    MicrosoftCalendarConnection,
+)
 from app.models.comment_mention import CommentMention
 from app.models.decision import Decision
 from app.models.decision_option import DecisionOption
@@ -44,6 +55,15 @@ from app.models.task_required_skill import TaskRequiredSkill
 from app.models.user import User
 
 __all__ = [
+    "CalendarFeed",
+    "CalendarSyncEvent",
+    "IntegrationConnection",
+    "IntegrationConversation",
+    "IntegrationDestination",
+    "IntegrationMessage",
+    "IntegrationState",
+    "IntegrationUserLink",
+    "MicrosoftCalendarConnection",
     "AiAccountSettings",
     "AiConversation",
     "AiMessage",
