@@ -16,4 +16,4 @@ app/schemas/__pycache__
 app/core/__pycache__
 app/migrations/__pycache__
 app/migrations/versions/__pycache__
-*.ps1
+*.ps1__pycache__/
