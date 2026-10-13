@@ -19,6 +19,7 @@ from app.routers.account_settings import router as account_settings_router
 from app.routers.account_users import router as account_users_router
 from app.routers.activity import router as activity_router
 from app.routers.admin import router as admin_router
+from app.routers.ai import router as ai_router
 from app.routers.attachments import router as attachments_router
 from app.routers.auth import router as auth_router
 from app.routers.billing import router as billing_router
@@ -164,5 +165,6 @@ app.include_router(comments_router)
 app.include_router(activity_router)
 app.include_router(attachments_router)
 app.include_router(collaboration_router)
+app.include_router(ai_router)
 
 handler = Mangum(app)

@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     ses_configuration_set: str = Field(default="", validation_alias="SES_CONFIGURATION_SET")
     # Signs unsubscribe links. Deployed: generated in Secrets Manager.
     email_token_secret: str = Field(default="", validation_alias="EMAIL_TOKEN_SECRET")
+    # AI assistant. Deployed, accounts' own model keys are encrypted with this KMS key; the API may only
+    # encrypt and the AI worker only decrypt. Locally (ENVIRONMENT=local) a dev secret stands in for KMS.
+    ai_kms_key_id: str = Field(default="", validation_alias="AI_KMS_KEY_ID")
+    ai_local_key_secret: str = Field(default="local-dev-only-ai-key-secret", validation_alias="AI_LOCAL_KEY_SECRET")
 
     model_config = SettingsConfigDict(
         env_file=".env",

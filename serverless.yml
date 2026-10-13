@@ -52,6 +52,10 @@ provider:
       Fn::Sub: "{{resolve:secretsmanager:${EmailTokenSecret}:SecretString:value}}"
     S3_BUCKET_NAME:
       Ref: AttachmentsBucket
+    # AI assistant: accounts' own model keys are encrypted with this key. The API may only encrypt;
+    # only the AI worker's role (AiWorkerRole) may decrypt.
+    AI_KMS_KEY_ID:
+      Fn::GetAtt: [AiKeysKmsKey, Arn]
   iam:
     role:
       statements:
@@ -81,6 +85,10 @@ provider:
           Action: ssm:GetParameter
           Resource:
             - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/project-hub/${sls:stage}/*
+        - Effect: Allow
+          Action: kms:Encrypt
+          Resource:
+            - Fn::GetAtt: [AiKeysKmsKey, Arn]
 
 functions:
   api:
@@ -192,6 +200,31 @@ resources:
           GenerateStringKey: value
           PasswordLength: 48
           ExcludePunctuation: true
+
+    # Encrypts accounts' own AI model keys (app/services/ai/keys.py). The account id is the encryption context.
+    AiKeysKmsKey:
+      Type: AWS::KMS::Key
+      Properties:
+        Description: Encrypts Project Hub accounts' own AI model API keys.
+        EnableKeyRotation: true
+        KeyPolicy:
+          Version: "2012-10-17"
+          Statement:
+            # Lets IAM policies grant use of the key (the API role: encrypt; AiWorkerRole: decrypt).
+            - Sid: EnableIamPolicies
+              Effect: Allow
+              Principal:
+                AWS:
+                  Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+              Action: kms:*
+              Resource: "*"
+
+    AiKeysKmsAlias:
+      Type: AWS::KMS::Alias
+      Properties:
+        AliasName: alias/project-hub-${sls:stage}-ai-keys
+        TargetKeyId:
+          Ref: AiKeysKmsKey
 
     # Every notification email is sent with this configuration set, which publishes bounces and complaints.
     EmailConfigurationSet:

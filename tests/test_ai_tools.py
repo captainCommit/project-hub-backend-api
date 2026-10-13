@@ -1,88 +1,19 @@
 import json
-from collections.abc import Generator
 from datetime import date, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, select
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-import app.models  # noqa: F401
-from app.core.config import Settings, get_settings
-from app.core.database import Base, get_db
-from app.main import app
-from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
 from app.models.user import User
 from app.services.ai import tools as tools_module
 from app.services.ai.tools import TOOL_SPECS, ToolContext, run_tool, to_text
-from tests.helpers import grant_access
-from tests.test_search import sqlite_similarity
-
-
-@pytest.fixture()
-def db_session() -> Generator[Session, None, None]:
-    engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    # Search uses Postgres's pg_trgm similarity(); give SQLite the same function the search tests use.
-    event.listen(engine, "connect", lambda connection, _record: connection.create_function("similarity", 2, sqlite_similarity))
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, expire_on_commit=False)
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
-
-
-@pytest.fixture()
-def client(db_session: Session) -> Generator[TestClient, None, None]:
-    app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_settings] = lambda: Settings(auth_mode="local")
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
-
-
-def post(client: TestClient, path: str, body: dict) -> dict:
-    response = client.post(path, json=body)
-    assert response.status_code == 201, response.text
-    return response.json()
-
-
-def create_account(client: TestClient, name: str = "Acme") -> dict[str, dict]:
-    suffix = uuid4().hex[:8]
-    account = post(client, "/api/v1/accounts", {"name": f"{name} {suffix}", "slug": f"{name.lower()}-{suffix}"})
-    portfolio = post(client, f"/api/v1/accounts/{account['id']}/portfolios", {"name": "Portfolio"})
-    program = post(client, f"/api/v1/portfolios/{portfolio['id']}/programs", {"name": "Retail"})
-    apollo = post(client, f"/api/v1/programs/{program['id']}/projects", {"name": "Apollo"})
-    secret = post(client, f"/api/v1/programs/{program['id']}/projects", {"name": "Secret"})
-    return {"account": account, "program": program, "apollo": apollo, "secret": secret}
-
-
-def add_member(
-    db_session: Session, hierarchy: dict, email: str, *, modules: list[str], view_modules: list[str] | None = None
-) -> User:
-    user = User(email=email, full_name="Alex")
-    db_session.add(user)
-    db_session.flush()
-    db_session.add(AccountMember(account_id=UUID(hierarchy["account"]["id"]), user_id=user.id, role=AccountMemberRole.MEMBER.value))
-    db_session.commit()
-    grant_access(
-        db_session,
-        account_id=hierarchy["account"]["id"],
-        role="MEMBER",
-        project_id=hierarchy["apollo"]["id"],
-        modules=modules,
-        view_modules=view_modules,
-        email=email,
-    )
-    return user
+from tests.ai_support import add_member, client, create_account, db_session, dev_user, post  # noqa: F401
+from tests.ai_support import ai_settings, fake_model  # noqa: F401
 
 
 def call(db_session: Session, hierarchy: dict, user: User, name: str, **args: object) -> dict:
@@ -163,7 +94,7 @@ def test_status_filter_and_trimming(db_session: Session, world: dict) -> None:
 def test_search_stays_inside_the_account(client: TestClient, db_session: Session, world: dict) -> None:
     other = create_account(client, "Globex")
     post(client, f"/api/v1/projects/{other['apollo']['id']}/tasks", {"name": "Late report elsewhere"})
-    owner = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+    owner = dev_user(db_session)
 
     result = call(db_session, world, owner, "search", query="Late report")
 
@@ -172,7 +103,7 @@ def test_search_stays_inside_the_account(client: TestClient, db_session: Session
 
 
 def test_get_item_includes_comments_and_stays_in_account(client: TestClient, db_session: Session, world: dict) -> None:
-    owner = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+    owner = dev_user(db_session)
     other = create_account(client, "Globex")
     elsewhere = post(client, f"/api/v1/projects/{other['apollo']['id']}/tasks", {"name": "Not this account"})
 

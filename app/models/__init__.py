@@ -4,6 +4,7 @@ from app.models.account_holiday import AccountHoliday
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.account_settings import AccountSettings
 from app.models.activity_log import ActivityLog
+from app.models.ai import AiAccountSettings
 from app.models.assumption import Assumption
 from app.models.attachment import Attachment
 from app.models.billing import AccountBilling, Invoice, StripeEvent
@@ -43,6 +44,7 @@ from app.models.task_required_skill import TaskRequiredSkill
 from app.models.user import User
 
 __all__ = [
+    "AiAccountSettings",
     "AccessGrant",
     "GrantRole",
     "ProjectModule",
