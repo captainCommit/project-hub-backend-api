@@ -40,6 +40,7 @@ _ssm_cache: dict[str, tuple[dict[str, str], float]] = {}
 
 
 def _ssm_secrets(path: str, region: str) -> dict[str, str]:
+    """All parameters under `path` (no trailing slash: SSM authorizes the path exactly as given)."""
     cached = _ssm_cache.get(path)
     if cached is not None and time.time() - cached[1] < SECRETS_TTL_SECONDS:
         return cached[0]
@@ -65,11 +66,11 @@ def platform_secret(settings: Settings, field: str) -> str:
         return value
     if settings.integration_secrets_path:
         try:
-            value = _ssm_secrets(settings.integration_secrets_path.rstrip("/") + "/", settings.aws_region).get(SECRET_NAMES[field], "")
+            value = _ssm_secrets(settings.integration_secrets_path.rstrip("/"), settings.aws_region).get(SECRET_NAMES[field], "")
         except Exception:
             import logging
 
-            logging.getLogger(__name__).warning("Integration secrets could not be read from SSM")
+            logging.getLogger(__name__).warning("Integration secrets could not be read from SSM", exc_info=True)
             value = ""
     if not value and field == "integration_state_secret" and settings.environment == "local":
         return LOCAL_STATE_SECRET
