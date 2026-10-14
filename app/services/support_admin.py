@@ -41,11 +41,11 @@ class SupportAdminService:
         self.db = db
 
     def list(self, *, status_filter: str | None = None, search: str | None = None, account_id: UUID | None = None) -> list[dict[str, Any]]:
-        """Newest activity first. status_filter: a ticket status, "ACTIVE" (not resolved or closed), or None for all."""
+        """Newest activity first. status_filter: a ticket status, "ACTIVE" (not resolved or closed), or "ALL"."""
         query = select(SupportTicket, Account.name).join(Account, Account.id == SupportTicket.account_id)
         if status_filter == "ACTIVE":
             query = query.where(SupportTicket.status.not_in(CLOSED_STATUSES))
-        elif status_filter:
+        elif status_filter and status_filter != "ALL":
             query = query.where(SupportTicket.status == status_filter)
         if account_id:
             query = query.where(SupportTicket.account_id == account_id)

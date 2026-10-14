@@ -142,7 +142,7 @@ def list_invoices(
 
 @router.get("/support-tickets", response_model=list[AdminSupportTicketRead], summary="Support tickets across accounts (platform admins)")
 def list_support_tickets(
-    status_filter: TicketStatus | Literal["ACTIVE"] | None = Query(default="ACTIVE", alias="status"),
+    status_filter: TicketStatus | Literal["ACTIVE", "ALL"] = Query(default="ACTIVE", alias="status"),
     search: str | None = Query(default=None, max_length=200),
     account_id: UUID | None = Query(default=None),
     db: Session = Depends(get_db),
