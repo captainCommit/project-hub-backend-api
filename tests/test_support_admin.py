@@ -56,11 +56,12 @@ def test_platform_admins_see_every_accounts_tickets(client: TestClient, world: d
         summary = client.get("/api/v1/admin/support-tickets/summary").json()
         found = client.get("/api/v1/admin/support-tickets", params={"search": "pdf export"}).json()
         none = client.get("/api/v1/admin/support-tickets", params={"status": "CLOSED"}).json()
+        everything = client.get("/api/v1/admin/support-tickets", params={"status": "ALL"}).json()
     (ticket,) = tickets
     assert ticket["account_name"] == world["account"]["name"] and ticket["requester_email"] == "alex@example.com"
     assert ticket["needs_reply"] is True and ticket["messages"] == []
     assert summary == {"active": 1, "needs_reply": 1}
-    assert [t["id"] for t in found] == [ticket["id"]] and none == []
+    assert [t["id"] for t in found] == [ticket["id"]] and none == [] and len(everything) == 1
 
     with acting_as(world["alex"]):
         assert client.get("/api/v1/admin/support-tickets").status_code == 403
