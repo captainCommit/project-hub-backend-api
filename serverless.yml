@@ -62,17 +62,15 @@ provider:
     # The platform's own provider keys for platform-provided models: SSM SecureStrings named
     # <prefix><provider>-api-key (openai, anthropic, gemini), read by the AI worker only when needed.
     AI_PLATFORM_KEY_PARAM_PREFIX: /project-hub/${sls:stage}/ai/
-    # Slack, Teams and Microsoft 365. Tokens customers connect are encrypted with IntegrationKmsKey. The platform's
+    # Slack and Microsoft 365. Tokens customers connect are encrypted with IntegrationKmsKey. The platform's
     # own app secrets are SSM SecureStrings under INTEGRATION_SECRETS_PATH (slack-client-secret,
-    # slack-signing-secret, microsoft-client-secret, teams-bot-password, state-secret); each integration stays
+    # slack-signing-secret, microsoft-client-secret, state-secret); each integration stays
     # off until its IDs below and its secrets exist. See README "Integrations".
     INTEGRATION_KMS_KEY_ID:
       Fn::GetAtt: [IntegrationKmsKey, Arn]
     INTEGRATION_SECRETS_PATH: /project-hub/${sls:stage}/integrations/
     SLACK_CLIENT_ID: ${env:SLACK_CLIENT_ID, ''}
     MICROSOFT_CLIENT_ID: ${env:MICROSOFT_CLIENT_ID, ''}
-    TEAMS_BOT_APP_ID: ${env:TEAMS_BOT_APP_ID, ''}
-    TEAMS_BOT_TENANT: ${env:TEAMS_BOT_TENANT, 'botframework.com'}
   iam:
     role:
       statements:
@@ -178,10 +176,10 @@ functions:
     events:
       - schedule: cron(15 * * * ? *)
 
-  # Slack and Teams: queues channel updates from the activity log and sends queued messages (app/worker.py).
+  # Slack: queues channel updates from the activity log and sends queued messages (app/worker.py).
   integrations:
     handler: app.worker.integrations_handler
-    description: Sends project updates and direct messages to Slack and Microsoft Teams.
+    description: Sends project updates and direct messages to Slack.
     memorySize: 1024
     timeout: 60
     events:

@@ -1,4 +1,4 @@
-"""What gets posted, independent of where: Slack renders it as Block Kit, Teams as an Adaptive Card.
+"""What gets posted, kept separate from how Slack renders it (Block Kit).
 
 Every message links back into the app, using the same links as notification emails.
 """
@@ -73,24 +73,3 @@ def to_slack_blocks(message: ChatMessage, settings: Settings) -> list[dict[str, 
     if message.context:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": slack_escape(message.context)}]})
     return blocks
-
-
-def to_adaptive_card(message: ChatMessage, settings: Settings) -> dict[str, Any]:
-    body: list[dict[str, Any]] = [{"type": "TextBlock", "text": message.title, "weight": "Bolder", "wrap": True}]
-    body += [{"type": "TextBlock", "text": line, "wrap": True} for line in message.lines]
-    if message.facts:
-        body.append({"type": "FactSet", "facts": [{"title": label, "value": value} for label, value in message.facts]})
-    for item, path in message.items:
-        url = message.url(settings, path)
-        body.append({"type": "TextBlock", "text": f"- [{item}]({url})" if url else f"- {item}", "wrap": True, "spacing": "Small"})
-    if message.context:
-        body.append({"type": "TextBlock", "text": message.context, "isSubtle": True, "size": "Small", "wrap": True})
-    card: dict[str, Any] = {
-        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-        "type": "AdaptiveCard",
-        "version": "1.4",
-        "body": body,
-    }
-    if message.link:
-        card["actions"] = [{"type": "Action.OpenUrl", "title": message.link_label, "url": message.url(settings, message.link)}]
-    return card

@@ -1,5 +1,5 @@
-"""Slack, Microsoft Teams and Outlook: owners' settings, each person's links and calendar, and the endpoints the
-providers call (OAuth redirects, Slack commands and events, Teams bot messages, calendar feeds)."""
+"""Slack and Outlook: owners' settings, each person's links and calendar, and the endpoints the providers call
+(OAuth redirects, Slack commands and events, calendar feeds)."""
 
 import json
 import secrets
@@ -17,13 +17,12 @@ from app.core.database import get_db
 from app.models.integration import CHANNEL_EVENTS, IntegrationProvider
 from app.models.user import User
 from app.services.auth import get_current_user
-from app.services.integrations import slack, teams
+from app.services.integrations import slack
 from app.services.integrations.calendar import CalendarFeedService, CalendarSyncService
 from app.services.integrations.http import Http, requests_http
-from app.services.integrations.inbound import handle_slack_command, handle_slack_event, handle_teams_activity
+from app.services.integrations.inbound import handle_slack_command, handle_slack_event
 from app.services.integrations.secrets import IntegrationNotConfigured
 from app.services.integrations.service import DM_CATEGORIES, SETTINGS_PATH, IntegrationService
-from app.services.integrations.teams_package import build_package
 
 router = APIRouter(prefix="/api/v1", tags=["integrations"])
 
@@ -31,11 +30,10 @@ OAUTH_COOKIE = "ph_integration_oauth"
 OAUTH_COOKIE_SECONDS = 15 * 60
 PROVIDER_PATHS: dict[str, IntegrationProvider] = {
     "slack": IntegrationProvider.SLACK,
-    "teams": IntegrationProvider.TEAMS,
     "microsoft-mail": IntegrationProvider.MICROSOFT_MAIL,
 }
-ProviderPath = Literal["slack", "teams", "microsoft-mail"]
-ChatProviderPath = Literal["slack", "teams"]
+ProviderPath = Literal["slack", "microsoft-mail"]
+ChatProviderPath = Literal["slack"]
 ScopeType = Literal["PROJECT", "PROGRAM", "PORTFOLIO"]
 
 
@@ -121,27 +119,6 @@ def microsoft_mail_connect(
     return {"url": service.microsoft_url(purpose="mail", current_user=current_user, nonce=nonce, account_id=account_id)}
 
 
-@router.post("/accounts/{account_id}/integrations/teams/code", summary="A one-time code that links a Teams organization (owners)")
-def teams_code(
-    account_id: UUID, service: IntegrationService = Depends(integration_service), current_user: User = Depends(get_current_user)
-) -> dict[str, Any]:
-    return service.teams_connect_code(account_id=account_id, current_user=current_user)
-
-
-@router.get("/accounts/{account_id}/integrations/teams/app-package", summary="The Teams app package to upload to Teams (owners)")
-def teams_app_package(
-    account_id: UUID, service: IntegrationService = Depends(integration_service), current_user: User = Depends(get_current_user)
-) -> Response:
-    service.require_owner(account_id, current_user)
-    if not service.available()["teams"]:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Microsoft Teams isn't set up for Project Hub yet.")
-    return Response(
-        build_package(service.settings),
-        media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="project-hub-teams.zip"'},
-    )
-
-
 @router.delete("/accounts/{account_id}/integrations/{provider}", status_code=status.HTTP_204_NO_CONTENT, summary="Disconnect (owners)")
 def disconnect(
     account_id: UUID,
@@ -208,7 +185,7 @@ class LinkUpdate(BaseModel):
     dm_categories: list[str]
 
 
-@router.get("/accounts/{account_id}/integrations/me", summary="Your Slack and Teams links and calendar connections")
+@router.get("/accounts/{account_id}/integrations/me", summary="Your Slack link and calendar connections")
 def my_integrations(
     account_id: UUID,
     db: Session = Depends(get_db),
@@ -228,7 +205,7 @@ def _feeds_available(settings: Settings) -> bool:
     return bool(platform_secret(settings, "integration_state_secret"))
 
 
-@router.post("/accounts/{account_id}/integrations/me/links/confirm", summary="Link the Slack or Teams user who started it to you")
+@router.post("/accounts/{account_id}/integrations/me/links/confirm", summary="Link the Slack user who started it to you")
 def confirm_link(
     account_id: UUID,
     body: LinkConfirm,
@@ -249,7 +226,7 @@ def update_link(
     return service.update_link(account_id=account_id, provider=PROVIDER_PATHS[provider], current_user=current_user, dm_categories=body.dm_categories)
 
 
-@router.delete("/accounts/{account_id}/integrations/me/links/{provider}", status_code=status.HTTP_204_NO_CONTENT, summary="Unlink your Slack or Teams user")
+@router.delete("/accounts/{account_id}/integrations/me/links/{provider}", status_code=status.HTTP_204_NO_CONTENT, summary="Unlink your Slack user")
 def unlink(
     account_id: UUID,
     provider: ChatProviderPath,
@@ -354,15 +331,6 @@ async def slack_commands(request: Request, db: Session = Depends(get_db), settin
 async def slack_events(request: Request, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), http: Http = Depends(get_integrations_http)) -> JSONResponse:
     body = await verified_slack_body(request, settings)
     return JSONResponse(handle_slack_event(db, settings, http, json.loads(body or b"{}")))
-
-
-@router.post("/integrations/teams/messages", include_in_schema=False)
-async def teams_messages(request: Request, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), http: Http = Depends(get_integrations_http)) -> Response:
-    activity = await request.json()
-    if not isinstance(activity, dict) or not teams.verify_activity(settings, http, request.headers.get("Authorization"), activity):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
-    handle_teams_activity(db, settings, http, activity)
-    return Response(status_code=status.HTTP_200_OK)
 
 
 @router.get("/calendar/{token}.ics", include_in_schema=False)

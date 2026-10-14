@@ -97,12 +97,12 @@ class Settings(BaseSettings):
     stripe_ai_usage_price_id: str = Field(default="", validation_alias="STRIPE_AI_USAGE_PRICE_ID")
     stripe_ai_meter_event_name: str = Field(default="project_hub_ai_usage", validation_alias="STRIPE_AI_METER_EVENT_NAME")
 
-    # Slack, Microsoft Teams and Microsoft 365 (app/services/integrations). Tokens customers connect are encrypted
+    # Slack and Microsoft 365 (app/services/integrations). Tokens customers connect are encrypted
     # with INTEGRATION_KMS_KEY_ID; locally (ENVIRONMENT=local) a dev secret stands in for KMS.
     integration_kms_key_id: str = Field(default="", validation_alias="INTEGRATION_KMS_KEY_ID")
     integration_local_secret: str = Field(default="local-dev-only-integration-secret", validation_alias="INTEGRATION_LOCAL_SECRET")
     # Deployed, the secrets below are SSM SecureStrings under this path (slack-client-secret, slack-signing-secret,
-    # microsoft-client-secret, teams-bot-password, state-secret), read the first time one is needed.
+    # microsoft-client-secret, state-secret), read the first time one is needed.
     integration_secrets_path: str = Field(default="", validation_alias="INTEGRATION_SECRETS_PATH")
     # Signs OAuth state and account-linking links. Locally a fixed dev value.
     integration_state_secret: str = Field(default="", validation_alias="INTEGRATION_STATE_SECRET")
@@ -112,10 +112,6 @@ class Settings(BaseSettings):
     # A multi-tenant Microsoft Entra app for Outlook calendar sync and sending mail (Microsoft Graph).
     microsoft_client_id: str = Field(default="", validation_alias="MICROSOFT_CLIENT_ID")
     microsoft_client_secret: str = Field(default="", validation_alias="MICROSOFT_CLIENT_SECRET")
-    # The Teams bot's own Entra app (an Azure Bot resource). Single-tenant bots use their tenant id here.
-    teams_bot_app_id: str = Field(default="", validation_alias="TEAMS_BOT_APP_ID")
-    teams_bot_password: str = Field(default="", validation_alias="TEAMS_BOT_PASSWORD")
-    teams_bot_tenant: str = Field(default="botframework.com", validation_alias="TEAMS_BOT_TENANT")
 
     model_config = SettingsConfigDict(
         env_file=".env",

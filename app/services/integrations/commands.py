@@ -1,4 +1,4 @@
-"""Commands people type in Slack (/projecthub ...) or send the Teams bot, run as their linked Project Hub user.
+"""Commands people type in Slack (/projecthub ...), run as their linked Project Hub user.
 
 Every command calls the same services as the app (the assistant's read tools for lookups, TaskService for
 creating), so permissions apply exactly as they do in the UI.

@@ -1,4 +1,4 @@
-"""Sending the outbox to Slack and Teams (the integrations worker, every minute).
+"""Sending the outbox to Slack (the integrations worker, every minute).
 
 Rows are claimed in batches so overlapping runs don't send twice. Each is rendered at send time, as the person
 it is checked against, so a change of access between queueing and sending is respected. A token the provider no
@@ -18,21 +18,18 @@ from app.models.activity_log import ActivityLog
 from app.models.integration import (
     ConnectionStatus,
     IntegrationConnection,
-    IntegrationConversation,
     IntegrationDestination,
     IntegrationMessage,
-    IntegrationProvider,
     IntegrationUserLink,
     MessageStatus,
 )
 from app.models.notification import Notification
 from app.models.user import User
 from app.services.integrations.http import Http, requests_http
-from app.services.integrations.messages import ChatMessage, to_adaptive_card, to_slack_blocks
+from app.services.integrations.messages import ChatMessage, to_slack_blocks
 from app.services.integrations.render import render_activity, render_notification, render_overdue
 from app.services.integrations.secrets import TokenCipher
 from app.services.integrations.slack import SlackClient, SlackError
-from app.services.integrations.teams import TeamsClient, TeamsError
 from app.services.notification_preferences import category_for
 
 logger = logging.getLogger(__name__)
@@ -161,31 +158,14 @@ class IntegrationDelivery:
         return connection, chat, lambda c: self.to_person(connection, link, c)
 
     def to_channel(self, connection: IntegrationConnection, channel_id: str, chat: ChatMessage) -> None:
-        if connection.provider == IntegrationProvider.SLACK.value:
-            self.slack_send(connection, channel_id, chat)
-            return
-        conversation = self.db.scalar(
-            select(IntegrationConversation).where(
-                IntegrationConversation.provider == IntegrationProvider.TEAMS.value,
-                IntegrationConversation.external_id == channel_id,
-            )
-        )
-        if conversation is None or not conversation.is_active:
-            raise SendFailed("The bot is no longer in this Teams channel.", retry=False)
-        self.teams_send(conversation, chat)
+        self.slack_send(connection, channel_id, chat)
 
     def to_person(self, connection: IntegrationConnection, link: IntegrationUserLink, chat: ChatMessage) -> None:
-        if connection.provider == IntegrationProvider.SLACK.value:
-            try:
-                channel = self.slack(connection).open_dm(link.external_user_id)
-            except SlackError as error:
-                raise SendFailed(f"Slack: {error.error}", retry=not error.is_auth, connection_broken=error.is_auth) from error
-            self.slack_send(connection, channel, chat)
-            return
-        conversation = self.db.get(IntegrationConversation, link.conversation_id) if link.conversation_id else None
-        if conversation is None:
-            raise SendFailed("No Teams chat with this person.", retry=False)
-        self.teams_send(conversation, chat)
+        try:
+            channel = self.slack(connection).open_dm(link.external_user_id)
+        except SlackError as error:
+            raise SendFailed(f"Slack: {error.error}", retry=not error.is_auth, connection_broken=error.is_auth) from error
+        self.slack_send(connection, channel, chat)
 
     def slack(self, connection: IntegrationConnection) -> SlackClient:
         if connection.id not in self._slack:
@@ -201,16 +181,6 @@ class IntegrationDelivery:
         except SlackError as error:
             gone = error.error in ("channel_not_found", "is_archived", "not_in_channel")
             raise SendFailed(f"Slack: {error.error}", retry=not (error.is_auth or gone), connection_broken=error.is_auth) from error
-
-    def teams_send(self, conversation: IntegrationConversation, chat: ChatMessage) -> None:
-        try:
-            TeamsClient(self.settings, self.http).send_card(
-                conversation.service_url, conversation.external_id, to_adaptive_card(chat, self.settings), summary=chat.title
-            )
-        except TeamsError as error:
-            if error.is_gone:
-                conversation.is_active = False
-            raise SendFailed(f"Teams: {error}", retry=not error.is_gone) from error
 
     def mark_broken(self, message: IntegrationMessage, reason: str) -> None:
         connection_id = None

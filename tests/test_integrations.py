@@ -1,9 +1,7 @@
 import hashlib
 import hmac
-import io
 import json
 import time
-import zipfile
 from collections.abc import Callable, Generator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -31,7 +29,6 @@ from app.models.user import User
 from app.routers.integrations import OAUTH_COOKIE, get_integrations_http
 from app.services.email_sender import NoEmailRoute, OutgoingEmail
 from app.services.integrations import secrets as integration_secrets
-from app.services.integrations import teams
 from app.services.integrations.calendar import CalendarSyncService, render_ics, CalendarItem
 from app.services.integrations.delivery import IntegrationDelivery
 from app.services.integrations.events import EventScanner
@@ -74,7 +71,6 @@ class FakeHttp:
 
 @pytest.fixture()
 def settings() -> Settings:
-    teams.forget_cached_credentials()
     integration_secrets.forget_cached_secrets()
     return Settings(
         auth_mode="local",
@@ -87,8 +83,6 @@ def settings() -> Settings:
         slack_signing_secret=SIGNING,
         microsoft_client_id="ms-client",
         microsoft_client_secret="ms-secret",
-        teams_bot_app_id="bot-app-id",
-        teams_bot_password="bot-password",
         email_token_secret="email-secret",
     )
 
@@ -96,7 +90,6 @@ def settings() -> Settings:
 @pytest.fixture()
 def http() -> FakeHttp:
     fake = FakeHttp()
-    fake.on("POST", "https://login.microsoftonline.com/botframework.com/", {"access_token": "bot-token", "expires_in": 3600})
     return fake
 
 
@@ -288,105 +281,6 @@ def test_link_tokens_are_signed_and_expire(settings: Settings) -> None:
     assert unsign(settings, "slack-install", token) is None
     assert unsign(settings, "user-link", token[:-2] + "xx") is None
     assert unsign(settings, "user-link", sign(settings, "user-link", {}, ttl_seconds=-1)) is None
-
-
-# Teams ----------------------------------------------------------------------------------------------------
-
-TEAM = {"id": "19:team@thread.tacv2", "name": "Apollo team"}
-SERVICE = "https://smba.trafficmanager.net/amer/"
-
-
-def teams_activity(client: TestClient, activity: dict) -> None:
-    body = {"serviceUrl": SERVICE, "recipient": {"id": "28:bot"}, "channelData": {"tenant": {"id": "tenant-1"}}, **activity}
-    response = client.post("/api/v1/integrations/teams/messages", json=body, headers={"Authorization": "Bearer x"})
-    assert response.status_code == 200, response.text
-
-
-@pytest.fixture()
-def trusted_teams(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(teams, "verify_activity", lambda settings, http, authorization, activity: True)
-
-
-def test_teams_bot_is_connected_with_a_code_and_posts_to_channels(client: TestClient, db_session: Session, settings: Settings, http: FakeHttp, account: dict, trusted_teams: None) -> None:
-    http.on("GET", f"{SERVICE}v3/teams/", {"conversations": [{"id": TEAM["id"], "name": None}, {"id": "19:dev@thread.tacv2", "name": "Dev"}]})
-    http.on("POST", f"{SERVICE}v3/conversations/", {"id": "activity-1"})
-    teams_activity(client, {"type": "conversationUpdate", "membersAdded": [{"id": "28:bot"}], "conversation": {"id": TEAM["id"]}, "channelData": {"tenant": {"id": "tenant-1"}, "team": TEAM}})
-
-    code = client.post(account_path(account, "/teams/code")).json()["code"]
-    teams_activity(client, {"type": "message", "text": f"<at>Project Hub</at> connect {code}", "conversation": {"id": TEAM["id"]}, "from": {"name": "Sam"}, "channelData": {"tenant": {"id": "tenant-1"}, "team": TEAM}})
-    assert "Connected" in http.sent(f"{SERVICE}v3/conversations/")[-1]["json"]["text"]
-    channels = client.get(account_path(account, "/teams/channels")).json()
-    assert [c["name"] for c in channels] == ["Apollo team › Dev", "Apollo team › General"]
-
-    response = client.post(
-        account_path(account, "/destinations"),
-        json={"provider": "teams", "channel_id": "19:dev@thread.tacv2", "channel_name": "Dev", "scope_type": "PROGRAM", "scope_id": account["program"]["id"], "events": ["task_created"]},
-    )
-    assert response.status_code == 201, response.text
-    EventScanner(db_session).scan()
-    post(client, f"/api/v1/projects/{account['apollo']['id']}/tasks", {"name": "Plan sprint"})
-    assert run_worker(db_session, settings, http)["sent"] == 1
-    card = http.sent(f"{SERVICE}v3/conversations/19:dev@thread.tacv2/activities")[-1]
-    assert card["headers"]["Authorization"] == "Bearer bot-token"
-    assert "Plan sprint" in json.dumps(card["json"]["attachments"][0]["content"])
-
-    # A code works once.
-    teams_activity(client, {"type": "message", "text": f"connect {code}", "conversation": {"id": TEAM["id"]}, "channelData": {"tenant": {"id": "tenant-1"}, "team": TEAM}})
-    assert "isn't valid" in http.sent(f"{SERVICE}v3/conversations/")[-1]["json"]["text"]
-
-
-def test_teams_user_links_in_a_personal_chat(client: TestClient, db_session: Session, http: FakeHttp, account: dict, trusted_teams: None) -> None:
-    http.on("POST", f"{SERVICE}v3/conversations/", {"id": "activity-1"})
-    code = client.post(account_path(account, "/teams/code")).json()["code"]
-    personal = {"conversation": {"id": "a:personal", "conversationType": "personal"}, "from": {"aadObjectId": "aad-1", "name": "Alex"}}
-    teams_activity(client, {"type": "message", "text": f"connect {code}", **personal})
-    alex = add_member(db_session, account, "alex@example.com", modules=["TASKS"])
-
-    teams_activity(client, {"type": "message", "text": "link", **personal})
-    card = http.sent(f"{SERVICE}v3/conversations/a:personal/activities")[-1]["json"]["attachments"][0]["content"]
-    token = parse_qs(urlparse(card["actions"][0]["url"]).query)["link"][0]
-    with acting_as(alex):
-        assert client.post(account_path(account, "/me/links/confirm"), json={"token": token}).status_code == 200
-
-    teams_activity(client, {"type": "message", "text": "mine", **personal})
-    reply = http.sent(f"{SERVICE}v3/conversations/a:personal/activities")[-1]["json"]
-    assert "Nothing overdue" in json.dumps(reply)
-    link = db_session.scalars(select(IntegrationUserLink)).one()
-    assert link.conversation_id is not None and link.external_user_id == "aad-1"
-
-
-def test_teams_tokens_are_verified(settings: Settings) -> None:
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from jose import jwk, jwt
-
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
-    public = jwk.construct(key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo), "RS256").to_dict()
-    public.update(kid="k1", use="sig")
-    fake = FakeHttp()
-    fake.on("GET", teams.OPENID_CONFIG_URL, {"jwks_uri": "https://login.botframework.com/v1/keys"})
-    fake.on("GET", "https://login.botframework.com/v1/keys", {"keys": [public]})
-    activity = {"serviceUrl": SERVICE}
-
-    def token(**claims: Any) -> str:
-        body = {"iss": teams.ISSUER, "aud": "bot-app-id", "exp": int(time.time()) + 600, "serviceurl": SERVICE, **claims}
-        return "Bearer " + jwt.encode(body, pem.decode(), algorithm="RS256", headers={"kid": "k1"})
-
-    assert teams.verify_activity(settings, fake, token(), activity)
-    assert not teams.verify_activity(settings, fake, token(aud="someone-else"), activity)
-    assert not teams.verify_activity(settings, fake, token(serviceurl="https://evil.example.com/"), activity)
-    assert not teams.verify_activity(settings, fake, token(), {"serviceUrl": "https://evil.example.com/"})
-    assert not teams.verify_activity(settings, fake, None, activity)
-
-
-def test_teams_app_package_has_the_bot(client: TestClient, account: dict) -> None:
-    response = client.get(account_path(account, "/teams/app-package"))
-    archive = zipfile.ZipFile(io.BytesIO(response.content))
-    assert sorted(archive.namelist()) == ["color.png", "manifest.json", "outline.png"]
-    manifest = json.loads(archive.read("manifest.json"))
-    assert manifest["bots"][0]["botId"] == "bot-app-id" and manifest["validDomains"] == ["app.example.com"]
-    assert archive.read("color.png").startswith(b"\x89PNG")
 
 
 # Calendars ------------------------------------------------------------------------------------------------

@@ -48,8 +48,6 @@ jobs:
       # integration stays off.
       SLACK_CLIENT_ID: ${{ vars.SLACK_CLIENT_ID }}
       MICROSOFT_CLIENT_ID: ${{ vars.MICROSOFT_CLIENT_ID }}
-      TEAMS_BOT_APP_ID: ${{ vars.TEAMS_BOT_APP_ID }}
-      TEAMS_BOT_TENANT: ${{ vars.TEAMS_BOT_TENANT || 'botframework.com' }}
       # Inbox for CloudWatch alarm emails (confirm the SNS subscription once).
       ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
 

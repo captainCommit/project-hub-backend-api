@@ -50,7 +50,7 @@ class NotificationService:
         self.db.add(notification)
         self.db.flush()
         self.db.refresh(notification)
-        # Slack and Teams direct messages, for people who linked them; sent by the integrations worker.
+        # Slack direct messages, for people who linked Slack; sent by the integrations worker.
         from app.services.integrations.events import queue_direct_messages
 
         queue_direct_messages(self.db, notification)

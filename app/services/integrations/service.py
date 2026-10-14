@@ -1,14 +1,11 @@
 """Managing integrations: what owners set up for the account, and what each person links for themselves.
 
-Owners connect Slack (OAuth install), Teams (a one-time code typed to the bot) and a Microsoft 365 mailbox for
-email, and choose which channels get which events. Everyone can link their own Slack or Teams user (started from
-Slack or Teams, confirmed in the app while signed in, so both sides are proven), choose which notifications they
+Owners connect Slack (OAuth install) and a Microsoft 365 mailbox for email, and choose which Slack channels get
+which events. Everyone can link their own Slack user (started from Slack, confirmed in the app while signed in, so
+both sides are proven), choose which notifications they
 get as direct messages, and connect their calendar (see app.services.integrations.calendar).
 """
 
-import json
-import secrets as pysecrets
-from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -21,10 +18,8 @@ from app.models.integration import (
     CHANNEL_EVENTS,
     ConnectionStatus,
     IntegrationConnection,
-    IntegrationConversation,
     IntegrationDestination,
     IntegrationProvider,
-    IntegrationState,
     IntegrationUserLink,
 )
 from app.models.portfolio import Portfolio
@@ -36,12 +31,10 @@ from app.services.integrations import microsoft, slack
 from app.services.integrations.http import Http, requests_http
 from app.services.integrations.secrets import IntegrationNotConfigured, TokenCipher, platform_secret, sign, unsign
 from app.services.integrations.slack import SlackClient, SlackError
-from app.services.integrations.teams import TeamsClient, TeamsError
 from app.services.notification_preferences import EMAIL_CATEGORY_DEFAULTS
 
 STATE_TTL = 15 * 60
 LINK_TTL = 15 * 60
-TEAMS_CODE_TTL = timedelta(hours=1)
 SETTINGS_PATH = "/Account?tab=integrations"
 CONNECTED_APPS_PATH = "/Account?tab=connected"
 DM_CATEGORIES = list(EMAIL_CATEGORY_DEFAULTS)
@@ -64,7 +57,6 @@ class IntegrationService:
         """Which integrations the platform has app credentials for."""
         return {
             "slack": bool(self.settings.slack_client_id and platform_secret(self.settings, "slack_client_secret")),
-            "teams": bool(self.settings.teams_bot_app_id),
             "microsoft": bool(self.settings.microsoft_client_id and platform_secret(self.settings, "microsoft_client_secret")),
         }
 
@@ -216,49 +208,15 @@ class IntegrationService:
     def channels(self, *, account_id: UUID, provider: IntegrationProvider, current_user: User) -> list[dict[str, Any]]:
         self.require_owner(account_id, current_user)
         connection = self.require_connection(account_id, provider)
-        if provider == IntegrationProvider.SLACK:
-            try:
-                client = SlackClient(self.cipher().decrypt(account_id, connection.encrypted_token or b""), self.http)
-                return client.channels()
-            except SlackError as exc:
-                if exc.is_auth:
-                    connection.status = ConnectionStatus.ERROR.value
-                    connection.last_error = f"Slack refused the connection ({exc.error})."
-                    self.db.commit()
-                raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Slack didn't list the channels ({exc.error}).") from exc
-        self.refresh_teams_channels(connection.external_id)
-        conversations = self.db.scalars(
-            select(IntegrationConversation)
-            .where(
-                IntegrationConversation.provider == IntegrationProvider.TEAMS.value,
-                IntegrationConversation.tenant_id == connection.external_id,
-                IntegrationConversation.kind == "CHANNEL",
-                IntegrationConversation.is_active.is_(True),
-            )
-            .order_by(IntegrationConversation.team_name, IntegrationConversation.name)
-        ).all()
-        return [{"id": c.external_id, "name": f"{c.team_name or 'Team'} › {c.name or 'General'}", "is_private": False} for c in conversations]
-
-    def refresh_teams_channels(self, tenant_id: str) -> None:
-        """Ask Teams for each known team's channels, so channels added after the bot was installed show up."""
-        teams = self.db.execute(
-            select(IntegrationConversation.team_id, IntegrationConversation.team_name, IntegrationConversation.service_url)
-            .where(
-                IntegrationConversation.tenant_id == tenant_id,
-                IntegrationConversation.kind == "CHANNEL",
-                IntegrationConversation.is_active.is_(True),
-                IntegrationConversation.team_id.is_not(None),
-            )
-            .distinct()
-        ).all()
-        for team_id, team_name, service_url in teams:
-            try:
-                TeamsBotDirectory(self.db, self.settings, self.http).sync_team_channels(
-                    tenant_id=tenant_id, team_id=team_id, team_name=team_name, service_url=service_url
-                )
-            except TeamsError:
-                continue
-
+        try:
+            client = SlackClient(self.cipher().decrypt(account_id, connection.encrypted_token or b""), self.http)
+            return client.channels()
+        except SlackError as exc:
+            if exc.is_auth:
+                connection.status = ConnectionStatus.ERROR.value
+                connection.last_error = f"Slack refused the connection ({exc.error})."
+                self.db.commit()
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Slack didn't list the channels ({exc.error}).") from exc
     def require_connection(self, account_id: UUID, provider: IntegrationProvider) -> IntegrationConnection:
         connection = self.connection(account_id, provider)
         if connection is None:
@@ -277,15 +235,6 @@ class IntegrationService:
         record = self.db.get(model, scope_id)
         if record is None or record.account_id != account_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{scope_type.title()} not found.")
-        if provider == IntegrationProvider.TEAMS:
-            known = self.db.scalar(
-                select(IntegrationConversation).where(
-                    IntegrationConversation.external_id == values["channel_id"], IntegrationConversation.tenant_id == connection.external_id
-                )
-            )
-            if known is None:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Add the Project Hub app to that team first.")
-
         if destination_id is None:
             destination = IntegrationDestination(account_id=account_id, created_by=current_user.id)
             self.db.add(destination)
@@ -315,58 +264,14 @@ class IntegrationService:
         self.db.delete(self.get_destination(account_id, destination_id))
         self.db.commit()
 
-    # Teams connect code ----------------------------------------------------------------------------------
-
-    def teams_connect_code(self, *, account_id: UUID, current_user: User) -> dict[str, Any]:
-        """A short code an owner types to the bot in Teams, which ties their Microsoft tenant to this account."""
-        self.require_owner(account_id, current_user)
-        if not self.available()["teams"]:
-            raise not_configured("Microsoft Teams")
-        code = "".join(pysecrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(8))
-        expires = datetime.now(UTC) + TEAMS_CODE_TTL
-        self.db.add(
-            IntegrationState(
-                key=f"teams-code:{code}",
-                value=json.dumps({"account_id": str(account_id), "user_id": str(current_user.id), "expires": expires.isoformat()}),
-            )
-        )
-        self.db.execute(delete(IntegrationState).where(IntegrationState.key.like("teams-code:%"), IntegrationState.updated_at < datetime.now(UTC) - timedelta(days=1)))
-        self.db.commit()
-        return {"code": code, "expires_at": expires}
-
-    def use_teams_code(self, code: str, *, tenant_id: str, tenant_name: str | None) -> IntegrationConnection | None:
-        state = self.db.get(IntegrationState, f"teams-code:{code.strip().upper()}")
-        if state is None:
-            return None
-        data = json.loads(state.value)
-        self.db.delete(state)
-        if datetime.fromisoformat(data["expires"]) < datetime.now(UTC):
-            self.db.commit()
-            return None
-        account_id = UUID(data["account_id"])
-        connection = self.connection(account_id, IntegrationProvider.TEAMS)
-        if connection is not None and connection.external_id != tenant_id:
-            self.db.delete(connection)
-            self.db.flush()
-            connection = None
-        if connection is None:
-            connection = IntegrationConnection(account_id=account_id, provider=IntegrationProvider.TEAMS.value, external_id=tenant_id)
-            self.db.add(connection)
-        connection.external_name = tenant_name or connection.external_name or "Microsoft Teams"
-        connection.status = ConnectionStatus.ACTIVE.value
-        connection.last_error = None
-        connection.connected_by = UUID(data["user_id"])
-        self.db.commit()
-        return connection
-
     # Personal links (direct messages and commands) -------------------------------------------------------
 
-    def link_url(self, *, provider: IntegrationProvider, workspace_id: str, external_user_id: str, name: str | None, conversation_id: UUID | None = None) -> str:
-        """The link a Slack or Teams user opens, signed in, to link themselves to their Project Hub user."""
+    def link_url(self, *, provider: IntegrationProvider, workspace_id: str, external_user_id: str, name: str | None) -> str:
+        """The link a Slack user opens, signed in, to link themselves to their Project Hub user."""
         token = sign(
             self.settings,
             "user-link",
-            {"p": provider.value, "w": workspace_id, "x": external_user_id, "n": name, "c": str(conversation_id) if conversation_id else None},
+            {"p": provider.value, "w": workspace_id, "x": external_user_id, "n": name},
             ttl_seconds=LINK_TTL,
         )
         return f"{self.settings.app_url.rstrip('/')}{CONNECTED_APPS_PATH}&link={token}"
@@ -375,13 +280,13 @@ class IntegrationService:
         access_for(self.db, account_id=account_id, user=current_user)
         payload = unsign(self.settings, "user-link", token)
         if payload is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This link has expired. Ask for a new one in Slack or Teams.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This link has expired. Ask for a new one in Slack.")
         provider = IntegrationProvider(payload["p"])
         connection = self.connection(account_id, provider)
         if connection is None or connection.external_id != payload["w"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"This account isn't connected to that {'Slack workspace' if provider == IntegrationProvider.SLACK else 'Teams organization'}. Switch to the right account and open the link again.",
+                detail="This account isn't connected to that Slack workspace. Switch to the right account and open the link again.",
             )
         self.db.execute(
             delete(IntegrationUserLink).where(
@@ -395,7 +300,6 @@ class IntegrationService:
             user_id=current_user.id,
             external_user_id=payload["x"],
             external_name=payload.get("n"),
-            conversation_id=UUID(payload["c"]) if payload.get("c") else None,
         )
         self.db.add(link)
         self.db.commit()
@@ -413,7 +317,7 @@ class IntegrationService:
     def my_links(self, *, account_id: UUID, current_user: User) -> dict[str, Any]:
         access_for(self.db, account_id=account_id, user=current_user)
         result: dict[str, Any] = {"available": self.available(), "dm_categories": DM_CATEGORIES}
-        for provider in (IntegrationProvider.SLACK, IntegrationProvider.TEAMS):
+        for provider in (IntegrationProvider.SLACK,):
             connection = self.connection(account_id, provider)
             link = (
                 self.db.scalar(
@@ -506,60 +410,4 @@ class IntegrationService:
         return f"{SETTINGS_PATH}&connected=microsoft-mail"
 
 
-class TeamsBotDirectory:
-    """What the bot knows about where it is installed: teams, their channels, and personal chats."""
-
-    def __init__(self, db: Session, settings: Settings, http: Http) -> None:
-        self.db = db
-        self.settings = settings
-        self.http = http
-
-    def upsert(self, *, kind: str, tenant_id: str, conversation_id: str, service_url: str, **fields: Any) -> IntegrationConversation:
-        conversation = self.db.scalar(
-            select(IntegrationConversation).where(
-                IntegrationConversation.provider == IntegrationProvider.TEAMS.value, IntegrationConversation.external_id == conversation_id
-            )
-        )
-        if conversation is None:
-            conversation = IntegrationConversation(provider=IntegrationProvider.TEAMS.value, kind=kind, external_id=conversation_id)
-            self.db.add(conversation)
-        conversation.tenant_id = tenant_id
-        conversation.service_url = service_url
-        conversation.is_active = True
-        for name, value in fields.items():
-            if value is not None:
-                setattr(conversation, name, value)
-        self.db.flush()
-        return conversation
-
-    def sync_team_channels(self, *, tenant_id: str, team_id: str, team_name: str | None, service_url: str) -> None:
-        from app.services.integrations.teams import bot_token, service_url_allowed
-
-        if not service_url_allowed(service_url):
-            return
-        response = self.http(
-            "GET",
-            f"{service_url.rstrip('/')}/v3/teams/{team_id}/conversations",
-            headers={"Authorization": f"Bearer {bot_token(self.settings, self.http)}"},
-        )
-        if not response.ok or not isinstance(response.data, dict):
-            raise TeamsError("Teams didn't list the channels.", status=response.status)
-        for channel in response.data.get("conversations") or []:
-            self.upsert(
-                kind="CHANNEL",
-                tenant_id=tenant_id,
-                conversation_id=channel["id"],
-                service_url=service_url,
-                team_id=team_id,
-                team_name=team_name,
-                name=channel.get("name") or "General",
-            )
-        self.db.commit()
-
-    def team_removed(self, team_id: str) -> None:
-        for conversation in self.db.scalars(select(IntegrationConversation).where(IntegrationConversation.team_id == team_id)).all():
-            conversation.is_active = False
-        self.db.commit()
-
-
-__all__ = ["IntegrationService", "TeamsBotDirectory", "TeamsClient"]
+__all__ = ["IntegrationService"]

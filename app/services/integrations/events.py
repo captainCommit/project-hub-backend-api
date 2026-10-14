@@ -1,8 +1,8 @@
-"""Deciding what to send to Slack and Teams. Nothing is sent here; rows are added to the outbox (IntegrationMessage).
+"""Deciding what to send to Slack. Nothing is sent here; rows are added to the outbox (IntegrationMessage).
 
 - Channel events come from the activity log, which every change in the app already goes through. The worker scans
   it each minute from where it last stopped (with a few minutes' overlap, made harmless by a unique constraint).
-- Direct messages follow notifications: when a notification is created for someone who linked Slack or Teams and
+- Direct messages follow notifications: when a notification is created for someone who linked Slack and
   wants that kind as a direct message, a row is added in the same transaction.
 - Overdue summaries go to channels once a day, at the digest hour of the person who set the channel up.
 """
@@ -178,7 +178,7 @@ class EventScanner:
 
 
 def queue_direct_messages(db: Session, notification: Notification) -> int:
-    """Called as a notification is created: queue it for the person's linked Slack and Teams, if they want it."""
+    """Called as a notification is created: queue it for the person's linked Slack, if they want it."""
     category = category_for(notification.notification_type)
     if category is None:
         return 0

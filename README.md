@@ -442,18 +442,18 @@ assistant pauses until the next month.
 
 ## Integrations
 
-Slack, Microsoft Teams and Outlook (`app/services/integrations/`). Account owners set them up under Account >
-Integrations; each person links their own Slack or Teams user and calendar under Account > Connected apps.
+Slack and Outlook (`app/services/integrations/`). Account owners set them up under Account > Integrations; each
+person links their own Slack user and calendar under Account > Connected apps.
 
-- **Channel updates.** Owners map a Slack or Teams channel to a portfolio, program or project and pick events
+- **Channel updates.** Owners map a Slack channel to a portfolio, program or project and pick events
   (new tasks, status changes, new risks or only high ones, issues, decisions, comments, project status, a daily
   overdue summary). The `integrations` Lambda scans the activity log every minute, queues matching events in
   `integration_messages`, and sends them. Each one is checked when it's sent against what the person who set up
   the channel can see.
-- **Direct messages and commands.** People link themselves by typing `/projecthub link` in Slack, or sending
-  `link` to the bot in Teams, then opening the link while signed in. Linked people get the notification kinds they
-  choose (mentions and assignments by default) as direct messages. Commands are `mine`, `search <words>`,
-  `new <task> in <project>` and `help`, and they run as the linked user.
+- **Direct messages and commands.** People link themselves by typing `/projecthub link` in Slack, then opening
+  the link while signed in. Linked people get the notification kinds they choose (mentions and assignments by
+  default) as direct messages. Commands are `mine`, `search <words>`, `new <task> in <project>` and `help`, and
+  they run as the linked user.
 - **Calendars.** Anyone can turn on a private ICS feed URL. Outlook users can instead connect Microsoft 365, and
   `calendarSync` (every 15 minutes) writes their due dates and milestones into a "Project Hub" calendar. The sync
   only writes into Outlook; it never reads changes back.
@@ -474,11 +474,7 @@ Setup per environment. Public IDs go in GitHub `dev` variables; secrets go in SS
    → `<APP_URL>/api/v1/integrations/slack/events` with the bot events `app_uninstalled` and `tokens_revoked`.
    Give it these bot scopes: `chat:write chat:write.public channels:read groups:read im:write users:read commands`.
    Set `SLACK_CLIENT_ID`, and store `slack-client-secret` and `slack-signing-secret` in SSM.
-2. **Teams**: create an Azure Bot. Its messaging endpoint is `<APP_URL>/api/v1/integrations/teams/messages`.
-   Turn on the Microsoft Teams channel. Set `TEAMS_BOT_APP_ID`, and also `TEAMS_BOT_TENANT` for a single-tenant
-   bot. Store `teams-bot-password` in SSM. Owners download the app package from Account > Integrations, upload
-   it to Teams, then send the bot `connect <code>`.
-3. **Microsoft 365 (Outlook calendar, mail)**: register a multi-tenant Entra app. Its redirect URI is
+2. **Microsoft 365 (Outlook calendar, mail)**: register a multi-tenant Entra app. Its redirect URI is
    `<APP_URL>/api/v1/integrations/microsoft/callback`, with the delegated permissions `User.Read`,
    `Calendars.ReadWrite`, `Mail.Send` and `offline_access`. Set `MICROSOFT_CLIENT_ID`, and store
    `microsoft-client-secret` in SSM.

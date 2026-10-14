@@ -1,4 +1,4 @@
-"""Scheduled and event Lambda handlers: notification email, Slack/Teams delivery, calendars, AI (see serverless.yml).
+"""Scheduled and event Lambda handlers: notification email, Slack delivery, calendars, AI (see serverless.yml).
 
 Kept apart from app.main so these functions don't import FastAPI's routers on every cold start.
 """
@@ -104,7 +104,7 @@ def ai_housekeeping_handler(event: dict[str, Any], context: Any) -> dict[str, in
 
 
 def integrations_handler(event: dict[str, Any], context: Any) -> dict[str, int]:
-    """Every minute: queue channel updates from new activity, then send what's queued to Slack and Teams."""
+    """Every minute: queue channel updates from new activity, then send what's queued to Slack."""
     from app.services.integrations.delivery import IntegrationDelivery
     from app.services.integrations.events import EventScanner
 

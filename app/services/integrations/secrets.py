@@ -1,6 +1,6 @@
 """Secrets for integrations: the platform's app credentials, customers' tokens, and signed links.
 
-- Platform credentials (Slack client secret, Microsoft client secret, Teams bot password, ...) come from the
+- Platform credentials (Slack client secret, Microsoft client secret, ...) come from the
   environment locally, or from SSM SecureStrings under INTEGRATION_SECRETS_PATH, fetched in one call the first
   time any is needed (not at start-up, so cold starts don't pay for them).
 - Customers' tokens (Slack bot tokens, Microsoft refresh tokens) are encrypted with a KMS key kept for them, with
@@ -23,7 +23,6 @@ SECRET_NAMES = {
     "slack_client_secret": "slack-client-secret",
     "slack_signing_secret": "slack-signing-secret",
     "microsoft_client_secret": "microsoft-client-secret",
-    "teams_bot_password": "teams-bot-password",
     "integration_state_secret": "state-secret",
 }
 LOCAL_STATE_SECRET = "local-dev-only-integration-state-secret"

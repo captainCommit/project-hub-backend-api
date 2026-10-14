@@ -1,11 +1,10 @@
-"""Slack, Microsoft Teams and Microsoft 365 connections, and what they deliver.
+"""Slack and Microsoft 365 connections, and what they deliver.
 
-- IntegrationConnection: an account's Slack workspace, Teams tenant, or Microsoft 365 mailbox for sending email.
-- IntegrationConversation: a Teams channel or personal chat the bot has been added to (Slack channels are listed
-  live from Slack instead, so they aren't stored).
-- IntegrationDestination: a channel that receives chosen events for one portfolio, program or project. Slack and
-  Teams share it. Events are checked at send time against what the person who set it up can see.
-- IntegrationUserLink: a Project Hub person linked to their Slack or Teams user, for direct messages and commands.
+- IntegrationConnection: an account's Slack workspace, or its Microsoft 365 mailbox for sending email.
+- IntegrationDestination: a Slack channel that receives chosen events for one portfolio, program or project (channels
+  themselves are listed live from Slack, not stored). Events are checked at send time against what the person who
+  set it up can see.
+- IntegrationUserLink: a Project Hub person linked to their Slack user, for direct messages and commands.
 - IntegrationMessage: the outbox. Requests and the event scanner only add rows; the worker sends them.
 - CalendarFeed / MicrosoftCalendarConnection / CalendarSyncEvent: Outlook (and any calendar app) seeing the
   person's due dates and milestones.
@@ -45,7 +44,6 @@ def _now() -> datetime:
 
 class IntegrationProvider(str, Enum):
     SLACK = "SLACK"
-    TEAMS = "TEAMS"
     # A Microsoft 365 mailbox that sends the account's notification email.
     MICROSOFT_MAIL = "MICROSOFT_MAIL"
 
@@ -56,7 +54,7 @@ class ConnectionStatus(str, Enum):
     ERROR = "ERROR"
 
 
-PROVIDERS_SQL = "('SLACK', 'TEAMS', 'MICROSOFT_MAIL')"
+PROVIDERS_SQL = "('SLACK', 'MICROSOFT_MAIL')"
 
 
 class IntegrationConnection(Base):
@@ -72,46 +70,16 @@ class IntegrationConnection(Base):
     account_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
     provider: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default=ConnectionStatus.ACTIVE.value)
-    # Slack team id, Teams tenant id, or the mailbox's Microsoft user id.
+    # Slack team id, or the mailbox's Microsoft user id.
     external_id: Mapped[str] = mapped_column(String(100), nullable=False)
     # Workspace name, tenant name, or mailbox address.
     external_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Slack bot token or Microsoft refresh token. Teams uses the platform's bot credentials, so has none.
+    # Slack bot token or Microsoft refresh token.
     encrypted_token: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     # Provider details worth keeping (Slack bot user id, granted scopes, ...).
     details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     connected_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_now, server_default=func.now(), onupdate=_now
-    )
-
-
-class IntegrationConversation(Base):
-    """A Teams conversation the bot can post to: a team channel, or one person's chat with the bot."""
-
-    __tablename__ = "integration_conversations"
-    __table_args__ = (
-        CheckConstraint("kind in ('CHANNEL', 'PERSONAL')", name="ck_integration_conversations_kind"),
-        UniqueConstraint("provider", "external_id", name="uq_integration_conversations_provider_external"),
-        Index("ix_integration_conversations_tenant", "provider", "tenant_id"),
-    )
-
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    provider: Mapped[str] = mapped_column(String(20), nullable=False, default=IntegrationProvider.TEAMS.value)
-    kind: Mapped[str] = mapped_column(String(10), nullable=False)
-    tenant_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    # The conversation id messages are posted to.
-    external_id: Mapped[str] = mapped_column(String(300), nullable=False)
-    service_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    team_id: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    team_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # PERSONAL only: the person's Microsoft Entra object id.
-    user_external_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # False once the bot is removed from the team.
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now, server_default=func.now(), onupdate=_now
@@ -149,7 +117,7 @@ class IntegrationDestination(Base):
     connection_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("integration_connections.id", ondelete="CASCADE"), nullable=False
     )
-    # Slack channel id, or the Teams conversation id.
+    # Slack channel id.
     channel_id: Mapped[str] = mapped_column(String(300), nullable=False)
     channel_name: Mapped[str] = mapped_column(String(255), nullable=False)
     portfolio_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=True)
@@ -184,10 +152,6 @@ class IntegrationUserLink(Base):
     # Slack user id, or Microsoft Entra object id.
     external_user_id: Mapped[str] = mapped_column(String(100), nullable=False)
     external_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Teams: the personal chat with the bot, where direct messages go.
-    conversation_id: Mapped[UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("integration_conversations.id", ondelete="SET NULL"), nullable=True
-    )
     dm_categories: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=lambda: list(DEFAULT_DM_CATEGORIES))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, server_default=func.now())
 
