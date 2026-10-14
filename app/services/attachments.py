@@ -251,12 +251,18 @@ class AttachmentService:
         self, target: ResolvedAttachmentEntity, current_user: User, *, contribute: bool = False
     ) -> None:
         """Seeing attachments needs view access to what they hang off; adding or removing needs edit access."""
-        scope = access_for(self.db, account_id=target.account_id, user=current_user)
         if target.entity_type == "SUPPORT_TICKET":
-            # Support tickets belong to the account, not to a project.
+            # Project Hub support reads and answers every ticket, without being a member of the account.
+            if current_user.is_platform_admin:
+                return
+            # Otherwise the same people who can open the ticket: whoever raised it, and the account's owners.
+            scope = access_for(self.db, account_id=target.account_id, user=current_user)
+            if target.record.requester_user_id != current_user.id and not scope.is_owner:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support ticket not found.")
             if contribute and scope.account_role not in ACCOUNT_WRITE_ROLES:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")
             return
+        scope = access_for(self.db, account_id=target.account_id, user=current_user)
         scope.require_entity(target.entity_type, target.record, contribute=contribute)
 
     def require_attachment_access(self, attachment: Attachment, current_user: User, *, contribute: bool = False) -> None:

@@ -1,7 +1,10 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from app.schemas.collaboration import TicketPriority, TicketStatus, upper_key
 
 
 class SeatCounts(BaseModel):
@@ -65,3 +68,31 @@ class PlatformAuditEventRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminSupportTicketRead(BaseModel):
+    id: UUID
+    account_id: UUID
+    account_name: str
+    ticket_number: str
+    category: str
+    subject: str | None
+    description: str
+    priority: str
+    status: str
+    requester_name: str
+    requester_email: str
+    message_count: int
+    # Not resolved or closed, and the customer spoke last.
+    needs_reply: bool
+    # Empty in lists.
+    messages: list[dict[str, Any]] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminSupportTicketUpdate(BaseModel):
+    status: TicketStatus | None = None
+    priority: TicketPriority | None = None
+
+    _normalize_keys = field_validator("priority", "status", mode="before")(upper_key)

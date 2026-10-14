@@ -526,6 +526,8 @@ def forget_access(db: Session) -> None:
 def can_see_entity(db: Session, *, account_id: UUID, user: User, entity_type: str, entity_id: UUID) -> bool:
     """Whether a user may view a record, for deciding who hears about it (e.g. notifications)."""
     entity_type = entity_type.upper()
+    if entity_type == "SUPPORT_TICKET":
+        return can_see_support_ticket(db, account_id=account_id, user=user, ticket_id=entity_id)
     model = Comment if entity_type == "COMMENT" else COMMENTABLE_MODELS.get(entity_type)
     record = db.get(model, entity_id) if model is not None else None
     if record is None:
@@ -535,3 +537,16 @@ def can_see_entity(db: Session, *, account_id: UUID, user: User, entity_type: st
     except HTTPException:
         return False
     return True
+
+
+def can_see_support_ticket(db: Session, *, account_id: UUID, user: User, ticket_id: UUID) -> bool:
+    """A support ticket is seen by the person who raised it and the account's owners (and Project Hub support)."""
+    from app.models.support_ticket import SupportTicket
+
+    ticket = db.get(SupportTicket, ticket_id)
+    if ticket is None or ticket.account_id != account_id:
+        return False
+    if ticket.requester_user_id == user.id:
+        return True
+    membership = AccountMemberRepository(db).get_for_user(account_id=account_id, user_id=user.id)
+    return membership is not None and membership.role == AccountMemberRole.OWNER.value

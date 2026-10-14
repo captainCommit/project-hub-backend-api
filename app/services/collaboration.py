@@ -200,19 +200,19 @@ class SupportTicketService:
         current_user: User,
     ) -> SupportTicket:
         ticket = self.get_ticket_or_404(ticket_id)
-        membership = self.require_ticket_access(ticket, current_user)
-        is_requester = ticket.requester_user_id == current_user.id
-        role = "user" if is_requester or membership.role not in ADMIN_ROLES else "support"
-        author = ticket.requester_name if role == "user" else (current_user.full_name or current_user.email)
+        self.require_ticket_access(ticket, current_user)
+        # Everyone in the account writes as the customer; only Project Hub support (SupportAdminService) replies
+        # as "support".
+        author = ticket.requester_name if ticket.requester_user_id == current_user.id else (current_user.full_name or current_user.email)
         message = self.message(
-            role=role,
+            role="user",
             author=author,
             content=message_in.content,
             attachments=[attachment.model_dump(mode="json") for attachment in message_in.attachments],
         )
         # Reassign rather than mutate so SQLAlchemy detects the JSON change.
         ticket.messages = [*ticket.messages, message]
-        ticket.status = "OPEN" if role == "user" else "AWAITING_RESPONSE"
+        ticket.status = "OPEN"
         self.db.commit()
         self.db.refresh(ticket)
         return ticket

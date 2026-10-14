@@ -31,6 +31,7 @@ from app.models.notification import EmailStatus, Notification, NotificationType
 from app.models.notification_preference import EmailFrequency
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
+from app.models.support_ticket import SupportTicket
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.tasks import TaskRepository
@@ -88,6 +89,7 @@ KIND_LABELS = {
     "CHANGE_REQUEST": "Change request",
     "REQUIREMENT": "Requirement",
     "TEST_CASE": "Test case",
+    "SUPPORT_TICKET": "Support ticket",
 }
 
 
@@ -160,6 +162,12 @@ def describe_item(db: Session, entity_type: str, entity_id: UUID) -> ItemRef | N
     if entity_type == "DECISION_OPTION":
         option = db.get(DecisionOption, entity_id)
         return describe_item(db, "DECISION", option.decision_id) if option else None
+    if entity_type == "SUPPORT_TICKET":
+        ticket = db.get(SupportTicket, entity_id)
+        if ticket is None:
+            return None
+        label = f"{ticket.ticket_number} · {_truncate(ticket.subject or ticket.description)}"
+        return ItemRef(kind="Support ticket", label=label, path=f"/LearnSupport?ticket={ticket.id}")
     model = COMMENTABLE_MODELS.get(entity_type)
     record: Any = db.get(model, entity_id) if model is not None else None
     if record is None:

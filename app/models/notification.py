@@ -16,6 +16,8 @@ class NotificationType(str, Enum):
     RISK_CREATED = "RISK_CREATED"
     DECISION_APPROVED = "DECISION_APPROVED"
     DUE_SOON = "DUE_SOON"
+    # Project Hub support answered the person's support ticket.
+    SUPPORT_REPLY = "SUPPORT_REPLY"
 
 
 class EmailStatus(str, Enum):
@@ -35,7 +37,7 @@ class Notification(Base):
         CheckConstraint(
             "notification_type in ("
             "'TASK_ASSIGNED', 'COMMENT_ADDED', 'MENTION', "
-            "'STATUS_CHANGED', 'RISK_CREATED', 'DECISION_APPROVED', 'DUE_SOON'"
+            "'STATUS_CHANGED', 'RISK_CREATED', 'DECISION_APPROVED', 'DUE_SOON', 'SUPPORT_REPLY'"
             ")",
             name="ck_notifications_notification_type",
         ),

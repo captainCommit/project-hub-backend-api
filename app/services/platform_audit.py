@@ -20,6 +20,8 @@ class PlatformAuditAction:
     ACCOUNT_BILLING_ENABLED = "account.billing_enabled"
     ACCOUNT_BILLING_DISABLED = "account.billing_disabled"
     ACCOUNT_BILLING_SYNCED = "account.billing_synced"
+    SUPPORT_TICKET_REPLIED = "support.ticket_replied"
+    SUPPORT_TICKET_UPDATED = "support.ticket_updated"
 
 
 def record_platform_action(
