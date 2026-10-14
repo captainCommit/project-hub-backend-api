@@ -75,7 +75,7 @@ class FakeHttp:
 @pytest.fixture()
 def settings() -> Settings:
     teams.forget_cached_credentials()
-    integration_secrets._ssm_secrets.cache_clear()
+    integration_secrets.forget_cached_secrets()
     return Settings(
         auth_mode="local",
         environment="local",

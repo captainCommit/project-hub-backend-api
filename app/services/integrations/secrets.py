@@ -14,7 +14,6 @@ import hashlib
 import hmac
 import json
 import time
-from functools import lru_cache
 from typing import Any
 from uuid import UUID
 
@@ -34,8 +33,16 @@ class IntegrationNotConfigured(Exception):
     """The platform hasn't been set up for this integration (no app credentials)."""
 
 
-@lru_cache
+# Secrets read from SSM, per path: (values, when read). Re-read after SECRETS_TTL_SECONDS, so a secret added
+# (or rotated) after a container started is picked up without a redeploy.
+SECRETS_TTL_SECONDS = 300
+_ssm_cache: dict[str, tuple[dict[str, str], float]] = {}
+
+
 def _ssm_secrets(path: str, region: str) -> dict[str, str]:
+    cached = _ssm_cache.get(path)
+    if cached is not None and time.time() - cached[1] < SECRETS_TTL_SECONDS:
+        return cached[0]
     import boto3
 
     client = boto3.client("ssm", region_name=region)
@@ -43,7 +50,12 @@ def _ssm_secrets(path: str, region: str) -> dict[str, str]:
     for page in client.get_paginator("get_parameters_by_path").paginate(Path=path, WithDecryption=True):
         for parameter in page["Parameters"]:
             values[parameter["Name"].rsplit("/", 1)[-1]] = parameter["Value"]
+    _ssm_cache[path] = (values, time.time())
     return values
+
+
+def forget_cached_secrets() -> None:
+    _ssm_cache.clear()
 
 
 def platform_secret(settings: Settings, field: str) -> str:
