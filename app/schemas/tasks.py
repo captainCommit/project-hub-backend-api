@@ -157,7 +157,8 @@ class TaskMoveRequest(BaseModel):
 class TaskBoardPositionUpdate(BaseModel):
     status_id: UUID | None
     sort_order: Decimal
-    sprint_id: UUID | None
+    # Omitted means "keep the task's current sprint"; explicit null clears it.
+    sprint_id: UUID | None = None
 
 
 class TaskAssignmentCreate(BaseModel):

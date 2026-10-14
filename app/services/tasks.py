@@ -110,12 +110,12 @@ class TaskService:
                 option_value_id=position_in.status_id,
                 detail="Invalid task status.",
             )
-        sprint_id = self.validate_sprint(project=project, sprint_id=position_in.sprint_id)
         changes = {
             "status_id": status_id,
             "sort_order": position_in.sort_order,
-            "sprint_id": sprint_id,
         }
+        if "sprint_id" in position_in.model_fields_set:
+            changes["sprint_id"] = self.validate_sprint(project=project, sprint_id=position_in.sprint_id)
         old_values = {field: getattr(task, field) for field in changes}
         try:
             task = self.tasks.update_task(task, changes)

@@ -1091,6 +1091,34 @@ def test_member_can_update_board_position_and_activity_is_logged(client: TestCli
     assert activity_response.json()[0]["action"] == "TASK_BOARD_MOVED"
 
 
+def test_board_position_update_without_sprint_keeps_current_sprint(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    task = create_task(client, project_id, "Move Back to In Progress")
+    sprint = create_sprint(client, project_id, "Keep Sprint")
+    in_progress_id = get_task_option_id(
+        db_session,
+        account_id=account_id,
+        option_name="STATUS",
+        value="IN_PROGRESS",
+    )
+    assign_response = client.patch(
+        f"/api/v1/tasks/{task['id']}/board-position",
+        json={"status_id": None, "sort_order": 1, "sprint_id": sprint["id"]},
+    )
+
+    response = client.patch(
+        f"/api/v1/tasks/{task['id']}/board-position",
+        json={"status_id": str(in_progress_id), "sort_order": 5},
+    )
+
+    assert assign_response.status_code == 200
+    assert response.status_code == 200
+    assert response.json()["status_id"] == str(in_progress_id)
+    assert response.json()["sprint_id"] == sprint["id"]
+
+
 def test_board_position_update_validates_status_and_sprint(client: TestClient, db_session: Session) -> None:
     hierarchy = create_work_hierarchy(client)
     other_hierarchy = create_work_hierarchy(client)
