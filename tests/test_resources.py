@@ -101,7 +101,11 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 def create_account(client: TestClient, name: str = "Acme", slug: str = "acme") -> dict:
     response = client.post("/api/v1/accounts", json={"name": name, "slug": slug})
     assert response.status_code == 201
-    return response.json()
+    account = response.json()
+    # The owner gets a linked resource on joining; these tests start from an empty directory.
+    for resource in client.get(f"/api/v1/accounts/{account['id']}/resources").json():
+        assert client.delete(f"/api/v1/resources/{resource['id']}").status_code == 204
+    return account
 
 
 def create_work_hierarchy(

@@ -14,6 +14,7 @@ from app.repositories.accounts import AccountRepository
 from app.schemas.account import AccountAdminContact, AccountCreate, AccountRead, AccountUpdate, PlatformAccountRead
 from app.schemas.account_user import AccountUserInviteCreate, AccountUserInviteRole
 from app.services.account_users import AccountUserService, CognitoInviteError
+from app.services.member_resources import ensure_member_resource
 from app.services.options import OptionService
 from app.services.platform_audit import PlatformAuditAction, record_platform_action
 
@@ -53,6 +54,7 @@ class AccountService:
                     user_id=current_user.id,
                     role=AccountMemberRole.OWNER,
                 )
+                ensure_member_resource(self.db, account_id=account.id, user=current_user)
             self.account_settings.create_default(account.id)
             OptionService(self.db).seed_defaults_for_account(account.id)
             record_platform_action(

@@ -4,6 +4,7 @@ import re
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.access_grant import ProjectModule
@@ -93,6 +94,7 @@ class ResourceService:
             allowed_roles=RESOURCE_WRITE_ROLES,
         )
         self.validate_user_belongs_to_account(account_id=account_id, user_id=resource_in.user_id)
+        self.validate_user_not_linked(account_id=account_id, user_id=resource_in.user_id)
         try:
             resource = self.resources.create_resource(
                 account_id=account_id,
@@ -135,6 +137,7 @@ class ResourceService:
         changes = resource_in.model_dump(exclude_unset=True)
         if "user_id" in changes:
             self.validate_user_belongs_to_account(account_id=resource.account_id, user_id=changes["user_id"])  # type: ignore[arg-type]
+            self.validate_user_not_linked(account_id=resource.account_id, user_id=changes["user_id"], resource_id=resource.id)  # type: ignore[arg-type]
         if not changes:
             return resource
 
@@ -1624,6 +1627,20 @@ class ResourceService:
         membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
         if membership is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to the account.")
+
+    def validate_user_not_linked(self, *, account_id: UUID, user_id: UUID | None, resource_id: UUID | None = None) -> None:
+        """A login can be linked to only one resource per account."""
+        if user_id is None:
+            return
+        statement = select(Resource).where(Resource.account_id == account_id, Resource.user_id == user_id)
+        if resource_id is not None:
+            statement = statement.where(Resource.id != resource_id)
+        other = self.db.scalar(statement)
+        if other is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"That user is already linked to the resource \"{other.name}\".",
+            )
 
     def validate_resource_belongs_to_account(self, *, resource_id: UUID, account_id: UUID) -> Resource:
         resource = self.get_resource_or_404(resource_id)

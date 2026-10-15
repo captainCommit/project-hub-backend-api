@@ -30,6 +30,7 @@ from app.services.access import forget_access
 from app.services.access_grants import AccessGrantService
 from app.services.billing import BillingService
 from app.services.cognito import admin_create_user_invite, should_send_cognito_invite
+from app.services.member_resources import ensure_member_resource
 from app.services.platform_audit import PlatformAuditAction, record_platform_action
 
 
@@ -365,6 +366,7 @@ class AccountUserService:
             invite_status = AccountUserInviteStatus.UPDATED
         else:
             invite_status = AccountUserInviteStatus.ALREADY_EXISTS
+        ensure_member_resource(self.db, account_id=account_id, user=user)
 
         if invite_in.access is not None and membership.role != AccountMemberRole.OWNER.value:
             AccessGrantService(self.db).apply_grant(
