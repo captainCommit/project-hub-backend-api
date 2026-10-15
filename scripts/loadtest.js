@@ -57,12 +57,18 @@ const params = {
 
 const account = `${BASE_URL}/api/v1/accounts/${ACCOUNT_ID}`;
 
+// The resource calendar needs a date range, as the UI sends: this month and the next two.
+const today = new Date();
+const isoDate = (date) => date.toISOString().slice(0, 10);
+const calendarRange = `start_date=${isoDate(new Date(today.getFullYear(), today.getMonth(), 1))}`
+  + `&end_date=${isoDate(new Date(today.getFullYear(), today.getMonth() + 3, 0))}`;
+
 // Each page is the set of API calls the UI fires when it opens.
 const PAGES = [
   ['home', [`${account}/me/home`, `${BASE_URL}/api/v1/notifications?page_size=30`, `${account}/sidebar`, `${account}/my-access`]],
   ['dashboard', [`${account}/dashboard`, `${account}/programs-projects`, `${account}/sidebar`]],
   ['my work', [`${account}/tasks/due`, `${account}/options`, `${account}/sidebar`]],
-  ['resources', [`${account}/resources`, `${account}/resource-calendar`, `${account}/time-off`]],
+  ['resources', [`${account}/resources`, `${account}/resource-calendar?${calendarRange}`, `${account}/time-off`]],
   ['portfolios', [`${account}/portfolios`, `${account}/programs-projects`]],
 ];
 
