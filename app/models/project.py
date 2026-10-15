@@ -58,6 +58,8 @@ class Project(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     target_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     budget: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Who runs the project, as the name shown in the program's project list.
+    project_manager: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

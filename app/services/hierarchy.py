@@ -206,6 +206,7 @@ class HierarchyService:
             start_date=project_in.start_date,
             target_end_date=project_in.target_end_date,
             budget=project_in.budget,
+            project_manager=project_in.project_manager,
             created_by=current_user.id,
         )
         self.db.commit()

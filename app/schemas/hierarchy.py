@@ -45,11 +45,13 @@ class ProjectCreate(WorkItemBase):
     portfolio_id: UUID | None = None
     delivery_type: ProjectDeliveryType = ProjectDeliveryType.WATERFALL
     budget: Decimal | None = Field(default=None, ge=0)
+    project_manager: str | None = Field(default=None, max_length=255)
 
 
 class ProjectUpdate(WorkItemUpdate):
     delivery_type: ProjectDeliveryType | None = None
     budget: Decimal | None = Field(default=None, ge=0)
+    project_manager: str | None = Field(default=None, max_length=255)
 
 
 class StatusSummary(BaseModel):
@@ -107,6 +109,7 @@ class ProjectRead(BaseModel):
     start_date: date | None
     target_end_date: date | None
     budget: Decimal | None = None
+    project_manager: str | None = None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
