@@ -9,6 +9,7 @@ Members and viewers can also be limited to some modules: a grant's view_modules 
 project they may see (None means all of them). Several grants see the union of what each allows.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -446,24 +447,50 @@ class AccessScope:
             if ids is not None and wanted not in ids:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=PROJECT_ACCESS_DENIED)
 
-    def can_view_activity(self, entity_type: str, entity_id: UUID) -> bool:
-        """Whether an activity entry is about a record in a module this user can see."""
+    def visible_activity(self, entries: list[Any]) -> list[Any]:
+        """The activity entries about records in modules this user can see.
+
+        The records are loaded in one query per entity type rather than one per entry.
+        """
         if self.is_owner:
+            return list(entries)
+        ids_by_type: dict[str, set[UUID]] = defaultdict(set)
+        for entry in entries:
+            ids_by_type[entry.entity_type.upper()].add(entry.entity_id)
+
+        # A decision option is visible when its decision is.
+        option_ids = ids_by_type.pop("DECISION_OPTION", set())
+        decision_of_option: dict[UUID, UUID] = {}
+        if option_ids:
+            decision_of_option = dict(
+                self.db.execute(select(DecisionOption.id, DecisionOption.decision_id).where(DecisionOption.id.in_(option_ids))).all()
+            )
+            ids_by_type["DECISION"] |= set(decision_of_option.values())
+
+        records: dict[tuple[str, UUID], Any] = {}
+        for entity_type, ids in ids_by_type.items():
+            if entity_type not in ENTITY_MODULES:
+                continue
+            model = COMMENTABLE_MODELS[entity_type]
+            for record in self.db.scalars(select(model).where(model.id.in_(ids))):
+                records[(entity_type, record.id)] = record
+
+        def can_view(entry: Any) -> bool:
+            entity_type, entity_id = entry.entity_type.upper(), entry.entity_id
+            if entity_type == "DECISION_OPTION":
+                entity_type, entity_id = "DECISION", decision_of_option.get(entity_id, entity_id)
+            if entity_type not in ENTITY_MODULES:
+                return True
+            record = records.get((entity_type, entity_id))
+            if record is None:
+                return False
+            try:
+                self.require_entity(entity_type, record)
+            except HTTPException:
+                return False
             return True
-        entity_type = entity_type.upper()
-        if entity_type == "DECISION_OPTION":
-            option = self.db.get(DecisionOption, entity_id)
-            entity_type, entity_id = "DECISION", option.decision_id if option else entity_id
-        if entity_type not in ENTITY_MODULES:
-            return True
-        record = self.db.get(COMMENTABLE_MODELS[entity_type], entity_id)
-        if record is None:
-            return False
-        try:
-            self.require_entity(entity_type, record)
-        except HTTPException:
-            return False
-        return True
+
+        return [entry for entry in entries if can_view(entry)]
 
     def keep_visible(self, items: list, visible_ids: set[UUID] | None) -> list:
         return items if visible_ids is None else [item for item in items if item.id in visible_ids]

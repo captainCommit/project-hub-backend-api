@@ -114,9 +114,7 @@ class AccountDashboardService:
             limit=10 if access.is_owner else 40,
         )
         if not access.is_owner:
-            recent_activity = [
-                activity for activity in recent_activity if access.can_view_activity(activity.entity_type, activity.entity_id)
-            ][:10]
+            recent_activity = access.visible_activity(recent_activity)[:10]
 
         task_stats = self.build_task_stats(task_rows=task_rows, today=today)
         open_risks = [row for row in risk_rows if self.overview_helpers.is_open_status(row[3])]

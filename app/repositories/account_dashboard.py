@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.models.activity_log import ActivityLog
@@ -50,7 +50,9 @@ class AccountDashboardRepository:
         )
         return list(self.db.execute(statement).all())
 
-    def list_risks_for_projects(self, project_ids: Iterable[UUID]) -> list[DashboardRiskRow]:
+    def list_risks_for_projects(
+        self, project_ids: Iterable[UUID], *, where: ColumnElement[bool] | None = None
+    ) -> list[DashboardRiskRow]:
         project_ids = list(project_ids)
         if not project_ids:
             return []
@@ -66,9 +68,13 @@ class AccountDashboardRepository:
             .where(Risk.project_id.in_(project_ids))
             .order_by(Risk.created_at, Risk.id)
         )
+        if where is not None:
+            statement = statement.where(where)
         return list(self.db.execute(statement).all())
 
-    def list_issues_for_projects(self, project_ids: Iterable[UUID]) -> list[DashboardIssueRow]:
+    def list_issues_for_projects(
+        self, project_ids: Iterable[UUID], *, where: ColumnElement[bool] | None = None
+    ) -> list[DashboardIssueRow]:
         project_ids = list(project_ids)
         if not project_ids:
             return []
@@ -84,6 +90,8 @@ class AccountDashboardRepository:
             .where(Issue.project_id.in_(project_ids))
             .order_by(Issue.created_at, Issue.id)
         )
+        if where is not None:
+            statement = statement.where(where)
         return list(self.db.execute(statement).all())
 
     def list_decisions_for_projects(self, project_ids: Iterable[UUID]) -> list[DashboardDecisionRow]:

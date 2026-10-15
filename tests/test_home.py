@@ -194,6 +194,27 @@ def test_my_projects_are_the_ones_i_manage_or_have_tasks_on(client: TestClient, 
     assert managed["id"] in {project["id"] for project in home["my_projects"]}
 
 
+def test_home_finds_my_risks_and_issues_outside_my_projects(client: TestClient) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    user = me(client)
+    due = date.today() + timedelta(days=3)
+    elsewhere = create_project(client, hierarchy["program"]["id"], "Elsewhere", project_manager="Pat Jones")
+
+    # Extra spaces and a different case still name me; a name that only contains mine doesn't.
+    spaced_name = "  " + "   ".join(user["full_name"].upper().split()) + " "
+    create_raid_item(client, elsewhere["id"], "risks", title="Named risk", assigned_to_name=spaced_name, target_resolution_date=due)
+    create_raid_item(client, elsewhere["id"], "issues", title="Assigned issue", assigned_to=user["id"], target_resolution_date=due)
+    create_raid_item(
+        client, elsewhere["id"], "risks", title="Not mine", assigned_to_name=f"{user['full_name']} Jr", target_resolution_date=due
+    )
+
+    home = get_home(client, account_id)
+
+    assert {item["title"]: item["kind"] for item in home["priorities"]} == {"Named risk": "RISK", "Assigned issue": "ISSUE"}
+    assert elsewhere["id"] not in {project["id"] for project in home["my_projects"]}
+
+
 def test_home_bell_lists_approvals_assignments_and_mentions(client: TestClient, db_session: Session) -> None:
     hierarchy = create_work_hierarchy(client)
     account_id = hierarchy["account"]["id"]
