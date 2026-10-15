@@ -36,13 +36,17 @@ class DeliveryService:
         *,
         account_id: UUID,
         current_user: User,
+        portfolio_id: UUID | None = None,
         program_id: UUID | None = None,
         project_id: UUID | None = None,
     ) -> dict[str, object]:
         access = access_for(self.db, account_id=account_id, user=current_user)
-        access.require_visible_filters(program_id=program_id, project_id=project_id)
+        access.require_visible_filters(portfolio_id=portfolio_id, program_id=program_id, project_id=project_id)
         programs = self.filtered_programs(account_id=account_id, program_id=program_id, project_id=project_id)
         projects = self.filtered_projects(account_id=account_id, programs=programs, program_id=program_id, project_id=project_id)
+        if portfolio_id is not None:
+            programs = [program for program in programs if program.portfolio_id == portfolio_id]
+            projects = [project for project in projects if project.portfolio_id == portfolio_id]
         programs = access.keep_visible(programs, access.visible_program_ids())
         projects = access.keep_visible(projects, access.visible_project_ids())
 

@@ -525,3 +525,22 @@ def test_existing_account_can_receive_sprint_status_options(client: TestClient, 
         )
     )
     assert restored is not None
+
+def test_delivery_overview_filters_by_portfolio(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    create_sprint(client, hierarchy["project"]["id"], "Kept Sprint")
+    other_portfolio = client.post(f"/api/v1/accounts/{account_id}/portfolios", json={"name": "Other"}).json()
+    other_program = client.post(f"/api/v1/portfolios/{other_portfolio['id']}/programs", json={"name": "Other Program"}).json()
+    other_project = client.post(f"/api/v1/programs/{other_program['id']}/projects", json={"name": "Other Project"}).json()
+    create_sprint(client, other_project["id"], "Other Sprint")
+
+    response = client.get(
+        f"/api/v1/accounts/{account_id}/delivery/overview",
+        params={"portfolio_id": hierarchy["portfolio"]["id"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_sprints"] == 1
+    assert [program["id"] for program in body["programs"]] == [hierarchy["program"]["id"]]

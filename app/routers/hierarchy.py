@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -23,6 +23,7 @@ from app.schemas.hierarchy import (
 from app.schemas.project_overview import ProjectOverviewRead
 from app.services.auth import get_current_user
 from app.services.hierarchy import HierarchyService
+from app.services.hierarchy_delete import HierarchyDeleteService
 from app.services.project_overview import ProjectOverviewService
 
 
@@ -79,9 +80,18 @@ def update_portfolio(
     )
 
 
-@router.delete("/portfolios/{portfolio_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def delete_portfolio(portfolio_id: UUID) -> dict[str, str]:
-    return {"detail": "Portfolio deletion is not implemented in Phase 3A."}
+@router.delete(
+    "/portfolios/{portfolio_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete this portfolio and everything under it",
+)
+def delete_portfolio(
+    portfolio_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    HierarchyDeleteService(db).delete_portfolio(portfolio_id=portfolio_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/portfolios/{portfolio_id}/programs", response_model=list[ProgramRead])
@@ -134,9 +144,18 @@ def update_program(
     )
 
 
-@router.delete("/programs/{program_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def delete_program(program_id: UUID) -> dict[str, str]:
-    return {"detail": "Program deletion is not implemented in Phase 3A."}
+@router.delete(
+    "/programs/{program_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete this program and everything under it",
+)
+def delete_program(
+    program_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    HierarchyDeleteService(db).delete_program(program_id=program_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/programs/{program_id}/projects", response_model=list[ProjectRead])
@@ -198,9 +217,18 @@ def update_project(
     )
 
 
-@router.delete("/projects/{project_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def delete_project(project_id: UUID) -> dict[str, str]:
-    return {"detail": "Project deletion is not implemented in Phase 3A."}
+@router.delete(
+    "/projects/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete this project and everything under it",
+)
+def delete_project(
+    project_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    HierarchyDeleteService(db).delete_project(project_id=project_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/accounts/{account_id}/sidebar", response_model=AccountSidebarRead)

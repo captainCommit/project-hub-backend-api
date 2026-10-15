@@ -41,6 +41,7 @@ class DependencyCreate(OptionKeyInput):
     assigned_to_name: str | None = Field(default=None, max_length=255)
     entered_by_name: str | None = Field(default=None, max_length=255)
     date_entered: date | None = None
+    target_date: date | None = None
 
 
 class DependencyUpdate(OptionKeyInput):
@@ -53,6 +54,7 @@ class DependencyUpdate(OptionKeyInput):
     assigned_to_name: str | None = Field(default=None, max_length=255)
     entered_by_name: str | None = Field(default=None, max_length=255)
     date_entered: date | None = None
+    target_date: date | None = None
 
 
 class DependencyRead(ProjectLogReadBase):
@@ -62,6 +64,7 @@ class DependencyRead(ProjectLogReadBase):
     assigned_to_name: str | None
     entered_by_name: str | None
     date_entered: date | None
+    target_date: date | None = None
 
 
 class ChangeRequestCreate(OptionKeyInput):

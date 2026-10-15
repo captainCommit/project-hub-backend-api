@@ -29,6 +29,8 @@ class User(Base):
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     photo_s3_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # When the person last cleared the Home page bell; items newer than this show as unread.
+    home_notifications_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Platform admins create accounts and can manage users in any account.
     is_platform_admin: Mapped[bool] = mapped_column(
         Boolean,

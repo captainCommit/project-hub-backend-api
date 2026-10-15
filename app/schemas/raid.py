@@ -139,6 +139,8 @@ class AssumptionCreate(StatusKeyInput):
     entered_by: UUID | None = None
     entered_by_name: str | None = Field(default=None, max_length=255)
     date_entered: date | None = None
+    assigned_to_name: str | None = Field(default=None, max_length=255)
+    target_date: date | None = None
 
 
 class AssumptionUpdate(StatusKeyInput):
@@ -147,6 +149,8 @@ class AssumptionUpdate(StatusKeyInput):
     entered_by: UUID | None = None
     entered_by_name: str | None = Field(default=None, max_length=255)
     date_entered: date | None = None
+    assigned_to_name: str | None = Field(default=None, max_length=255)
+    target_date: date | None = None
 
 
 class AssumptionRead(BaseModel):
@@ -160,6 +164,8 @@ class AssumptionRead(BaseModel):
     entered_by: UUID | None
     entered_by_name: str | None = None
     date_entered: date | None
+    assigned_to_name: str | None = None
+    target_date: date | None = None
     created_at: datetime
     updated_at: datetime
     created_by_name: str | None = None
