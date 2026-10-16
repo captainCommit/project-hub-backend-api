@@ -9,16 +9,20 @@ from app.models.account import Account
 from app.models.access_grant import AccessGrant, GrantRole, ProjectModule
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.assumption import Assumption
+from app.models.change_request import ChangeRequest
 from app.models.decision import Decision
+from app.models.dependency import Dependency
 from app.models.issue import Issue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
+from app.models.requirement import Requirement
 from app.models.resource import Resource
 from app.models.risk import Risk
 from app.models.skill import Skill
 from app.models.sprint import Sprint
 from app.models.task import Task
+from app.models.test_case import TestCase
 from app.models.user import User
 
 
@@ -31,6 +35,10 @@ SUPPORTED_ENTITY_TYPES: tuple[str, ...] = (
     "ISSUE",
     "ASSUMPTION",
     "DECISION",
+    "DEPENDENCY",
+    "CHANGE_REQUEST",
+    "REQUIREMENT",
+    "TEST_CASE",
     "SPRINT",
     "RESOURCE",
     "SKILL",
@@ -356,6 +364,86 @@ class SearchService:
                     ),
                 ),
                 filters=(visible_project(Decision.project_id, ProjectModule.DECISIONS),),
+            ),
+            "DEPENDENCY": self.entity_statement(
+                entity_type="DEPENDENCY",
+                project_id_column=Dependency.project_id,
+                id_column=Dependency.id,
+                title_column=Dependency.title,
+                subtitle_column=Project.name,
+                created_at_column=Dependency.created_at,
+                from_model=Dependency,
+                joins=(
+                    (Project, Project.id == Dependency.project_id),
+                    (
+                        AccountMember,
+                        and_(
+                            AccountMember.account_id == Dependency.account_id,
+                            AccountMember.user_id == user_id_param,
+                        ),
+                    ),
+                ),
+                filters=(visible_project(Dependency.project_id, ProjectModule.DEPENDENCIES),),
+            ),
+            "CHANGE_REQUEST": self.entity_statement(
+                entity_type="CHANGE_REQUEST",
+                project_id_column=ChangeRequest.project_id,
+                id_column=ChangeRequest.id,
+                title_column=ChangeRequest.title,
+                subtitle_column=Project.name,
+                created_at_column=ChangeRequest.created_at,
+                from_model=ChangeRequest,
+                joins=(
+                    (Project, Project.id == ChangeRequest.project_id),
+                    (
+                        AccountMember,
+                        and_(
+                            AccountMember.account_id == ChangeRequest.account_id,
+                            AccountMember.user_id == user_id_param,
+                        ),
+                    ),
+                ),
+                filters=(visible_project(ChangeRequest.project_id, ProjectModule.CHANGE_REQUESTS),),
+            ),
+            "REQUIREMENT": self.entity_statement(
+                entity_type="REQUIREMENT",
+                project_id_column=Requirement.project_id,
+                id_column=Requirement.id,
+                title_column=Requirement.title,
+                subtitle_column=Project.name,
+                created_at_column=Requirement.created_at,
+                from_model=Requirement,
+                joins=(
+                    (Project, Project.id == Requirement.project_id),
+                    (
+                        AccountMember,
+                        and_(
+                            AccountMember.account_id == Requirement.account_id,
+                            AccountMember.user_id == user_id_param,
+                        ),
+                    ),
+                ),
+                filters=(visible_project(Requirement.project_id, ProjectModule.REQUIREMENTS),),
+            ),
+            "TEST_CASE": self.entity_statement(
+                entity_type="TEST_CASE",
+                project_id_column=TestCase.project_id,
+                id_column=TestCase.id,
+                title_column=TestCase.title,
+                subtitle_column=Project.name,
+                created_at_column=TestCase.created_at,
+                from_model=TestCase,
+                joins=(
+                    (Project, Project.id == TestCase.project_id),
+                    (
+                        AccountMember,
+                        and_(
+                            AccountMember.account_id == TestCase.account_id,
+                            AccountMember.user_id == user_id_param,
+                        ),
+                    ),
+                ),
+                filters=(visible_project(TestCase.project_id, ProjectModule.TESTING),),
             ),
             "SPRINT": self.entity_statement(
                 entity_type="SPRINT",

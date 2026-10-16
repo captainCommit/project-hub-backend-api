@@ -335,3 +335,35 @@ def test_search_leaves_out_modules_a_grant_hides(client: TestClient, db_session:
     results = client.get("/api/v1/search", params={"q": "Gadget", "entity_types": "TASK,RISK"}).json()["results"]
 
     assert [r["title"] for r in results] == ["Gadget risk"]
+
+
+def test_search_finds_project_log_records(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client, project_name="Log Project")
+    project_id = hierarchy["project"]["id"]
+    created = {}
+    for entity_type, collection in (
+        ("DEPENDENCY", "dependencies"),
+        ("CHANGE_REQUEST", "change-requests"),
+        ("REQUIREMENT", "requirements"),
+        ("TEST_CASE", "test-cases"),
+    ):
+        response = client.post(f"/api/v1/projects/{project_id}/{collection}", json={"title": f"Sprocket {collection}"})
+        assert response.status_code == 201, response.text
+        created[entity_type] = response.json()["id"]
+
+    results = client.get("/api/v1/search", params={"q": "Sprocket"}).json()["results"]
+
+    assert {r["entity_type"]: r["id"] for r in results} == created
+    assert {r["project_id"] for r in results} == {project_id}
+
+    # A grant that only shows requirements hides the other three.
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+    grant_existing_portfolios(db_session, hierarchy["account"]["id"], "OWNER")  # clear the broad grants
+    grant_access(
+        db_session, account_id=hierarchy["account"]["id"], role="VIEWER", project_id=project_id,
+        view_modules=["REQUIREMENTS"],
+    )
+
+    results = client.get("/api/v1/search", params={"q": "Sprocket"}).json()["results"]
+
+    assert [r["entity_type"] for r in results] == ["REQUIREMENT"]
