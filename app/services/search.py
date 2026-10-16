@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import String, and_, bindparam, case, cast, func, literal, or_, select, true, union_all
+from sqlalchemy import String, and_, bindparam, case, cast, func, literal, null, or_, select, true, union_all
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -141,6 +141,7 @@ class SearchService:
             select(
                 search_results.c.entity_type,
                 search_results.c.id,
+                search_results.c.project_id,
                 search_results.c.title,
                 search_results.c.subtitle,
                 search_results.c.score,
@@ -168,6 +169,7 @@ class SearchService:
                 {
                     "entity_type": str(row["entity_type"]),
                     "id": self.normalize_id(row["id"]),
+                    "project_id": self.normalize_id(row["project_id"]) if row["project_id"] is not None else None,
                     "title": str(row["title"]),
                     "subtitle": str(row["subtitle"]) if row["subtitle"] is not None else None,
                     "score": float(row["score"] or 0),
@@ -237,6 +239,7 @@ class SearchService:
             ),
             "PROJECT": self.entity_statement(
                 entity_type="PROJECT",
+                project_id_column=Project.id,
                 id_column=Project.id,
                 title_column=Project.name,
                 subtitle_column=Program.name,
@@ -256,6 +259,7 @@ class SearchService:
             ),
             "TASK": self.entity_statement(
                 entity_type="TASK",
+                project_id_column=Task.project_id,
                 id_column=Task.id,
                 title_column=Task.name,
                 subtitle_column=Project.name,
@@ -275,6 +279,7 @@ class SearchService:
             ),
             "RISK": self.entity_statement(
                 entity_type="RISK",
+                project_id_column=Risk.project_id,
                 id_column=Risk.id,
                 title_column=Risk.title,
                 subtitle_column=Project.name,
@@ -294,6 +299,7 @@ class SearchService:
             ),
             "ISSUE": self.entity_statement(
                 entity_type="ISSUE",
+                project_id_column=Issue.project_id,
                 id_column=Issue.id,
                 title_column=Issue.title,
                 subtitle_column=Project.name,
@@ -313,6 +319,7 @@ class SearchService:
             ),
             "ASSUMPTION": self.entity_statement(
                 entity_type="ASSUMPTION",
+                project_id_column=Assumption.project_id,
                 id_column=Assumption.id,
                 title_column=Assumption.description,
                 subtitle_column=Project.name,
@@ -332,6 +339,7 @@ class SearchService:
             ),
             "DECISION": self.entity_statement(
                 entity_type="DECISION",
+                project_id_column=Decision.project_id,
                 id_column=Decision.id,
                 title_column=Decision.decision_text,
                 subtitle_column=Project.name,
@@ -351,6 +359,7 @@ class SearchService:
             ),
             "SPRINT": self.entity_statement(
                 entity_type="SPRINT",
+                project_id_column=Sprint.project_id,
                 id_column=Sprint.id,
                 title_column=Sprint.name,
                 extra_search_column=Sprint.goal,
@@ -422,6 +431,7 @@ class SearchService:
         from_model: object,
         joins: tuple[tuple[object, ColumnElement[bool]], ...],
         extra_search_column: ColumnElement[str] | None = None,
+        project_id_column: ColumnElement[object] | None = None,
         filters: tuple[ColumnElement[bool], ...] = (),
     ) -> object:
         query_lower = bindparam("query_lower")
@@ -431,6 +441,7 @@ class SearchService:
         statement = select(
             literal(entity_type).label("entity_type"),
             cast(id_column, String).label("id"),
+            (cast(project_id_column, String) if project_id_column is not None else cast(null(), String)).label("project_id"),
             title_column.label("title"),
             subtitle_column.label("subtitle"),
             score.label("score"),

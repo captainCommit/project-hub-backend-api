@@ -158,6 +158,7 @@ def test_search_project_by_exact_name(client: TestClient) -> None:
     assert results[0] == {
         "entity_type": "PROJECT",
         "id": hierarchy["project"]["id"],
+        "project_id": hierarchy["project"]["id"],
         "title": "Website Redesign",
         "subtitle": "Program A",
         "score": 1.0,
@@ -208,6 +209,7 @@ def test_search_entity_type_filtering(client: TestClient) -> None:
         {
             "entity_type": "TASK",
             "id": task["id"],
+            "project_id": hierarchy["project"]["id"],
             "title": "Shared Alpha launch task",
             "subtitle": "Shared Alpha",
             "score": pytest.approx(sqlite_similarity("Shared Alpha launch task", "Shared Alpha")),
