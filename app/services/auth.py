@@ -174,8 +174,8 @@ def sync_cognito_user(db: Session, claims: dict[str, Any], settings: Settings | 
             BillingService(db, settings=settings).sync_seats_for_user(user.id)
         return user
 
-    # Only sync a name Cognito actually has; never blank out a name edited in the app.
-    next_full_name = full_name or user.full_name
+    # The name in the user's profile wins: Cognito's name only fills it in when the profile has none.
+    next_full_name = user.full_name or full_name
     if user.email != email or user.full_name != next_full_name:
         user = user_repository.update_identity(user, email=email, full_name=next_full_name)
         db.commit()

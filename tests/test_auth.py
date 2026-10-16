@@ -148,6 +148,19 @@ def test_cognito_mode_syncs_user_from_mocked_valid_token(
     assert user is not None
     assert user.email == "cognito@example.com"
 
+def test_cognito_sign_in_keeps_the_name_from_the_profile(db_session: Session) -> None:
+    user = User(email="named@example.com", cognito_sub="named-sub", full_name="Dummy Corp Admin",
+                first_name="Dummy Corp", last_name="Admin")
+    db_session.add(user)
+    db_session.commit()
+
+    synced = auth_service.sync_cognito_user(
+        db_session, {"sub": "named-sub", "email": "named@example.com", "name": "Account Owner"}
+    )
+
+    assert synced.full_name == "Dummy Corp Admin"
+
+
 def make_signed_token(claims: dict[str, object]) -> tuple[str, dict[str, object]]:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
