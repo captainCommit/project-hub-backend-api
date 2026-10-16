@@ -433,3 +433,15 @@ class TaskRepository:
             return {}
         statement = select(User).where(User.id.in_(user_ids))
         return {user.id: user for user in self.db.scalars(statement).all()}
+
+    def get_member_resource_names(
+        self, account_ids: Iterable[UUID], user_ids: Iterable[UUID]
+    ) -> dict[tuple[UUID, UUID], str]:
+        """Name of each user's linked resource, keyed by (account id, user id)."""
+        account_ids, user_ids = list(account_ids), list(user_ids)
+        if not account_ids or not user_ids:
+            return {}
+        statement = select(Resource.account_id, Resource.user_id, Resource.name).where(
+            Resource.account_id.in_(account_ids), Resource.user_id.in_(user_ids)
+        )
+        return {(account_id, user_id): name for account_id, user_id, name in self.db.execute(statement).all()}

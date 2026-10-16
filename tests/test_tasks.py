@@ -21,6 +21,7 @@ from app.models.option_value import OptionValue
 from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
+from app.models.resource import Resource
 from app.models.task import Task
 from app.models.task_assignment import TaskAssignment
 from app.models.task_predecessor import TaskPredecessor
@@ -467,6 +468,22 @@ def test_task_list_includes_assignments_and_predecessors(client: TestClient) -> 
     successor = next(item for item in tasks if item["id"] == task["id"])
     assert successor["assignments"][0]["resource_name"] == "Designer"
     assert successor["predecessors"][0]["predecessor_task_id"] == predecessor["id"]
+
+
+def test_user_assignments_carry_the_member_resource_name(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"], "Build")
+    user = db_session.scalar(select(User).where(User.email == "dev@example.com"))
+    resource = db_session.scalar(select(Resource).where(Resource.user_id == user.id))
+    resource.name = "Dev (Lead)"
+    db_session.commit()
+    assert client.post(f"/api/v1/tasks/{task['id']}/assignments", json={"user_id": str(user.id)}).status_code == 201
+
+    tasks = client.get(f"/api/v1/accounts/{hierarchy['account']['id']}/tasks").json()
+
+    assignment = next(item for item in tasks if item["id"] == task["id"])["assignments"][0]
+    assert assignment["user_id"] == str(user.id)
+    assert assignment["resource_name"] == "Dev (Lead)"
 
 
 def test_task_tree_returns_nested_tasks(client: TestClient) -> None:

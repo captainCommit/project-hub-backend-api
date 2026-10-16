@@ -34,6 +34,7 @@ from app.schemas.tasks import (
 )
 from app.services.access import access_for
 from app.services.activity import ActivityLogService
+from app.services.member_resources import member_resource_name
 from app.services.notifications import NotificationService
 from app.models.notification import NotificationType
 
@@ -1002,6 +1003,24 @@ class TaskService:
         assignments = self.tasks.list_assignments_for_tasks(task_ids)
         allocations = self.tasks.list_resource_allocations_for_tasks(task_ids)
         predecessors = self.tasks.list_predecessors_for_tasks(task_ids)
+        # Assignments to a user carry no resource name; use the name of the user's member resource, so
+        # rollups that match work to resources by name count it.
+        user_ids = {
+            assignment.user_id
+            for task_assignments in assignments.values()
+            for assignment in task_assignments
+            if assignment.user_id is not None and not assignment.resource_name
+        }
+        users = self.tasks.get_users_by_ids(user_ids)
+        member_names = self.tasks.get_member_resource_names({task.account_id for task in tasks}, user_ids)
+
+        def assignment_read(assignment: TaskAssignment) -> object:
+            user = users.get(assignment.user_id) if not assignment.resource_name else None
+            if user is None:
+                return assignment
+            name = member_names.get((assignment.account_id, user.id)) or member_resource_name(user)
+            return {**assignment.__dict__, "resource_name": name}
+
         return [
             {
                 **task.__dict__,
@@ -1009,7 +1028,7 @@ class TaskService:
                 "task_type": self.option_summary(task.task_type_id, options),
                 "priority": self.option_summary(task.priority_id, options),
                 "sprint": self.sprint_summary(task.sprint_id, sprints),
-                "assignments": assignments.get(task.id, []),
+                "assignments": [assignment_read(assignment) for assignment in assignments.get(task.id, [])],
                 "allocations": [
                     {
                         "id": allocation.id,
