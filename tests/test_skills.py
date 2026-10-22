@@ -378,6 +378,8 @@ def test_skill_added_to_global_search(client: TestClient) -> None:
     assert response.json()["results"][0] == {
         "entity_type": "SKILL",
         "id": skill["id"],
+        # Skills belong to the account, not a project.
+        "project_id": None,
         "title": "Kubernetes",
         "subtitle": hierarchy["account"]["name"],
         "score": 1.0,
