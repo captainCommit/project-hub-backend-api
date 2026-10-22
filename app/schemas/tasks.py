@@ -232,6 +232,7 @@ class TaskRead(BaseModel):
     finish_date: date | None
     duration_days: Decimal | None
     story_points: int | None
+    story_number: int | None = None
     percent_complete: Decimal
     sort_order: Decimal
     created_by: UUID | None

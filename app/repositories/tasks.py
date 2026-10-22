@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, delete, or_, select, update
+from sqlalchemy import Select, and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
@@ -13,7 +13,7 @@ from app.models.project import Project
 from app.models.resource import Resource
 from app.models.resource_allocation import ResourceAllocation
 from app.models.sprint import Sprint
-from app.models.task import Task
+from app.models.task import FIRST_STORY_NUMBER, Task
 from app.models.task_assignment import TaskAssignment
 from app.models.task_predecessor import TaskPredecessor
 from app.models.user import User
@@ -24,11 +24,18 @@ class TaskRepository:
         self.db = db
 
     def create_task(self, **values: object) -> Task:
+        if values.get("story_number") is None:
+            values["story_number"] = self.next_story_number(values["project_id"])
         task = Task(**values)
         self.db.add(task)
         self.db.flush()
         self.db.refresh(task)
         return task
+
+    def next_story_number(self, project_id: object) -> int:
+        """The next story id in the project (deleted tasks keep theirs, so numbers are never reused)."""
+        highest = self.db.scalar(select(func.max(Task.story_number)).where(Task.project_id == project_id))
+        return FIRST_STORY_NUMBER if highest is None else highest + 1
 
     def get_task(self, task_id: UUID, *, include_deleted: bool = False) -> Task | None:
         statement = select(Task).where(Task.id == task_id)

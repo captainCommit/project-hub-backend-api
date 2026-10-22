@@ -64,6 +64,7 @@ class SprintService:
             status_id=status_id,
             start_date=sprint_in.start_date,
             end_date=sprint_in.end_date,
+            capacity=sprint_in.capacity,
             created_by=current_user.id,
         )
         ActivityLogService(self.db).record(

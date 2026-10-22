@@ -12,6 +12,8 @@ class SprintBase(BaseModel):
     status_id: UUID | None = None
     start_date: date | None = None
     end_date: date | None = None
+    # Story points the team can take on in the sprint.
+    capacity: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_dates(self) -> "SprintBase":
@@ -30,6 +32,7 @@ class SprintUpdate(BaseModel):
     status_id: UUID | None = None
     start_date: date | None = None
     end_date: date | None = None
+    capacity: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_dates(self) -> "SprintUpdate":
@@ -47,6 +50,7 @@ class SprintRead(BaseModel):
     status_id: UUID | None
     start_date: date | None
     end_date: date | None
+    capacity: int | None = None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime

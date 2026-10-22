@@ -2,10 +2,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid, func
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+
+
+FIRST_STORY_NUMBER = 100
 
 
 class Task(Base):
@@ -15,6 +18,7 @@ class Task(Base):
             "story_points IS NULL OR story_points > 0",
             name="ck_tasks_story_points_positive",
         ),
+        UniqueConstraint("project_id", "story_number", name="uq_tasks_project_id_story_number"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
@@ -59,6 +63,8 @@ class Task(Base):
     finish_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     duration_days: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     story_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The project's story id, shown as US-<number>; numbering starts at FIRST_STORY_NUMBER.
+    story_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     percent_complete: Mapped[Decimal] = mapped_column(
         Numeric(5, 2),
         nullable=False,
