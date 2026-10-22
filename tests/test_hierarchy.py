@@ -342,6 +342,25 @@ def test_sidebar_returns_nested_hierarchy(client: TestClient) -> None:
     assert body["portfolios"][0]["programs"][0]["projects"][0]["id"] == project["id"]
 
 
+def test_programs_projects_returns_owners_and_project_managers(client: TestClient) -> None:
+    account = create_account(client)
+    portfolio = client.post(
+        f"/api/v1/accounts/{account['id']}/portfolios", json={"name": "Portfolio A", "owner": "Ben Novak"}
+    ).json()
+    program = client.post(f"/api/v1/portfolios/{portfolio['id']}/programs", json={"name": "Program A", "owner": "Priya Sharma"}).json()
+    client.post(f"/api/v1/programs/{program['id']}/projects", json={"name": "Project A", "project_manager": "Laura Mitchell"})
+    renamed = client.patch(f"/api/v1/programs/{program['id']}", json={"owner": "Aisha Khan"})
+
+    response = client.get(f"/api/v1/accounts/{account['id']}/programs-projects")
+
+    assert portfolio["owner"] == "Ben Novak"
+    assert renamed.json()["owner"] == "Aisha Khan"
+    body = response.json()["portfolios"][0]
+    assert body["owner"] == "Ben Novak"
+    assert body["programs"][0]["owner"] == "Aisha Khan"
+    assert body["programs"][0]["projects"][0]["project_manager"] == "Laura Mitchell"
+
+
 def test_overview_endpoints_return_counts(client: TestClient) -> None:
     account = create_account(client)
     portfolio = create_portfolio(client, account["id"])

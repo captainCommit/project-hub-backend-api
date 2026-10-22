@@ -26,19 +26,19 @@ class WorkItemUpdate(BaseModel):
 
 
 class PortfolioCreate(WorkItemBase):
-    pass
+    owner: str | None = Field(default=None, max_length=255)
 
 
 class PortfolioUpdate(WorkItemUpdate):
-    pass
+    owner: str | None = Field(default=None, max_length=255)
 
 
 class ProgramCreate(WorkItemBase):
-    pass
+    owner: str | None = Field(default=None, max_length=255)
 
 
 class ProgramUpdate(WorkItemUpdate):
-    pass
+    owner: str | None = Field(default=None, max_length=255)
 
 
 class ProjectCreate(WorkItemBase):
@@ -70,6 +70,7 @@ class PortfolioRead(BaseModel):
     description: str | None
     status_id: UUID | None
     color: str | None
+    owner: str | None = None
     start_date: date | None
     target_end_date: date | None
     created_by: UUID | None
@@ -87,6 +88,7 @@ class ProgramRead(BaseModel):
     description: str | None
     status_id: UUID | None
     color: str | None
+    owner: str | None = None
     start_date: date | None
     target_end_date: date | None
     created_by: UUID | None
@@ -140,6 +142,7 @@ class ProgramsProjectsProject(BaseModel):
     description: str | None = None
     color: str | None = None
     budget: Decimal | None = None
+    project_manager: str | None = None
     created_at: datetime | None = None
 
 
@@ -152,6 +155,7 @@ class ProgramsProjectsProgram(BaseModel):
     portfolio_id: UUID | None = None
     description: str | None = None
     color: str | None = None
+    owner: str | None = None
     start_date: date | None = None
     target_end_date: date | None = None
     created_at: datetime | None = None
@@ -164,6 +168,7 @@ class ProgramsProjectsPortfolio(BaseModel):
     programs: list[ProgramsProjectsProgram]
     description: str | None = None
     color: str | None = None
+    owner: str | None = None
     start_date: date | None = None
     target_end_date: date | None = None
     created_at: datetime | None = None

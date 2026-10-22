@@ -29,6 +29,7 @@ class Program(Base):
         nullable=True,
     )
     color: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     target_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by: Mapped[UUID | None] = mapped_column(
