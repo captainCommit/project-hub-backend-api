@@ -89,3 +89,12 @@ class HomeRead(BaseModel):
 
 class HomeNotificationsReadResult(BaseModel):
     notifications_read_at: datetime
+
+
+class HomeNotificationsDismiss(BaseModel):
+    # Bell item ids from the Home page, such as "assignment-<task id>".
+    ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class HomeNotificationsDismissResult(BaseModel):
+    removed: int

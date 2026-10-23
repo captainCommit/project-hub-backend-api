@@ -74,6 +74,8 @@ class Notification(Base):
     email_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     email_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Removed from the person's bell. The row stays so a pending email or digest still goes out.
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

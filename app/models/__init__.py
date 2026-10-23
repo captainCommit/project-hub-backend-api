@@ -26,6 +26,7 @@ from app.models.decision_option import DecisionOption
 from app.models.dependency import Dependency
 from app.models.email_suppression import EmailSuppression
 from app.models.health_check import HealthCheck
+from app.models.home_notification_dismissal import HomeNotificationDismissal
 from app.models.notification import EmailStatus, Notification, NotificationType
 from app.models.notification_preference import EmailFrequency, NotificationPreference
 from app.models.issue import Issue
@@ -94,6 +95,7 @@ __all__ = [
     "HealthCheck",
     "Invoice",
     "Issue",
+    "HomeNotificationDismissal",
     "Notification",
     "NotificationType",
     "NotificationPreference",

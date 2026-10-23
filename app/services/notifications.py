@@ -1,7 +1,8 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -114,7 +115,10 @@ class NotificationService:
         page: int = 1,
         page_size: int = 50,
     ) -> dict[str, object]:
-        statement = select(Notification).where(Notification.user_id == current_user.id)
+        statement = select(Notification).where(
+            Notification.user_id == current_user.id,
+            Notification.dismissed_at.is_(None),
+        )
         if unread_only:
             statement = statement.where(Notification.is_read.is_(False))
 
@@ -162,3 +166,32 @@ class NotificationService:
             self.db.add(notification)
         self.db.commit()
         return {"updated": len(notifications)}
+
+    def dismiss(self, *, notification_id: UUID, current_user: User) -> None:
+        """Remove one notification from the person's bell."""
+        notification = self.db.scalar(
+            select(Notification).where(
+                Notification.id == notification_id,
+                Notification.user_id == current_user.id,
+                Notification.dismissed_at.is_(None),
+            )
+        )
+        if notification is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found.")
+        notification.is_read = True
+        notification.dismissed_at = datetime.now(UTC)
+        self.db.commit()
+
+    def dismiss_read(self, *, current_user: User) -> dict[str, int]:
+        """Remove every notification the person has read from their bell."""
+        result = self.db.execute(
+            update(Notification)
+            .where(
+                Notification.user_id == current_user.id,
+                Notification.is_read.is_(True),
+                Notification.dismissed_at.is_(None),
+            )
+            .values(dismissed_at=datetime.now(UTC))
+        )
+        self.db.commit()
+        return {"removed": result.rowcount or 0}

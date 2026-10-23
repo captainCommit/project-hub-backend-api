@@ -360,3 +360,59 @@ def test_user_cannot_read_another_users_notifications(client: TestClient, db_ses
     assert list_response.json()["results"] == []
     assert read_response.status_code == 404
     assert read_response.json()["message"] == "Notification not found."
+
+
+def test_remove_notification_hides_it_from_the_bell(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"])
+    assigned_user = create_member(db_session, account_id=hierarchy["account"]["id"], email="remove@example.com")
+    client.post(f"/api/v1/tasks/{task['id']}/assignments", json={"user_id": str(assigned_user.id)})
+    notification = db_session.scalar(select(Notification).where(Notification.user_id == assigned_user.id))
+    assert notification is not None
+
+    override_current_user(assigned_user)
+    removed = client.delete(f"/api/v1/notifications/{notification.id}")
+
+    assert removed.status_code == 204
+    assert client.get("/api/v1/notifications").json()["results"] == []
+    # The row stays, so a pending email still goes out.
+    db_session.expire_all()
+    assert db_session.get(Notification, notification.id).dismissed_at is not None
+    assert client.delete(f"/api/v1/notifications/{notification.id}").status_code == 404
+
+
+def test_remove_read_notifications_keeps_unread_ones(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"])
+    assigned_user = create_member(db_session, account_id=hierarchy["account"]["id"], email="clear-read@example.com")
+    client.post(f"/api/v1/tasks/{task['id']}/assignments", json={"user_id": str(assigned_user.id)})
+    client.post(
+        f"/api/v1/projects/{hierarchy['project']['id']}/risks",
+        json={"title": "Assigned risk", "assigned_to": str(assigned_user.id)},
+    )
+    first = db_session.scalars(select(Notification).where(Notification.user_id == assigned_user.id)).first()
+
+    override_current_user(assigned_user)
+    client.patch(f"/api/v1/notifications/{first.id}/read")
+    response = client.delete("/api/v1/notifications/read")
+    remaining = client.get("/api/v1/notifications").json()["results"]
+
+    assert response.status_code == 200
+    assert response.json() == {"removed": 1}
+    assert len(remaining) == 1
+    assert remaining[0]["id"] != str(first.id)
+    assert remaining[0]["is_read"] is False
+
+
+def test_user_cannot_remove_another_users_notification(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    task = create_task(client, hierarchy["project"]["id"])
+    assigned_user = create_member(db_session, account_id=hierarchy["account"]["id"], email="not-yours@example.com")
+    client.post(f"/api/v1/tasks/{task['id']}/assignments", json={"user_id": str(assigned_user.id)})
+    notification = db_session.scalar(select(Notification).where(Notification.user_id == assigned_user.id))
+
+    response = client.delete(f"/api/v1/notifications/{notification.id}")
+
+    assert response.status_code == 404
+    db_session.expire_all()
+    assert db_session.get(Notification, notification.id).dismissed_at is None

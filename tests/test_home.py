@@ -245,3 +245,26 @@ def test_home_bell_lists_approvals_assignments_and_mentions(client: TestClient, 
     marked = client.post(f"/api/v1/accounts/{account_id}/me/home/notifications/read")
     assert marked.status_code == 200
     assert get_home(client, account_id)["notifications_read_at"] is not None
+
+
+def test_home_bell_items_can_be_removed(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    user = me(client)
+    kept = create_task(client, hierarchy["project"]["id"], "Keep me", start_date=date.today(), finish_date=date.today())
+    gone = create_task(client, hierarchy["project"]["id"], "Remove me", start_date=date.today(), finish_date=date.today())
+    assign(client, kept["id"], user["id"])
+    assign(client, gone["id"], user["id"])
+
+    removed = client.post(
+        f"/api/v1/accounts/{account_id}/me/home/notifications/dismiss",
+        json={"ids": [f"assignment-{gone['id']}", "not-a-bell-item"]},
+    )
+
+    assert removed.status_code == 200
+    assert removed.json() == {"removed": 1}
+    ids = [item["id"] for item in get_home(client, account_id)["notifications"]]
+    assert ids == [f"assignment-{kept['id']}"]
+    # Removing it again changes nothing.
+    again = client.post(f"/api/v1/accounts/{account_id}/me/home/notifications/dismiss", json={"ids": [f"assignment-{gone['id']}"]})
+    assert again.json() == {"removed": 0}

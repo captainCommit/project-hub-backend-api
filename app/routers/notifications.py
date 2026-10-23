@@ -51,6 +51,24 @@ def mark_all_notifications_read(
 ) -> dict[str, int]:
     return NotificationService(db).mark_all_read(current_user=current_user)
 
+
+# Declared before the single-notification route so "read" isn't taken as a notification id.
+@router.delete("/notifications/read", summary="Remove every read notification from your bell")
+def remove_read_notifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int]:
+    return NotificationService(db).dismiss_read(current_user=current_user)
+
+
+@router.delete("/notifications/{notification_id}", status_code=204, summary="Remove a notification from your bell")
+def remove_notification(
+    notification_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    NotificationService(db).dismiss(notification_id=notification_id, current_user=current_user)
+
 @router.get("/me/notification-preferences", response_model=NotificationPreferencesRead)
 def read_notification_preferences(
     db: Session = Depends(get_db),

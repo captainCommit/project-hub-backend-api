@@ -1,6 +1,7 @@
 """The signed-in person's home page: their dated work, the projects they're on, recent activity there,
 and the approvals, assignments and mentions waiting on them."""
 
+import re
 from collections import defaultdict
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
@@ -18,6 +19,7 @@ from app.models.comment import Comment
 from app.models.comment_mention import CommentMention
 from app.models.decision import Decision
 from app.models.dependency import Dependency
+from app.models.home_notification_dismissal import HomeNotificationDismissal
 from app.models.issue import Issue
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
@@ -40,6 +42,8 @@ WEEK_DAYS = 7
 PROJECT_LIMIT = 8
 ACTIVITY_LIMIT = 10
 NOTIFICATION_LIMIT = 8
+# A Home page bell item's id: its kind and the record's UUID.
+HOME_NOTIFICATION_ID = re.compile(r"(approval|assignment|mention)-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 # Which status option marks an item done, in order of preference (matched on the option's value or label).
 COMPLETE_STATUS_KEYS = {
     "TASK": ("complete", "completed", "done"),
@@ -237,6 +241,27 @@ class HomeService:
         self.db.commit()
         return {"notifications_read_at": current_user.home_notifications_read_at}
 
+    def dismiss_notifications(self, *, account_id: UUID, current_user: User, item_ids: list[str]) -> dict[str, object]:
+        """Remove Home page bell items. They're built from live data, so the removal is remembered by item id."""
+        self.dashboard_service.require_account_member(account_id=account_id, user_id=current_user.id)
+        keys = {item_id for item_id in item_ids if HOME_NOTIFICATION_ID.fullmatch(item_id)}
+        if not keys:
+            return {"removed": 0}
+        already = set(
+            self.db.scalars(
+                select(HomeNotificationDismissal.item_key).where(
+                    HomeNotificationDismissal.user_id == current_user.id,
+                    HomeNotificationDismissal.item_key.in_(keys),
+                )
+            ).all()
+        )
+        new_keys = sorted(keys - already)
+        self.db.add_all(
+            HomeNotificationDismissal(account_id=account_id, user_id=current_user.id, item_key=key) for key in new_keys
+        )
+        self.db.commit()
+        return {"removed": len(new_keys)}
+
     def notifications(
         self,
         *,
@@ -290,6 +315,16 @@ class HomeService:
                 )
             )
 
+        # Leave out the ones the person removed from the bell.
+        dismissed = set(
+            self.db.scalars(
+                select(HomeNotificationDismissal.item_key).where(
+                    HomeNotificationDismissal.user_id == current_user.id,
+                    HomeNotificationDismissal.item_key.in_([item["id"] for item in items]),
+                )
+            ).all()
+        ) if items else set()
+        items = [item for item in items if item["id"] not in dismissed]
         items.sort(key=lambda item: item["created_at"], reverse=True)
         return items[:NOTIFICATION_LIMIT]
 
