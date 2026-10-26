@@ -28,6 +28,8 @@ from app.schemas.raid import (
     RiskUpdate,
 )
 from app.services.auth import get_current_user
+from app.schemas.escalations import EscalationCreate, EscalationRead
+from app.services.escalations import EscalationService
 from app.services.raid import RaidService
 
 
@@ -480,3 +482,20 @@ def delete_decision_option(
 ) -> Response:
     RaidService(db).delete_decision_option(option_id=option_id, current_user=current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/raid/{entity_type}/{entity_id}/escalate",
+    response_model=EscalationRead,
+    summary="Escalate a risk, issue, assumption or dependency to a person or team",
+)
+def escalate_raid_item(
+    entity_type: str,
+    entity_id: UUID,
+    escalation_in: EscalationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    return EscalationService(db).escalate(
+        entity_type=entity_type, entity_id=entity_id, data=escalation_in, current_user=current_user
+    )

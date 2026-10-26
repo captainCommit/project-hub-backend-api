@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, Uuid, func
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -18,6 +18,8 @@ class NotificationType(str, Enum):
     DUE_SOON = "DUE_SOON"
     # Project Hub support answered the person's support ticket.
     SUPPORT_REPLY = "SUPPORT_REPLY"
+    # Someone escalated a risk, issue, assumption or dependency to this person or their team.
+    ESCALATION = "ESCALATION"
 
 
 class EmailStatus(str, Enum):
@@ -37,7 +39,7 @@ class Notification(Base):
         CheckConstraint(
             "notification_type in ("
             "'TASK_ASSIGNED', 'COMMENT_ADDED', 'MENTION', "
-            "'STATUS_CHANGED', 'RISK_CREATED', 'DECISION_APPROVED', 'DUE_SOON', 'SUPPORT_REPLY'"
+            "'STATUS_CHANGED', 'RISK_CREATED', 'DECISION_APPROVED', 'DUE_SOON', 'SUPPORT_REPLY', 'ESCALATION'"
             ")",
             name="ck_notifications_notification_type",
         ),
@@ -64,6 +66,8 @@ class Notification(Base):
     notification_type: Mapped[str] = mapped_column(String(100), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Facts the email shows, captured when the notification was made (escalations: reference, project, escalated to).
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     is_read: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

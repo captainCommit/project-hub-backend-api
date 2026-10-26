@@ -85,8 +85,9 @@ class NotificationPreferenceService:
         return preference
 
     def frequency_for(self, user_id: UUID, notification_type: str) -> EmailFrequency:
-        # An answer to someone's own support ticket is always emailed straight away.
-        if notification_type == NotificationType.SUPPORT_REPLY.value:
+        # An answer to someone's own support ticket, and an escalation someone sent them on purpose,
+        # are always emailed straight away.
+        if notification_type in (NotificationType.SUPPORT_REPLY.value, NotificationType.ESCALATION.value):
             return EmailFrequency.IMMEDIATE
         category = category_for(notification_type)
         if category is None:

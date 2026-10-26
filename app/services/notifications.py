@@ -31,6 +31,7 @@ class NotificationService:
         title: str,
         message: str | None = None,
         actor_user_id: UUID | None = None,
+        details: dict | None = None,
     ) -> Notification | None:
         if actor_user_id is not None and user_id == actor_user_id:
             return None
@@ -46,6 +47,7 @@ class NotificationService:
             notification_type=type_value,
             title=title,
             message=message,
+            details=details,
             email_status=self.initial_email_status(user_id, type_value, account_id=account_id),
         )
         self.db.add(notification)

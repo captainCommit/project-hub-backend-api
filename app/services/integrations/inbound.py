@@ -44,7 +44,7 @@ def handle_slack_command(db: Session, settings: Settings, http: Http, form: dict
     text = (form.get("text") or "").strip()
     connections = connections_for(db, IntegrationProvider.SLACK, team_id)
     if not connections:
-        return slack_reply(ChatMessage(title="This Slack workspace isn't connected to Project Hub. An account owner can connect it in Account > Integrations."), settings)
+        return slack_reply(ChatMessage(title="This Slack workspace isn't connected to Project Hub. An account owner can connect it in Account > Connected apps."), settings)
     service = IntegrationService(db, settings, http=http)
     if text.lower() in ("link", "connect", "login"):
         url = service.link_url(provider=IntegrationProvider.SLACK, workspace_id=team_id, external_user_id=user_id, name=form.get("user_name"))

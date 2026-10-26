@@ -50,6 +50,8 @@ FIELD_LABELS = {
     "non_project_hours": "Non-project hours",
     "hourly_rate": "Hourly rate",
     "file_name": "File",
+    "escalated_to": "Escalated to",
+    "note": "Note",
 }
 
 # Bookkeeping that means nothing to a reader (the actor and time are shown on the entry itself).

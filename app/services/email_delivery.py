@@ -219,9 +219,9 @@ def _html_page(*, preheader: str, content: str, footer: str) -> str:
 </body></html>"""
 
 
-def _button(url: str, text: str) -> str:
+def _button(url: str, text: str, *, color: str = ORANGE) -> str:
     return (
-        f'<a href="{escape(url)}" style="display:inline-block;background:{ORANGE};color:#ffffff;text-decoration:none;'
+        f'<a href="{escape(url)}" style="display:inline-block;background:{color};color:#ffffff;text-decoration:none;'
         f'font-weight:600;font-size:14px;padding:10px 18px;border-radius:8px">{escape(text)}</a>'
     )
 
@@ -288,6 +288,81 @@ def render_notification_email(
         text="\n".join(text_lines),
         html=_html_page(preheader=notification.message or notification.title, content=content, footer=footer),
         headers={"List-Unsubscribe": f"<{unsubscribe}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"},
+    )
+
+
+# The RAID tab each escalated item opens on; risks and issues also open their detail panel (?id=).
+ESCALATION_TABS = {"RISK": "risks", "ISSUE": "issues", "ASSUMPTION": "assumptions", "DEPENDENCY": "dependencies"}
+
+
+def escalation_path(entity_type: str, entity_id: UUID) -> str:
+    tab = ESCALATION_TABS.get(entity_type.upper(), "risks")
+    return f"/RiskLog?tab={tab}&id={entity_id}"
+
+
+def render_escalation_email(
+    *, settings: Settings, user: User, notification: Notification, account_name: str
+) -> OutgoingEmail:
+    """"An escalation needs your attention": who escalated what to whom, the item's key facts and the note."""
+    details = notification.details or {}
+    actor = details.get("actor") or "Someone"
+    base = app_base(settings)
+    item_url = f"{base}{escalation_path(notification.entity_type, notification.entity_id)}"
+    settings_url = f"{base}{SETTINGS_PATH}"
+    heading = "An escalation needs your attention"
+    intro = f"{notification.title}. Please review the details below."
+    rows = [
+        ("Reference", details.get("reference")),
+        ("Title", details.get("title")),
+        ("Project", details.get("project")),
+        ("Priority", details.get("priority")),
+        ("Escalated to", details.get("escalated_to")),
+    ]
+    rows = [(label, str(value)) for label, value in rows if value]
+    reference = details.get("reference") or KIND_LABELS.get(notification.entity_type, "Item")
+    subject = f"Escalation: {reference} · {details.get('title') or notification.title}"
+
+    text_lines = [heading, "", intro, ""]
+    text_lines += [f"{label}: {value}" for label, value in rows]
+    if notification.message:
+        text_lines += ["", f"Note from {actor}:", notification.message]
+    text_lines += [
+        "",
+        f"Open in Project Hub: {item_url}",
+        "",
+        "--",
+        f"{account_name} · Project Hub",
+        f"You got this email because {actor} escalated this to you. Email settings: {settings_url}",
+    ]
+
+    table = "".join(
+        f'<tr><td style="padding:10px 0;border-top:1px solid #e2e8f0;width:130px;font-size:14px;color:#64748b">'
+        f"{escape(label)}</td>"
+        f'<td style="padding:10px 0;border-top:1px solid #e2e8f0;font-size:14px;color:#0f172a;'
+        f'{"font-weight:700;color:" + NAVY if label == "Reference" else ""}">{escape(value)}</td></tr>'
+        for label, value in rows
+    )
+    note_html = (
+        f'<p style="margin:20px 0 4px;font-size:12px;color:#64748b">Note from {escape(actor)}</p>'
+        f'<p style="margin:0;font-size:14px;line-height:22px;white-space:pre-line">{escape(notification.message)}</p>'
+        if notification.message
+        else ""
+    )
+    content = (
+        f'<p style="margin:0 0 4px;font-size:12px;color:#64748b">{escape(account_name)}</p>'
+        f'<h1 style="margin:0;font-size:20px;line-height:28px;color:{NAVY}">{escape(heading)}</h1>'
+        f'<p style="margin:8px 0 0;font-size:14px;line-height:22px;color:#475569">{escape(intro)}</p>'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="margin-top:16px;border-bottom:1px solid #e2e8f0">{table}</table>'
+        + note_html
+        + f'<p style="margin:24px 0 0">{_button(item_url, "Open in Project Hub", color=NAVY)}</p>'
+    )
+    footer = f"You got this email because {escape(actor)} escalated this to you. {_link(settings_url, 'Email settings')}"
+    return OutgoingEmail(
+        to=user.email,
+        subject=_truncate(subject, 150),
+        text="\n".join(text_lines),
+        html=_html_page(preheader=intro, content=content, footer=footer),
     )
 
 
@@ -563,16 +638,22 @@ class EmailDeliveryService:
             self.db.commit()
             return "retry"
 
-        email = replace(
-            render_notification_email(
+        if notification.notification_type == NotificationType.ESCALATION.value:
+            rendered = render_escalation_email(
+                settings=self.settings,
+                user=user,
+                notification=notification,
+                account_name=self.account_name(notification.account_id),
+            )
+        else:
+            rendered = render_notification_email(
                 settings=self.settings,
                 user=user,
                 notification=notification,
                 item=describe_item(self.db, notification.entity_type, notification.entity_id),
                 account_name=self.account_name(notification.account_id),
-            ),
-            account_id=notification.account_id,
-        )
+            )
+        email = replace(rendered, account_id=notification.account_id)
         try:
             self.sender.send(email)
         except NoEmailRoute:
