@@ -55,9 +55,9 @@ CLAIM_TIMEOUT = timedelta(minutes=10)
 # Don't remind someone about the same task twice in a row.
 DUE_SOON_REPEAT_AFTER = timedelta(days=3)
 DIGEST_ITEM_LIMIT = 50
-# The My work summary lists at most this many tasks or mentions per section.
+# The Home summary lists at most this many tasks or mentions per section.
 SUMMARY_SECTION_LIMIT = 15
-# Same window as the My work page, so the email and the page agree.
+# How far ahead the summary looks for tasks due soon.
 MY_WORK_HORIZON_DAYS = 60
 # Unread mentions from the last day count as new.
 NEW_MENTION_WINDOW = timedelta(days=1)
@@ -748,7 +748,7 @@ class EmailDeliveryService:
                 visible = access_for(self.db, account_id=account_id, user=user).visible_project_ids(ProjectModule.TASKS)
             except HTTPException:
                 continue
-            # The same query as My work's due tasks, with assigned_to = this person.
+            # The due-tasks query (list_due_tasks), with assigned_to = this person.
             rows = tasks.list_due_tasks(
                 account_id=account_id,
                 today=local_today,

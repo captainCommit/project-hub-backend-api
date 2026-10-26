@@ -73,7 +73,7 @@ def calendar_items(db: Session, user: User, *, today: date | None = None) -> lis
     items: dict[str, CalendarItem] = {}
     account_ids = db.scalars(select(AccountMember.account_id).where(AccountMember.user_id == user.id)).all()
     for account_id in account_ids:
-        # The person's own tasks, exactly as My work finds them.
+        # The person's own tasks, from the due-tasks query (list_due_tasks).
         due = TaskService(db).list_due_tasks(account_id=account_id, current_user=user, mode="BOTH", days=AHEAD_DAYS, assigned_to=user.id)
         for task in due["tasks"]:  # type: ignore[index]
             day = task.get("finish_date")

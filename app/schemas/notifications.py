@@ -39,7 +39,7 @@ class NotificationPreferencesRead(BaseModel):
     digest_hour: int
     # False while the timezone is still the default nobody chose; the app then saves the browser's zone.
     timezone_confirmed: bool
-    # The daily email's summary of My work (overdue, due today, blocked, new mentions).
+    # The daily email's Home summary (overdue, due today, blocked, new mentions).
     my_work_summary: bool
     email: str
     # False when the server has no email sender set up: settings save, but nothing is sent yet.

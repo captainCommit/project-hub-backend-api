@@ -19,7 +19,7 @@ class EmailFrequency(str, Enum):
 EMAIL_CATEGORY_DEFAULTS: dict[str, EmailFrequency] = {
     "mentions": EmailFrequency.IMMEDIATE,
     "assignments": EmailFrequency.IMMEDIATE,
-    # The My work summary already lists what is due today, so reminders join the digest unless asked for sooner.
+    # The Home summary already lists what is due today, so reminders join the digest unless asked for sooner.
     "due_soon": EmailFrequency.DIGEST,
     "status_changes": EmailFrequency.DIGEST,
     "comments": EmailFrequency.OFF,
@@ -57,7 +57,7 @@ class NotificationPreference(Base):
     digest_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=DEFAULT_DIGEST_HOUR)
     # False while timezone is still the default; the app then fills in the browser's zone once.
     timezone_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    # The daily email's summary of My work: overdue, due today, blocked, new mentions (IN-2).
+    # The daily email's Home summary: overdue, due today, blocked, new mentions (IN-2).
     my_work_summary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     # Local dates of the last morning run, so each happens once a day.
     last_digest_on: Mapped[date | None] = mapped_column(Date, nullable=True)

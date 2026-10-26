@@ -16,7 +16,7 @@ from app.models.notification_preference import (
 )
 from app.models.user import User
 
-# Not a notification category: an on/off switch for the My work part of the daily email (IN-2).
+# Not a notification category: an on/off switch for the Home summary in the daily email (IN-2).
 MY_WORK_SUMMARY = "my_work_summary"
 # What an unsubscribe link can turn off, besides "all".
 UNSUBSCRIBE_CATEGORIES = (*EMAIL_CATEGORY_DEFAULTS, MY_WORK_SUMMARY)
