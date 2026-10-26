@@ -476,7 +476,7 @@ def test_failed_digest_is_retried_next_hour(client: TestClient, db_session: Sess
     assert len(sender.sent) == 1
 
 
-# Daily digest: My work summary (IN-2) --------------------------------------------------------------------------
+# Daily digest: Home summary (IN-2) --------------------------------------------------------------------------
 
 
 def task_status_id(db_session: Session, hierarchy: dict, value: str) -> str:
@@ -527,8 +527,8 @@ def test_digest_summarizes_my_work(client: TestClient, db_session: Session, deli
     assert text.index("NEW MENTIONS (1)") < text.index("Next week")  # mentioned on, but not due yet
     assert f"{APP_URL}/projects/{project_id}/sheet?task={mine['Late report']['id']}" in text
     assert "Already done" not in text and "Someone else's" not in text
-    assert "Open My work" in digest.html
-    token = text.split("Stop the My work summary: ")[1].split()[0].split("token=")[1]
+    assert "Open Home" in digest.html
+    token = text.split("Stop the Home summary: ")[1].split()[0].split("token=")[1]
     assert read_unsubscribe_token(SECRET, token) == (member.id, "my_work_summary")
     assert db_session.get(NotificationPreference, member.id).last_digest_on == LOCAL_TODAY
 
@@ -602,7 +602,7 @@ def test_my_work_summary_unsubscribe_links(client: TestClient, db_session: Sessi
     client.post("/api/v1/email/unsubscribe", params={"token": make_unsubscribe_token(SECRET, member.id, "my_work_summary")})
     client.post("/api/v1/email/unsubscribe", params={"token": make_unsubscribe_token(SECRET, other.id, "all")})
 
-    assert "your daily My work summary" in page.text
+    assert "your daily Home summary" in page.text
     preference = db_session.get(NotificationPreference, member.id)
     assert (preference.my_work_summary, preference.mentions) == (False, "IMMEDIATE")
     assert db_session.get(NotificationPreference, other.id).my_work_summary is False

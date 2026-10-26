@@ -39,7 +39,7 @@ CATEGORY_LABELS = {
     "due_soon": "due-soon reminders",
     "status_changes": "status changes",
     "comments": "comments",
-    MY_WORK_SUMMARY: "your daily My work summary",
+    MY_WORK_SUMMARY: "your daily Home summary",
 }
 
 
@@ -128,7 +128,7 @@ class NotificationPreferenceService:
         return self.read(user)
 
     def unsubscribe(self, user_id: UUID, category: str) -> None:
-        """Turn off one category, the My work summary, or everything when category is "all"."""
+        """Turn off one category, the Home summary, or everything when category is "all"."""
         preference = self.get_or_create(user_id)
         if category in (MY_WORK_SUMMARY, "all"):
             preference.my_work_summary = False

@@ -386,7 +386,7 @@ class SummaryTask:
 
 @dataclass
 class MyWorkSummary:
-    """What My work would show this morning, across every account the person belongs to (IN-2)."""
+    """The Home summary: overdue, due-today and blocked work and new mentions this morning, across every account (IN-2)."""
 
     overdue: list[SummaryTask] = field(default_factory=list)
     due_today: list[SummaryTask] = field(default_factory=list)
@@ -480,7 +480,7 @@ def _render_summary(summary: MyWorkSummary, base: str, text_lines: list[str], ht
             detail = " · ".join(details)
             text_lines += [f"- {task.name}", f"  {detail}", f"  {url}", ""]
             html_parts.append(_html_line(url, task.name, detail))
-        _more(len(tasks), base + MY_WORK_PATH, "in My work", text_lines, html_parts)
+        _more(len(tasks), base + MY_WORK_PATH, "on Home", text_lines, html_parts)
 
     if summary.mentions:
         mentions = summary.mentions
@@ -505,7 +505,7 @@ def render_digest_email(
     entries: list[DigestEntry],
     summary: MyWorkSummary | None = None,
 ) -> OutgoingEmail:
-    """The daily email: the My work summary (when on and not empty), then notifications queued for the digest."""
+    """The daily email: the Home summary (when on and not empty), then notifications queued for the digest."""
     if summary is not None and summary.is_empty():
         summary = None
     base = app_base(settings)
@@ -547,8 +547,8 @@ def render_digest_email(
         html_parts.append(f'<p style="margin:14px 0 0;font-size:14px;color:#475569">…and {hidden} more.</p>')
 
     if summary is not None:
-        button = _button(base + MY_WORK_PATH, "Open My work")
-        why = "You get this daily digest for My work and the updates you chose."
+        button = _button(base + MY_WORK_PATH, "Open Home")
+        why = "You get this daily digest for your Home summary and the updates you chose."
     else:
         button = _button(base + "/", "Open Project Hub")
         why = "You get this daily digest for the updates you chose."
@@ -558,8 +558,8 @@ def render_digest_email(
     footer_links = [_link(settings_url, "Email settings")]
     if summary is not None:
         stop_summary = unsubscribe_url(settings, user.id, MY_WORK_SUMMARY)
-        text_lines += [f"Stop the My work summary: {stop_summary}"]
-        footer_links.append(_link(stop_summary, "Stop the My work summary"))
+        text_lines += [f"Stop the Home summary: {stop_summary}"]
+        footer_links.append(_link(stop_summary, "Stop the Home summary"))
     text_lines += [f"Unsubscribe from all Project Hub emails: {unsubscribe}"]
     footer_links.append(_link(unsubscribe, "Unsubscribe from all Project Hub emails"))
     return OutgoingEmail(
@@ -795,7 +795,7 @@ class EmailDeliveryService:
     def send_digest(self, user: User, *, now: datetime, local_today: date | None = None) -> bool | None:
         """True: sent. False: nothing to send. None: SES failed, so try again next hour.
 
-        With local_today, the email starts with the person's My work summary for that day.
+        With local_today, the email starts with the person's Home summary for that day.
         """
         queued = list(
             self.db.scalars(
@@ -860,7 +860,7 @@ class EmailDeliveryService:
     ) -> MyWorkSummary:
         """Overdue, due today and blocked tasks assigned to the person, plus unread mentions from the last day.
 
-        Uses My work's due-tasks query, so the email matches the page. Mentions already queued for this digest
+        Uses the due-tasks query (list_due_tasks). Mentions already queued for this digest
         (already_listed) are left to the updates section.
         """
         summary = MyWorkSummary()
@@ -925,7 +925,7 @@ class EmailDeliveryService:
         return summary
 
     def blocked_status_ids(self, account_id: UUID) -> set[UUID]:
-        """Task statuses My work counts as blocked (it compares the value, ignoring case)."""
+        """Task statuses the summary counts as blocked (it compares the value, ignoring case)."""
         return set(
             self.db.scalars(
                 select(OptionValue.id)

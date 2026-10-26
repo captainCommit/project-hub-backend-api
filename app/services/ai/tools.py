@@ -345,7 +345,7 @@ TOOLS: list[Tool] = [
     Tool(
         ToolSpec(
             "my_work",
-            "The signed-in person's own tasks that are overdue or due soon (what the My work page shows).",
+            "The signed-in person's own tasks that are overdue or due soon (what Home shows under My Priorities).",
             _object({"days": {"type": "integer", "description": "How many days ahead to include (default 14, max 60)."}}),
         ),
         my_work,

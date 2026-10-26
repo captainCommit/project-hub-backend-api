@@ -63,14 +63,14 @@ def mine(ctx: CommandContext) -> ChatMessage:
     result = my_work(ToolContext(ctx.db, ctx.account_id, ctx.user), {"days": 14})
     tasks = result["items"]
     if not tasks:
-        return ChatMessage(title="Nothing overdue or due in the next two weeks. 🎉", link="/", link_label="Open My work")
+        return ChatMessage(title="Nothing overdue or due in the next two weeks. 🎉", link="/", link_label="Open Home")
     items = []
     for task in tasks[:LIST_LIMIT]:
         due = task.get("finish_date")
         late = " (overdue)" if task.get("due_status") == "OVERDUE" else ""
         items.append((f"{task['name']}: {task.get('project', '')}" + (f", due {due}{late}" if due else ""), task["link"]))
     title = f"You have {result['total']} task{'s' if result['total'] != 1 else ''} due soon or overdue"
-    return ChatMessage(title=title, items=items, link="/", link_label="Open My work")
+    return ChatMessage(title=title, items=items, link="/", link_label="Open Home")
 
 
 def find(ctx: CommandContext, query: str) -> ChatMessage:
