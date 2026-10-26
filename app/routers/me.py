@@ -15,6 +15,10 @@ from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/api/v1", tags=["me"])
 
+# Tour ids come from the UI's tour definitions ("raid", "governance", ...).
+TOUR_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,49}$")
+MAX_SEEN_TOURS = 200
+
 
 def serialize_user(user: User, settings: Settings) -> dict[str, object]:
     photo_url = None
@@ -53,6 +57,38 @@ def update_me(
             changes["full_name"] = full_name
     for field, value in changes.items():
         setattr(current_user, field, value)
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return serialize_user(current_user, settings)
+
+
+@router.post("/me/tours/{tour_id}", response_model=UserRead, summary="Remember that I've seen a first-time tour")
+def mark_tour_seen(
+    tour_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, object]:
+    if not TOUR_ID.match(tour_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown tour.")
+    seen = list(current_user.seen_tours or [])
+    if tour_id not in seen:
+        # A new list, so SQLAlchemy notices the JSON column changed.
+        current_user.seen_tours = (seen + [tour_id])[-MAX_SEEN_TOURS:]
+        db.add(current_user)
+        db.commit()
+        db.refresh(current_user)
+    return serialize_user(current_user, settings)
+
+
+@router.delete("/me/tours", response_model=UserRead, summary="Show every first-time tour again")
+def reset_tours(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, object]:
+    current_user.seen_tours = []
     db.add(current_user)
     db.commit()
     db.refresh(current_user)

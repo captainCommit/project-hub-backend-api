@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, String, Uuid, func
+from sqlalchemy import JSON, Boolean, DateTime, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -31,6 +31,8 @@ class User(Base):
     photo_s3_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # When the person last cleared the Home page bell; items newer than this show as unread.
     home_notifications_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # First-time tours (ids defined in the UI, one per module) the person has finished or skipped.
+    seen_tours: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Platform admins create accounts and can manage users in any account.
     is_platform_admin: Mapped[bool] = mapped_column(
         Boolean,

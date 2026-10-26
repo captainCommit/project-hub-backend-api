@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class UserRead(BaseModel):
@@ -18,10 +18,16 @@ class UserRead(BaseModel):
     photo_url: str | None = None
     is_active: bool
     is_platform_admin: bool = False
+    seen_tours: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("seen_tours", mode="before")
+    @classmethod
+    def none_is_empty(cls, value: object) -> object:
+        return value or []
 
 
 class UserProfileUpdate(BaseModel):
