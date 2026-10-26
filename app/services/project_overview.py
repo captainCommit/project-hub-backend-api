@@ -252,6 +252,10 @@ class ProjectOverviewService:
             "status": self.option_summary(status_value),
             "start_date": project.start_date,
             "target_end_date": project.target_end_date,
+            # The project page lays this over the project record, so anything it shows must be here too.
+            "project_manager": project.project_manager,
+            "budget": project.budget,
+            "delivery_type": project.delivery_type,
         }
 
     def task_summary(self, task: Task, status_value: OptionValue | None, task_type_value: OptionValue | None) -> dict[str, object]:

@@ -45,10 +45,12 @@ def test_status_before_and_after_a_key_is_saved(client: TestClient, db_session: 
 
     assert before == {
         "available": False, "source": None, "reason": "NOT_SET_UP", "provider_label": None, "model": None, "can_manage": False,
+        "enabled": True, "requested_at": None,
     }
     assert saved.status_code == 200, saved.text
     assert after == {
         "available": True, "source": "BYOK", "reason": None, "provider_label": "OpenAI", "model": "gpt-test", "can_manage": False,
+        "enabled": True, "requested_at": None,
     }
 
 

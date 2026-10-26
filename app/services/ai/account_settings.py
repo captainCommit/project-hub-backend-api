@@ -16,6 +16,7 @@ from app.services.access import access_for
 from app.services.activity import ActivityLogService
 from app.services.ai.endpoints import Resolver, UnsafeEndpoint, check_endpoint, resolve_host
 from app.services.ai.keys import KeyCipher, KeyStorageUnavailable, key_cipher, last4
+from app.services.ai.feature import AiFeatureService
 from app.services.ai.platform import PlatformAiService
 from app.services.ai.providers import (
     PROVIDER_LABELS,
@@ -53,6 +54,7 @@ class AiSettingsService:
     def status(self, *, account_id: UUID, current_user: User) -> dict[str, object]:
         scope = access_for(self.db, account_id=account_id, user=current_user)
         row = self.db.get(AiAccountSettings, account_id)
+        account = self.db.get(Account, account_id)
         result: dict[str, object] = {
             "available": False,
             "source": None,
@@ -60,7 +62,12 @@ class AiSettingsService:
             "provider_label": None,
             "model": None,
             "can_manage": scope.is_owner,
+            "enabled": bool(account and account.ai_enabled),
+            "requested_at": account.ai_requested_at if account else None,
         }
+        # A platform admin hasn't turned AI on for the account (see feature.py).
+        if not result["enabled"]:
+            return {**result, "reason": "NOT_ENABLED"}
         if row is not None and not row.assistant_enabled:
             return {**result, "reason": "OFF"}
         if row is not None and row.has_key:
@@ -198,6 +205,8 @@ class AiSettingsService:
 
     def resolve_byok(self, account_id: UUID) -> ResolvedModel | None:
         """The account's own model, with its key decrypted. Only the AI worker can decrypt, deployed."""
+        if not AiFeatureService(self.db).is_enabled(account_id):
+            return None
         row = self.db.get(AiAccountSettings, account_id)
         if row is None or not row.assistant_enabled or not row.has_key:
             return None
@@ -238,6 +247,8 @@ class AiSettingsService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Only account owners manage the AI assistant."
             )
+        # The settings only exist once a platform admin has turned AI on for the account.
+        AiFeatureService(self.db).require_enabled(account_id)
 
     @staticmethod
     def describe_key(row: AiAccountSettings) -> str | None:

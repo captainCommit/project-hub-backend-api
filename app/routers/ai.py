@@ -11,6 +11,8 @@ from app.schemas.ai import (
     AiConversationCreate,
     AiConversationDetail,
     AiConversationRead,
+    AiFeatureAccountRead,
+    AiFeatureUpdate,
     AiKeyUpdate,
     AiPlatformAccessUpdate,
     AiPlatformAccountRead,
@@ -31,6 +33,7 @@ from app.services.ai.account_settings import AiSettingsService
 from app.services.ai.conversations import ConversationService
 from app.services.ai.dispatch import DispatchFailed, Dispatcher, dispatch_run
 from app.services.ai.endpoints import Resolver, resolve_host
+from app.services.ai.feature import AiFeatureService
 from app.services.ai.providers import Transport, requests_transport
 from app.services.ai.platform import PlatformAiService
 from app.services.ai.reports import ReportService
@@ -66,6 +69,17 @@ def get_ai_status(
     service: AiSettingsService = Depends(settings_service),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, object]:
+    return service.status(account_id=account_id, current_user=current_user)
+
+
+@router.post("/accounts/{account_id}/ai/access-request", response_model=AiStatusRead, summary="Ask a platform admin to turn AI on for the account (owners)")
+def request_ai_access(
+    account_id: UUID,
+    db: Session = Depends(get_db),
+    service: AiSettingsService = Depends(settings_service),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    AiFeatureService(db).request(account_id=account_id, current_user=current_user)
     return service.status(account_id=account_id, current_user=current_user)
 
 
@@ -343,3 +357,23 @@ def decide_platform_ai_account(
 ) -> dict[str, object]:
     require_platform_admin(current_user)
     return platform.decide(actor=current_user, account_id=account_id, decision=decision)
+
+
+@router.get("/admin/ai/feature", response_model=list[AiFeatureAccountRead], summary="Which accounts have AI turned on, and who asked for it (platform admins)")
+def list_ai_feature_accounts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    require_platform_admin(current_user)
+    return AiFeatureService(db).list_accounts()
+
+
+@router.put("/admin/ai/feature/{account_id}", response_model=AiFeatureAccountRead, summary="Turn AI on or off for an account (platform admins)")
+def set_ai_feature(
+    account_id: UUID,
+    change: AiFeatureUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    require_platform_admin(current_user)
+    return AiFeatureService(db).set_enabled(actor=current_user, account_id=account_id, enabled=change.enabled)

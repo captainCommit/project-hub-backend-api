@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.models.ai import AiAccountSettings, AiConversation, AiMessage, AiReport, AiRun, AiRunStatus, DEFAULT_RETENTION_DAYS
 from app.models.user import User
+from app.services.ai.feature import NOT_ENABLED_MESSAGE, AiFeatureService
 from app.services.access import access_for
 from app.services.ai.account_settings import AiSettingsService
 from app.services.ai.tools import progress_label
@@ -26,6 +27,7 @@ TITLE_CHARS = 60
 UNAVAILABLE_MESSAGES = {
     "OFF": "An account owner has switched the assistant off.",
     "NOT_SET_UP": "The assistant isn't set up for this account yet.",
+    "NOT_ENABLED": NOT_ENABLED_MESSAGE,
     "LIMIT_REACHED": "This account has used its AI allowance for the month.",
 }
 STALE_RUN_ERROR = "That took too long to answer. Try again."
@@ -74,6 +76,7 @@ class ConversationService:
 
     def create(self, *, account_id: UUID, current_user: User, title: str | None) -> AiConversation:
         access_for(self.db, account_id=account_id, user=current_user)
+        AiFeatureService(self.db).require_enabled(account_id)
         conversation = AiConversation(
             account_id=account_id, user_id=current_user.id, title=(title or "").strip()[:200] or None
         )

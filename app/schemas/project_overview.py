@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
@@ -20,6 +21,9 @@ class ProjectOverviewProjectSummary(BaseModel):
     status: StatusSummary | None
     start_date: date | None
     target_end_date: date | None
+    project_manager: str | None = None
+    budget: Decimal | None = None
+    delivery_type: str | None = None
 
 
 class ProjectOverviewStats(BaseModel):

@@ -13,11 +13,29 @@ class AiStatusRead(BaseModel):
     available: bool
     # Where the model comes from: the account's own key, or the platform.
     source: Literal["BYOK", "PLATFORM"] | None
-    # Why it isn't available: switched off by an owner, or no model set up.
-    reason: Literal["OFF", "NOT_SET_UP", "LIMIT_REACHED"] | None
+    # Why it isn't available: AI not turned on for the account (platform admins), switched off by an owner,
+    # no model set up, or the month's allowance used up.
+    reason: Literal["NOT_ENABLED", "OFF", "NOT_SET_UP", "LIMIT_REACHED"] | None
     provider_label: str | None
     model: str | None
     can_manage: bool
+    # Whether a platform admin has turned AI on for the account, and when an owner last asked for it.
+    enabled: bool = False
+    requested_at: datetime | None = None
+
+
+class AiFeatureAccountRead(BaseModel):
+    """One account's AI switch, for the platform admin portal."""
+
+    account_id: UUID
+    account_name: str
+    enabled: bool
+    requested_at: datetime | None
+    requested_by_email: str | None
+
+
+class AiFeatureUpdate(BaseModel):
+    enabled: bool
 
 
 class AiKeyRead(BaseModel):

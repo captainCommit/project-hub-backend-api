@@ -99,9 +99,13 @@ def post(client: TestClient, path: str, body: dict) -> dict:
     return response.json()
 
 
-def create_account(client: TestClient, name: str = "Acme") -> dict[str, dict]:
+def create_account(client: TestClient, name: str = "Acme", *, ai: bool = True) -> dict[str, dict]:
+    """An account with a portfolio, a program and two projects. ai: turn the AI assistant on, as a platform admin would."""
     suffix = uuid4().hex[:8]
     account = post(client, "/api/v1/accounts", {"name": f"{name} {suffix}", "slug": f"{name.lower()}-{suffix}"})
+    if ai:
+        response = client.put(f"/api/v1/admin/ai/feature/{account['id']}", json={"enabled": True})
+        assert response.status_code == 200, response.text
     portfolio = post(client, f"/api/v1/accounts/{account['id']}/portfolios", {"name": "Portfolio"})
     program = post(client, f"/api/v1/portfolios/{portfolio['id']}/programs", {"name": "Retail"})
     apollo = post(client, f"/api/v1/programs/{program['id']}/projects", {"name": "Apollo"})

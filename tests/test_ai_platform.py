@@ -114,6 +114,7 @@ def test_owner_requests_and_admin_switches_it_on(client: TestClient, db_session:
     assert (enabled.json()["allowance_kind"], enabled.json()["allowance_amount"]) == ("CREDIT", 500)
     assert status == {
         "available": True, "source": "PLATFORM", "reason": None, "provider_label": "OpenAI", "model": "gpt-platform", "can_manage": False,
+        "enabled": True, "requested_at": None,
     }
     actions = db_session.scalars(select(PlatformAuditEvent.action)).all()
     assert "ai.platform_model_created" in actions and "account.ai_platform_enabled" in actions

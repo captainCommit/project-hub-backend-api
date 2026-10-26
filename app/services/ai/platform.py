@@ -27,6 +27,7 @@ from app.models.ai import (
 )
 from app.models.user import User
 from app.schemas.ai import AiPlatformAccessUpdate, AiPlatformModelCreate, AiPlatformModelUpdate
+from app.services.ai.feature import AiFeatureService
 from app.services.access import access_for
 from app.services.activity import ActivityLogService
 from app.services.ai.providers import Provider, ProviderConfig, ResolvedModel
@@ -94,6 +95,8 @@ class PlatformAiService:
     # The worker
 
     def resolve(self, account_id: UUID) -> ResolvedModel | None:
+        if not AiFeatureService(self.db).is_enabled(account_id):
+            return None
         reason, model = self.availability(account_id)
         if reason == "LIMIT_REACHED":
             raise PlatformLimitReached
@@ -322,6 +325,7 @@ class PlatformAiService:
     def require_owner(self, account_id: UUID, current_user: User) -> None:
         if not access_for(self.db, account_id=account_id, user=current_user).is_owner:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only account owners manage the AI assistant.")
+        AiFeatureService(self.db).require_enabled(account_id)
 
     def record_for_account(self, account_id: UUID, user: User, what: str) -> None:
         ActivityLogService(self.db).record(
