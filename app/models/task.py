@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -59,6 +59,8 @@ class Task(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # RAID, decision and change request records the task is linked to: [{"type": "RISK", "id": "<uuid>"}, ...]
+    related_records: Mapped[list[dict[str, str]] | None] = mapped_column(JSON, nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     finish_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     duration_days: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)

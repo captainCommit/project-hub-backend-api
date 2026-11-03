@@ -88,6 +88,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "prefix": "ASS",
         "entity_type": "ASSUMPTION",
         "options": {
+            "priority_id": ("PRIORITY", "Invalid assumption priority."),
             "status_id": ("STATUS", "Invalid assumption status."),
         },
         "account_sort_fields": {"created_at", "updated_at", "date_entered", "description"},

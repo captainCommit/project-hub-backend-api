@@ -159,6 +159,7 @@ class TaskService:
                     "sort_order": task.sort_order,
                     "resources": resources.get(task.id, []),
                     "predecessors": predecessors.get(task.id, []),
+                    "related_records": task.related_records or [],
                 }
                 for task in tasks
             ],
@@ -799,6 +800,16 @@ class TaskService:
         return {"project_id": project_id, "sprint_id": sprint_id, "columns": columns}
 
     def prepare_task_update_changes(self, *, task: Task, project: Project, changes: dict[str, object]) -> None:
+        if "related_records" in changes:
+            # Stored as plain JSON, once per record, in the order given.
+            seen: set[tuple[str, str]] = set()
+            records: list[dict[str, str]] = []
+            for record in changes["related_records"] or []:  # type: ignore[union-attr]
+                key = (str(record["type"]), str(record["id"]))
+                if key not in seen:
+                    seen.add(key)
+                    records.append({"type": key[0], "id": key[1]})
+            changes["related_records"] = records
         if "parent_task_id" in changes:
             self.assert_valid_parent(
                 project_id=task.project_id,
@@ -1013,6 +1024,7 @@ class TaskService:
         }
         users = self.tasks.get_users_by_ids(user_ids)
         member_names = self.tasks.get_member_resource_names({task.account_id for task in tasks}, user_ids)
+        comment_counts = self.tasks.count_comments(task_ids)
 
         def assignment_read(assignment: TaskAssignment) -> object:
             user = users.get(assignment.user_id) if not assignment.resource_name else None
@@ -1041,6 +1053,7 @@ class TaskService:
                     for allocation, resource in allocations.get(task.id, [])
                 ],
                 "predecessors": predecessors.get(task.id, []),
+                "comment_count": comment_counts.get(task.id, 0),
             }
             for task in tasks
         ]

@@ -137,6 +137,8 @@ class SupportAdminService:
             "status": ticket.status,
             "requester_name": ticket.requester_name,
             "requester_email": ticket.requester_email,
+            "phone_call_ok": ticket.phone_call_ok,
+            "phone_number": ticket.phone_number,
             "message_count": len(messages),
             "needs_reply": needs_reply(ticket),
             "messages": messages if with_messages else [],

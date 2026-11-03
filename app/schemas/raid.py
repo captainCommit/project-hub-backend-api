@@ -133,8 +133,9 @@ class AccountIssueRead(IssueRead):
     program: RaidProgramSummary | None = None
 
 
-class AssumptionCreate(StatusKeyInput):
+class AssumptionCreate(OptionKeyInput):
     description: str = Field(min_length=1)
+    priority_id: UUID | None = None
     status_id: UUID | None = None
     entered_by: UUID | None = None
     entered_by_name: str | None = Field(default=None, max_length=255)
@@ -143,8 +144,9 @@ class AssumptionCreate(StatusKeyInput):
     target_date: date | None = None
 
 
-class AssumptionUpdate(StatusKeyInput):
+class AssumptionUpdate(OptionKeyInput):
     description: str | None = Field(default=None, min_length=1)
+    priority_id: UUID | None = None
     status_id: UUID | None = None
     entered_by: UUID | None = None
     entered_by_name: str | None = Field(default=None, max_length=255)
@@ -160,6 +162,7 @@ class AssumptionRead(BaseModel):
     program_id: UUID | None
     assumption_number: str
     description: str
+    priority_id: UUID | None = None
     status_id: UUID | None
     entered_by: UUID | None
     entered_by_name: str | None = None
@@ -171,6 +174,7 @@ class AssumptionRead(BaseModel):
     created_by_name: str | None = None
     comment_count: int = 0
     portfolio_id: UUID | None = None
+    priority: StatusSummary | None = None
     status: StatusSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)

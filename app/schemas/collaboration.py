@@ -96,6 +96,8 @@ class SupportTicketCreate(BaseModel):
     priority: TicketPriority = "MEDIUM"
     requester_name: str | None = Field(default=None, max_length=255)
     requester_email: str | None = Field(default=None, max_length=255)
+    phone_call_ok: bool = False
+    phone_number: str | None = Field(default=None, max_length=40)
 
     _normalize_keys = field_validator("category", "priority", mode="before")(upper_key)
 
@@ -125,6 +127,8 @@ class SupportTicketRead(BaseModel):
     requester_user_id: UUID | None
     requester_name: str
     requester_email: str
+    phone_call_ok: bool = False
+    phone_number: str | None = None
     messages: list[dict[str, Any]]
     created_at: datetime
     updated_at: datetime

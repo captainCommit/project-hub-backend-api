@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.hierarchy import ProjectRead, StatusSummary
 from app.schemas.sprints import SprintSummary
@@ -35,9 +35,18 @@ class TaskCreate(TaskBase):
     pass
 
 
+RelatedRecordType = Literal["RISK", "ISSUE", "ASSUMPTION", "DEPENDENCY", "DECISION", "CHANGE_REQUEST"]
+
+
+class TaskRelatedRecord(BaseModel):
+    type: RelatedRecordType
+    id: UUID
+
+
 class TaskUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
+    related_records: list[TaskRelatedRecord] | None = Field(default=None, max_length=50)
     sprint_id: UUID | None = None
     parent_task_id: UUID | None = None
     task_type_id: UUID | None = None
@@ -245,6 +254,13 @@ class TaskRead(BaseModel):
     assignments: list[TaskAssignmentRead] = []
     allocations: list[TaskAllocationSummary] = []
     predecessors: list[TaskPredecessorRead] = []
+    related_records: list[TaskRelatedRecord] = []
+    comment_count: int = 0
+
+    @field_validator("related_records", mode="before")
+    @classmethod
+    def none_as_empty(cls, value: object) -> object:
+        return value or []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -291,6 +307,7 @@ class TaskGanttTaskRead(BaseModel):
     sort_order: Decimal
     resources: list[TaskResourceSummaryRead] = Field(default_factory=list)
     predecessors: list[TaskPredecessorRead] = Field(default_factory=list)
+    related_records: list[TaskRelatedRecord] = Field(default_factory=list)
 
 
 class ProjectTaskGanttRead(BaseModel):
@@ -332,3 +349,17 @@ class DueTasksRead(BaseModel):
     tasks: list[DueTaskRead]
     overdue: list[DueTaskRead]
     upcoming: list[DueTaskRead]
+
+
+class TaskNudgeCreate(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class TaskNudgeSkipped(BaseModel):
+    name: str
+    reason: str
+
+
+class TaskNudgeRead(BaseModel):
+    notified: list[str]
+    skipped: list[TaskNudgeSkipped]
