@@ -15,6 +15,7 @@ from app.models.program import Program
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.resource_allocation import ResourceAllocation
+from app.models.resource_project_allocation import ResourceProjectAllocation
 from app.models.resource_skill import ResourceSkill
 from app.models.resource_time_off import ResourceTimeOff
 from app.models.skill import Skill
@@ -185,6 +186,50 @@ class ResourceService:
         except Exception:
             self.db.rollback()
             raise
+
+    def list_project_allocation_overrides(self, *, account_id: UUID, current_user: User) -> list[ResourceProjectAllocation]:
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        return list(
+            self.db.scalars(select(ResourceProjectAllocation).where(ResourceProjectAllocation.account_id == account_id)).all()
+        )
+
+    def set_project_allocation_override(
+        self, *, resource_id: UUID, project_id: UUID, weekly_hours: Decimal | None, current_user: User
+    ) -> ResourceProjectAllocation | None:
+        resource = self.get_resource_or_404(resource_id)
+        self.require_account_role(account_id=resource.account_id, user_id=current_user.id, allowed_roles=RESOURCE_WRITE_ROLES)
+        project = self.db.get(Project, project_id)
+        if project is None or project.account_id != resource.account_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+        override = self.db.scalar(
+            select(ResourceProjectAllocation).where(
+                ResourceProjectAllocation.resource_id == resource_id, ResourceProjectAllocation.project_id == project_id
+            )
+        )
+        if weekly_hours is None:
+            if override is not None:
+                self.db.delete(override)
+                self.db.commit()
+            return None
+        if override is None:
+            override = ResourceProjectAllocation(
+                account_id=resource.account_id, resource_id=resource_id, project_id=project_id, weekly_hours=weekly_hours
+            )
+            self.db.add(override)
+        else:
+            override.weekly_hours = weekly_hours
+        self.db.commit()
+        self.db.refresh(override)
+        return override
+
+    def reset_project_allocation_overrides(self, *, resource_id: UUID, current_user: User) -> None:
+        resource = self.get_resource_or_404(resource_id)
+        self.require_account_role(account_id=resource.account_id, user_id=current_user.id, allowed_roles=RESOURCE_WRITE_ROLES)
+        for override in self.db.scalars(
+            select(ResourceProjectAllocation).where(ResourceProjectAllocation.resource_id == resource_id)
+        ).all():
+            self.db.delete(override)
+        self.db.commit()
 
     def list_resource_allocations(self, *, resource_id: UUID, current_user: User) -> list[ResourceAllocation]:
         resource = self.get_resource_or_404(resource_id)

@@ -75,6 +75,8 @@ class ChangeRequestCreate(OptionKeyInput):
     proposed_by_name: str | None = Field(default=None, max_length=255)
     proposed_date: date | None = None
     related_record: str | None = Field(default=None, max_length=255)
+    implementation_resources: list[str] | None = Field(default=None, max_length=50)
+    completion_date: date | None = None
 
 
 class ChangeRequestUpdate(OptionKeyInput):
@@ -85,6 +87,8 @@ class ChangeRequestUpdate(OptionKeyInput):
     proposed_by_name: str | None = Field(default=None, max_length=255)
     proposed_date: date | None = None
     related_record: str | None = Field(default=None, max_length=255)
+    implementation_resources: list[str] | None = Field(default=None, max_length=50)
+    completion_date: date | None = None
 
 
 class ChangeRequestRead(ProjectLogReadBase):
@@ -92,6 +96,13 @@ class ChangeRequestRead(ProjectLogReadBase):
     proposed_by_name: str | None
     proposed_date: date | None
     related_record: str | None
+    implementation_resources: list[str] = []
+    completion_date: date | None = None
+
+    @field_validator("implementation_resources", mode="before")
+    @classmethod
+    def none_as_empty(cls, value: object) -> object:
+        return value or []
 
 
 class RequirementCreate(OptionKeyInput):

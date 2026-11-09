@@ -115,7 +115,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Dependency,
         "label": "Dependency",
         "number_field": "dependency_number",
-        "prefix": "DEP",
+        "prefix": "D",
         "entity_type": "DEPENDENCY",
         "options": {
             "priority_id": ("PRIORITY", "Invalid dependency priority."),
@@ -452,6 +452,9 @@ class RaidService:
             pros=option_in.pros,
             cons=option_in.cons,
             work_effort=option_in.work_effort,
+            work_effort_value=option_in.work_effort_value,
+            work_effort_unit=option_in.work_effort_unit,
+            implementation_resources=option_in.implementation_resources,
             sort_order=option_in.sort_order,
             created_by=current_user.id,
         )
@@ -866,6 +869,7 @@ class RaidService:
             if config["model"] is Requirement
             else {}
         )
+        work_efforts = self.raid.first_work_efforts({item.id for item in items}) if config["model"] is Decision else {}
         requirement_numbers: dict[UUID, str] = {}
         sprint_names: dict[UUID, str] = {}
         if config["model"] is TestCase:
@@ -889,6 +893,11 @@ class RaidService:
             author = authors.get(getattr(item, author_field, None))
             item_data["created_by_name"] = (author.full_name or author.email) if author is not None else None
             item_data["comment_count"] = comment_counts.get(item.id, 0)
+            if config["model"] is Decision:
+                effort = work_efforts.get(item.id)
+                item_data["work_effort"] = effort.work_effort if effort else None
+                item_data["work_effort_value"] = effort.work_effort_value if effort else None
+                item_data["work_effort_unit"] = effort.work_effort_unit if effort else None
             if config["model"] is Requirement:
                 test_cases = linked_test_cases.get(item.id, [])
                 item_data["test_case_ids"] = [test_case_id for test_case_id, _ in test_cases]

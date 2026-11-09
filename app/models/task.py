@@ -59,6 +59,12 @@ class Task(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The requirement this story delivers, shown as its REQ number on the sprint board and backlog.
+    requirement_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("requirements.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # RAID, decision and change request records the task is linked to: [{"type": "RISK", "id": "<uuid>"}, ...]
     related_records: Mapped[list[dict[str, str]] | None] = mapped_column(JSON, nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)

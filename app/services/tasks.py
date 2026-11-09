@@ -12,6 +12,7 @@ from app.models.access_grant import ProjectModule
 from app.models.option_value import OptionValue
 from app.models.project import Project
 from app.models.sprint import Sprint
+from app.models.requirement import Requirement
 from app.models.task import Task
 from app.models.task_assignment import TaskAssignment
 from app.models.task_predecessor import TaskPredecessor
@@ -810,6 +811,10 @@ class TaskService:
                     seen.add(key)
                     records.append({"type": key[0], "id": key[1]})
             changes["related_records"] = records
+        if changes.get("requirement_id") is not None:
+            requirement = self.db.get(Requirement, changes["requirement_id"])
+            if requirement is None or requirement.project_id != task.project_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That requirement isn't in this project.")
         if "parent_task_id" in changes:
             self.assert_valid_parent(
                 project_id=task.project_id,

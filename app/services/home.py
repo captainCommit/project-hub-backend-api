@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
+from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, and_, false, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,7 @@ from app.models.home_notification_dismissal import HomeNotificationDismissal
 from app.models.issue import Issue
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
+from app.models.pinned_project import PinnedProject
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.resource_allocation import ResourceAllocation
@@ -101,8 +103,18 @@ class HomeService:
             for project in projects
             if is_me(project.project_manager) or (not project.project_manager and project.created_by == current_user.id)
         }
+        # ...plus any the person added themselves, which come first so a new one is never cut off by the limit.
+        pinned = set(
+            self.db.scalars(
+                select(PinnedProject.project_id).where(
+                    PinnedProject.account_id == account_id, PinnedProject.user_id == current_user.id
+                )
+            ).all()
+        )
+        mine |= pinned & set(project_ids)
         my_projects = [project for project in projects if project.id in mine]
         my_projects.sort(key=lambda project: project.updated_at, reverse=True)
+        my_projects.sort(key=lambda project: project.id not in pinned)
         my_project_ids = [project.id for project in my_projects]
 
         # Every task in my projects (their progress and health), which includes all of my own tasks.
@@ -197,6 +209,7 @@ class HomeService:
                     "percent_complete": 100 if is_completed else self.percent_complete(tasks_by_project[project.id], today),
                     "next_milestone": self.next_milestone(tasks_by_project[project.id], today),
                     "target_end_date": project.target_end_date,
+                    "pinned": project.id in pinned,
                 }
             )
 
@@ -229,11 +242,38 @@ class HomeService:
                 "upcoming": sum(1 for item in priorities if item["bucket"] == "UPCOMING"),
             },
             "active_project_count": active_project_count,
-            "my_projects": project_summaries[:PROJECT_LIMIT],
+            "my_projects": project_summaries[: max(PROJECT_LIMIT, len(pinned))],
             "recent_activity": self.describe_recent_activity(account_id=account_id, entries=activity, records=records),
             "notifications": notifications,
             "notifications_read_at": current_user.home_notifications_read_at,
         }
+
+    def pin_project(self, *, account_id: UUID, project_id: UUID, current_user: User) -> dict[str, object]:
+        """Add a project the person can see to their My Projects."""
+        self.dashboard_service.require_account_member(account_id=account_id, user_id=current_user.id)
+        access = access_for(self.db, account_id=account_id, user=current_user)
+        projects = self.hierarchy.list_projects_for_account(account_id)
+        if not access.is_owner:
+            projects = access.keep_visible(projects, access.visible_project_ids())
+        if project_id not in {project.id for project in projects}:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+        already = self.db.scalar(
+            select(PinnedProject).where(PinnedProject.user_id == current_user.id, PinnedProject.project_id == project_id)
+        )
+        if already is None:
+            self.db.add(PinnedProject(account_id=account_id, user_id=current_user.id, project_id=project_id))
+            self.db.commit()
+        return {"project_id": project_id, "pinned": True}
+
+    def unpin_project(self, *, account_id: UUID, project_id: UUID, current_user: User) -> dict[str, object]:
+        self.dashboard_service.require_account_member(account_id=account_id, user_id=current_user.id)
+        pin = self.db.scalar(
+            select(PinnedProject).where(PinnedProject.user_id == current_user.id, PinnedProject.project_id == project_id)
+        )
+        if pin is not None:
+            self.db.delete(pin)
+            self.db.commit()
+        return {"project_id": project_id, "pinned": False}
 
     def mark_notifications_read(self, *, account_id: UUID, current_user: User) -> dict[str, object]:
         self.dashboard_service.require_account_member(account_id=account_id, user_id=current_user.id)

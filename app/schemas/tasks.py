@@ -47,6 +47,7 @@ class TaskUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     related_records: list[TaskRelatedRecord] | None = Field(default=None, max_length=50)
+    requirement_id: UUID | None = None
     sprint_id: UUID | None = None
     parent_task_id: UUID | None = None
     task_type_id: UUID | None = None
@@ -242,6 +243,7 @@ class TaskRead(BaseModel):
     duration_days: Decimal | None
     story_points: int | None
     story_number: int | None = None
+    requirement_id: UUID | None = None
     percent_complete: Decimal
     sort_order: Decimal
     created_by: UUID | None

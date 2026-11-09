@@ -1028,7 +1028,7 @@ class Seeder:
                                             created_by=self.person_id(spec["pm"])))
 
             for number, (title, owner) in enumerate(pools["dependencies"][: self.rng.randint(1, 3)], 1):
-                self.add(Dependency(id=uuid4(), dependency_number=f"DEP-{number:03d}", title=title,
+                self.add(Dependency(id=uuid4(), dependency_number=f"D-{number:03d}", title=title,
                                     description=f"{project.name} needs this from {owner}.",
                                     priority_id=self.opt("DEPENDENCY", "PRIORITY", "High"),
                                     status_id=self.opt("DEPENDENCY", "STATUS", "Closed" if finished else self.rng.choice(["Open", "In Review", "Closed"])),

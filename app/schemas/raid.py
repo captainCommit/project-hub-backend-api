@@ -1,9 +1,14 @@
 from datetime import date, datetime
+from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.hierarchy import StatusSummary
+
+
+WorkEffortUnit = Literal["HOURS", "DAYS", "WEEKS"]
 
 
 class RaidProjectSummary(BaseModel):
@@ -235,6 +240,10 @@ class DecisionRead(BaseModel):
     portfolio_id: UUID | None = None
     priority: StatusSummary | None = None
     status: StatusSummary | None = None
+    # The first option with an effort, for the decision log's Work Effort column.
+    work_effort: str | None = None
+    work_effort_value: Decimal | None = None
+    work_effort_unit: WorkEffortUnit | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -249,6 +258,9 @@ class DecisionOptionCreate(BaseModel):
     pros: str | None = None
     cons: str | None = None
     work_effort: str | None = Field(default=None, max_length=255)
+    work_effort_value: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    work_effort_unit: WorkEffortUnit | None = None
+    implementation_resources: list[str] | None = Field(default=None, max_length=50)
     sort_order: int = 0
 
 
@@ -257,6 +269,9 @@ class DecisionOptionUpdate(BaseModel):
     pros: str | None = None
     cons: str | None = None
     work_effort: str | None = Field(default=None, max_length=255)
+    work_effort_value: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    work_effort_unit: WorkEffortUnit | None = None
+    implementation_resources: list[str] | None = Field(default=None, max_length=50)
     sort_order: int | None = None
 
 
@@ -268,9 +283,17 @@ class DecisionOptionRead(BaseModel):
     pros: str | None
     cons: str | None
     work_effort: str | None
+    work_effort_value: Decimal | None = None
+    work_effort_unit: WorkEffortUnit | None = None
+    implementation_resources: list[str] = []
     sort_order: int
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("implementation_resources", mode="before")
+    @classmethod
+    def none_as_empty(cls, value: object) -> object:
+        return value or []
 
     model_config = ConfigDict(from_attributes=True)
