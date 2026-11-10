@@ -694,6 +694,7 @@ class RaidService:
         self.validate_references(config=config, project_id=item.project_id, values=changes)
         if kind == "decision" and "title" in changes:
             changes["decision_text"] = changes["title"]
+        self.unlink_replaced_owner(item, changes)
         old_values = {field: getattr(item, field) for field in changes}
         item = self.raid.update_item(item, changes)
         ActivityLogService(self.db).record(
@@ -718,6 +719,15 @@ class RaidService:
         self.db.commit()
         self.db.refresh(item)
         return self.enrich_item(item, config)
+
+    def unlink_replaced_owner(self, item: Any, changes: dict[str, Any]) -> None:
+        """A typed owner name that isn't the linked user's replaces that user, so the old user stops showing."""
+        if "assigned_to_name" not in changes or "assigned_to" in changes or getattr(item, "assigned_to", None) is None:
+            return
+        owner = self.raid.get_users_by_ids({item.assigned_to}).get(item.assigned_to)
+        typed = (changes["assigned_to_name"] or "").strip().casefold()
+        if owner is None or typed not in {(owner.full_name or "").strip().casefold(), (owner.email or "").casefold()}:
+            changes["assigned_to"] = None
 
     def delete_item(self, *, kind: str, item_id: UUID, current_user: User) -> None:
         config = RAID_CONFIGS[kind]
@@ -857,8 +867,11 @@ class RaidService:
             {item.program_id for item in items if getattr(item, "program_id", None) is not None}
         )
         author_field = config.get("created_by_field") or config.get("entered_by_field")
+        # One lookup covers authors and owners: risks and issues store the owner as a user id, and the name is
+        # filled from that user whenever no name was typed.
         authors = self.raid.get_users_by_ids(
             {getattr(item, author_field) for item in items if getattr(item, author_field, None) is not None}
+            | {item.assigned_to for item in items if getattr(item, "assigned_to", None) is not None}
         )
         comment_counts = self.raid.count_comments(
             entity_type=config["entity_type"],
@@ -892,6 +905,9 @@ class RaidService:
             item_data["program"] = {"id": program.id, "name": program.name} if program is not None else None
             author = authors.get(getattr(item, author_field, None))
             item_data["created_by_name"] = (author.full_name or author.email) if author is not None else None
+            owner = authors.get(getattr(item, "assigned_to", None))
+            if owner is not None and not getattr(item, "assigned_to_name", None):
+                item_data["assigned_to_name"] = owner.full_name or owner.email
             item_data["comment_count"] = comment_counts.get(item.id, 0)
             if config["model"] is Decision:
                 effort = work_efforts.get(item.id)

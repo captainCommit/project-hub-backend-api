@@ -642,6 +642,36 @@ def test_non_member_cannot_list_account_risks(client: TestClient, db_session: Se
     assert response.json()["message"] == "Account access denied."
 
 
+@pytest.mark.parametrize("collection", ["risks", "issues"])
+def test_owner_name_comes_from_the_assigned_user(client: TestClient, db_session: Session, collection: str) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id, project_id = hierarchy["account"]["id"], hierarchy["project"]["id"]
+    owner = User(email=f"raid-owner-{collection}@example.com", full_name="Riya Owner")
+    db_session.add(owner)
+    db_session.flush()
+    db_session.add(AccountMember(account_id=UUID(account_id), user_id=owner.id, role=AccountMemberRole.MEMBER.value))
+    db_session.commit()
+    case = next(c for c in RAID_CASES if c["collection"] == collection)
+    item = create_raid_item(client, project_id, case, assigned_to=str(owner.id))
+    typed = create_raid_item(client, project_id, case, assigned_to=str(owner.id), assigned_to_name="Typed Name")
+
+    assert item["assigned_to_name"] == "Riya Owner"
+    by_id = {row["id"]: row for row in client.get(f"/api/v1/accounts/{account_id}/{collection}").json()}
+    assert by_id[item["id"]]["assigned_to_name"] == "Riya Owner"
+    assert by_id[typed["id"]]["assigned_to_name"] == "Typed Name"
+    project_rows = client.get(f"/api/v1/projects/{project_id}/{collection}").json()
+    assert {row["id"]: row["assigned_to_name"] for row in project_rows}[item["id"]] == "Riya Owner"
+
+    # Saving the same name keeps the link; typing someone else, or clearing it, replaces the linked user.
+    kept = client.patch(f"/api/v1/{collection}/{item['id']}", json={"assigned_to_name": "riya owner"}).json()
+    assert kept["assigned_to"] == str(owner.id)
+    renamed = client.patch(f"/api/v1/{collection}/{item['id']}", json={"assigned_to_name": "Someone Else"}).json()
+    assert renamed["assigned_to"] is None and renamed["assigned_to_name"] == "Someone Else"
+    cleared_item = create_raid_item(client, project_id, case, assigned_to=str(owner.id))
+    cleared = client.patch(f"/api/v1/{collection}/{cleared_item['id']}", json={"assigned_to_name": ""}).json()
+    assert cleared["assigned_to"] is None and not cleared["assigned_to_name"]
+
+
 @pytest.mark.parametrize("case", RAID_CASES, ids=[str(case["entity"]) for case in RAID_CASES])
 def test_raid_patch_works_for_allowed_role(
     client: TestClient,
