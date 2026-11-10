@@ -55,7 +55,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Risk,
         "label": "Risk",
         "number_field": "risk_number",
-        "prefix": "RISK",
+        "prefix": "R",
         "entity_type": "RISK",
         "options": {
             "priority_id": ("PRIORITY", "Invalid risk priority."),
@@ -70,7 +70,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Issue,
         "label": "Issue",
         "number_field": "issue_number",
-        "prefix": "ISSUE",
+        "prefix": "I",
         "entity_type": "ISSUE",
         "options": {
             "priority_id": ("PRIORITY", "Invalid issue priority."),
@@ -85,7 +85,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Assumption,
         "label": "Assumption",
         "number_field": "assumption_number",
-        "prefix": "ASS",
+        "prefix": "A",
         "entity_type": "ASSUMPTION",
         "options": {
             "priority_id": ("PRIORITY", "Invalid assumption priority."),
@@ -100,7 +100,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Decision,
         "label": "Decision",
         "number_field": "decision_number",
-        "prefix": "DEC",
+        "prefix": "D",
         "entity_type": "DECISION",
         "options": {
             "priority_id": ("PRIORITY", "Invalid decision priority."),
