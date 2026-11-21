@@ -26,7 +26,8 @@ TASK_COMPLETED_KEYS = {"complete", "completed", "done"}
 TASK_IN_PROGRESS_KEYS = {"inprogress", "doing", "active"}
 MILESTONE_KEYS = {"milestone"}
 OPEN_EXCLUDED_KEYS = {"closed", "resolved", "complete", "completed", "done", "cancelled", "canceled"}
-DECISION_COMPLETED_KEYS = {"approved", "closed"}
+# A decision is pending until it has an outcome; cancelled (and the retired rejected/superseded) ones are not waiting on anyone.
+DECISION_COMPLETED_KEYS = {"approved", "closed", "cancelled", "rejected", "superseded"}
 HIGH_PRIORITY_KEYS = {"high", "critical"}
 PRIORITY_RANK = {
     "critical": 0,

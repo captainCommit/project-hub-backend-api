@@ -59,17 +59,8 @@ DEFAULT_OPTION_SETS: tuple[dict[str, object], ...] = (
     {
         "entity_type": "DECISION",
         "name": "STATUS",
-        "values": (
-            "Draft",
-            "Pending",
-            "Approved",
-            "Rejected",
-            "Superseded",
-            "Open",
-            "In Review",
-            "Cancelled",
-            "Deferred",
-        ),
+        # The statuses the app offers. Pending, Rejected and Superseded were retired (migration 202610260400).
+        "values": ("Draft", "Open", "In Review", "Approved", "Cancelled", "Deferred"),
     },
     {
         "entity_type": "ASSUMPTION",

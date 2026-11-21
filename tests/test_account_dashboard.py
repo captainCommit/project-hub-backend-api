@@ -289,6 +289,9 @@ def test_dashboard_counts_tasks_raid_resources_and_excludes_soft_deleted_tasks(
     create_raid_item(client, project_id, "risks", title="Open risk", priority_id=high_risk_priority_id)
     create_raid_item(client, project_id, "issues", title="Open issue", priority_id=high_issue_priority_id)
     create_raid_item(client, project_id, "decisions", title="Pending decision")
+    # Decisions with an outcome are not pending.
+    create_raid_item(client, project_id, "decisions", title="Approved decision", status="approved")
+    create_raid_item(client, project_id, "decisions", title="Cancelled decision", status="cancelled")
     resource = create_resource(client, account_id, "Engineer", weekly_capacity_hours=10)
     create_allocation(client, overdue_task["id"], resource["id"], allocated_hours=12)
 
