@@ -47,6 +47,21 @@ class ResourceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ResourceProjectAllocationRead(BaseModel):
+    id: UUID
+    account_id: UUID
+    resource_id: UUID
+    project_id: UUID
+    weekly_hours: Decimal
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ResourceProjectAllocationSet(BaseModel):
+    # Null goes back to the hours worked out from the person's tasks.
+    weekly_hours: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+
+
 class ResourceAllocationCreate(BaseModel):
     resource_id: UUID
     allocated_hours: Decimal | None = Field(default=None, gt=0)

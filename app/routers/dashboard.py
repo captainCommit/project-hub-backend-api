@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.dashboard import AccountDashboardRead
-from app.schemas.home import HomeNotificationsDismiss, HomeNotificationsDismissResult, HomeNotificationsReadResult, HomeRead
+from app.schemas.home import HomeNotificationsDismiss, HomeNotificationsDismissResult, HomeNotificationsReadResult, HomePinResult, HomeRead
 from app.services.account_dashboard import AccountDashboardService
 from app.services.auth import get_current_user
 from app.services.home import HomeService
@@ -40,6 +40,34 @@ def get_my_home(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, object]:
     return HomeService(db).get_home(account_id=account_id, current_user=current_user)
+
+
+@router.put(
+    "/accounts/{account_id}/me/home/projects/{project_id}",
+    response_model=HomePinResult,
+    summary="Add a project to your My Projects, even if you aren't assigned to it",
+)
+def pin_home_project(
+    account_id: UUID,
+    project_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return HomeService(db).pin_project(account_id=account_id, project_id=project_id, current_user=current_user)
+
+
+@router.delete(
+    "/accounts/{account_id}/me/home/projects/{project_id}",
+    response_model=HomePinResult,
+    summary="Remove a project you added from your My Projects",
+)
+def unpin_home_project(
+    account_id: UUID,
+    project_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    return HomeService(db).unpin_project(account_id=account_id, project_id=project_id, current_user=current_user)
 
 
 @router.post(

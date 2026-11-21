@@ -12,6 +12,8 @@ from app.schemas.resources import (
     ResourceAllocationRead,
     ResourceAllocationUpdate,
     ResourceAnalysisRead,
+    ResourceProjectAllocationRead,
+    ResourceProjectAllocationSet,
     ResourceCalendarRead,
     ResourceCapacityForecastRead,
     ResourceCreate,
@@ -74,6 +76,38 @@ def delete_resource(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     ResourceService(db).delete_resource(resource_id=resource_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/accounts/{account_id}/resource-project-allocations", response_model=list[ResourceProjectAllocationRead])
+def list_resource_project_allocations(
+    account_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ResourceProjectAllocationRead]:
+    return ResourceService(db).list_project_allocation_overrides(account_id=account_id, current_user=current_user)
+
+
+@router.put("/resources/{resource_id}/project-allocations/{project_id}", response_model=ResourceProjectAllocationRead | None)
+def set_resource_project_allocation(
+    resource_id: UUID,
+    project_id: UUID,
+    allocation_in: ResourceProjectAllocationSet,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ResourceProjectAllocationRead | None:
+    return ResourceService(db).set_project_allocation_override(
+        resource_id=resource_id, project_id=project_id, weekly_hours=allocation_in.weekly_hours, current_user=current_user
+    )
+
+
+@router.delete("/resources/{resource_id}/project-allocations", status_code=status.HTTP_204_NO_CONTENT)
+def reset_resource_project_allocations(
+    resource_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    ResourceService(db).reset_project_allocation_overrides(resource_id=resource_id, current_user=current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -55,7 +55,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Risk,
         "label": "Risk",
         "number_field": "risk_number",
-        "prefix": "RISK",
+        "prefix": "R",
         "entity_type": "RISK",
         "options": {
             "priority_id": ("PRIORITY", "Invalid risk priority."),
@@ -70,7 +70,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Issue,
         "label": "Issue",
         "number_field": "issue_number",
-        "prefix": "ISSUE",
+        "prefix": "I",
         "entity_type": "ISSUE",
         "options": {
             "priority_id": ("PRIORITY", "Invalid issue priority."),
@@ -85,9 +85,10 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Assumption,
         "label": "Assumption",
         "number_field": "assumption_number",
-        "prefix": "ASS",
+        "prefix": "A",
         "entity_type": "ASSUMPTION",
         "options": {
+            "priority_id": ("PRIORITY", "Invalid assumption priority."),
             "status_id": ("STATUS", "Invalid assumption status."),
         },
         "account_sort_fields": {"created_at", "updated_at", "date_entered", "description"},
@@ -99,7 +100,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Decision,
         "label": "Decision",
         "number_field": "decision_number",
-        "prefix": "DEC",
+        "prefix": "D",
         "entity_type": "DECISION",
         "options": {
             "priority_id": ("PRIORITY", "Invalid decision priority."),
@@ -114,7 +115,7 @@ RAID_CONFIGS: dict[str, dict[str, Any]] = {
         "model": Dependency,
         "label": "Dependency",
         "number_field": "dependency_number",
-        "prefix": "DEP",
+        "prefix": "D",
         "entity_type": "DEPENDENCY",
         "options": {
             "priority_id": ("PRIORITY", "Invalid dependency priority."),
@@ -451,6 +452,9 @@ class RaidService:
             pros=option_in.pros,
             cons=option_in.cons,
             work_effort=option_in.work_effort,
+            work_effort_value=option_in.work_effort_value,
+            work_effort_unit=option_in.work_effort_unit,
+            implementation_resources=option_in.implementation_resources,
             sort_order=option_in.sort_order,
             created_by=current_user.id,
         )
@@ -690,6 +694,7 @@ class RaidService:
         self.validate_references(config=config, project_id=item.project_id, values=changes)
         if kind == "decision" and "title" in changes:
             changes["decision_text"] = changes["title"]
+        self.unlink_replaced_owner(item, changes)
         old_values = {field: getattr(item, field) for field in changes}
         item = self.raid.update_item(item, changes)
         ActivityLogService(self.db).record(
@@ -714,6 +719,15 @@ class RaidService:
         self.db.commit()
         self.db.refresh(item)
         return self.enrich_item(item, config)
+
+    def unlink_replaced_owner(self, item: Any, changes: dict[str, Any]) -> None:
+        """A typed owner name that isn't the linked user's replaces that user, so the old user stops showing."""
+        if "assigned_to_name" not in changes or "assigned_to" in changes or getattr(item, "assigned_to", None) is None:
+            return
+        owner = self.raid.get_users_by_ids({item.assigned_to}).get(item.assigned_to)
+        typed = (changes["assigned_to_name"] or "").strip().casefold()
+        if owner is None or typed not in {(owner.full_name or "").strip().casefold(), (owner.email or "").casefold()}:
+            changes["assigned_to"] = None
 
     def delete_item(self, *, kind: str, item_id: UUID, current_user: User) -> None:
         config = RAID_CONFIGS[kind]
@@ -853,8 +867,11 @@ class RaidService:
             {item.program_id for item in items if getattr(item, "program_id", None) is not None}
         )
         author_field = config.get("created_by_field") or config.get("entered_by_field")
+        # One lookup covers authors and owners: risks and issues store the owner as a user id, and the name is
+        # filled from that user whenever no name was typed.
         authors = self.raid.get_users_by_ids(
             {getattr(item, author_field) for item in items if getattr(item, author_field, None) is not None}
+            | {item.assigned_to for item in items if getattr(item, "assigned_to", None) is not None}
         )
         comment_counts = self.raid.count_comments(
             entity_type=config["entity_type"],
@@ -865,6 +882,7 @@ class RaidService:
             if config["model"] is Requirement
             else {}
         )
+        work_efforts = self.raid.first_work_efforts({item.id for item in items}) if config["model"] is Decision else {}
         requirement_numbers: dict[UUID, str] = {}
         sprint_names: dict[UUID, str] = {}
         if config["model"] is TestCase:
@@ -887,7 +905,15 @@ class RaidService:
             item_data["program"] = {"id": program.id, "name": program.name} if program is not None else None
             author = authors.get(getattr(item, author_field, None))
             item_data["created_by_name"] = (author.full_name or author.email) if author is not None else None
+            owner = authors.get(getattr(item, "assigned_to", None))
+            if owner is not None and not getattr(item, "assigned_to_name", None):
+                item_data["assigned_to_name"] = owner.full_name or owner.email
             item_data["comment_count"] = comment_counts.get(item.id, 0)
+            if config["model"] is Decision:
+                effort = work_efforts.get(item.id)
+                item_data["work_effort"] = effort.work_effort if effort else None
+                item_data["work_effort_value"] = effort.work_effort_value if effort else None
+                item_data["work_effort_unit"] = effort.work_effort_unit if effort else None
             if config["model"] is Requirement:
                 test_cases = linked_test_cases.get(item.id, [])
                 item_data["test_case_ids"] = [test_case_id for test_case_id, _ in test_cases]

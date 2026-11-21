@@ -1,7 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -24,7 +25,13 @@ class DecisionOption(Base):
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pros: Mapped[str | None] = mapped_column(Text, nullable=True)
     cons: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Free text from before effort was quantified; shown only until a value and unit are set.
     work_effort: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    work_effort_value: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # HOURS, DAYS or WEEKS.
+    work_effort_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # The people and teams assigned to this option, by name.
+    implementation_resources: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     sort_order: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

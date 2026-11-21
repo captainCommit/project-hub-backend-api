@@ -1,9 +1,14 @@
 from datetime import date, datetime
+from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.hierarchy import StatusSummary
+
+
+WorkEffortUnit = Literal["HOURS", "DAYS", "WEEKS"]
 
 
 class RaidProjectSummary(BaseModel):
@@ -133,8 +138,9 @@ class AccountIssueRead(IssueRead):
     program: RaidProgramSummary | None = None
 
 
-class AssumptionCreate(StatusKeyInput):
+class AssumptionCreate(OptionKeyInput):
     description: str = Field(min_length=1)
+    priority_id: UUID | None = None
     status_id: UUID | None = None
     entered_by: UUID | None = None
     entered_by_name: str | None = Field(default=None, max_length=255)
@@ -143,8 +149,9 @@ class AssumptionCreate(StatusKeyInput):
     target_date: date | None = None
 
 
-class AssumptionUpdate(StatusKeyInput):
+class AssumptionUpdate(OptionKeyInput):
     description: str | None = Field(default=None, min_length=1)
+    priority_id: UUID | None = None
     status_id: UUID | None = None
     entered_by: UUID | None = None
     entered_by_name: str | None = Field(default=None, max_length=255)
@@ -160,6 +167,7 @@ class AssumptionRead(BaseModel):
     program_id: UUID | None
     assumption_number: str
     description: str
+    priority_id: UUID | None = None
     status_id: UUID | None
     entered_by: UUID | None
     entered_by_name: str | None = None
@@ -171,6 +179,7 @@ class AssumptionRead(BaseModel):
     created_by_name: str | None = None
     comment_count: int = 0
     portfolio_id: UUID | None = None
+    priority: StatusSummary | None = None
     status: StatusSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -231,6 +240,10 @@ class DecisionRead(BaseModel):
     portfolio_id: UUID | None = None
     priority: StatusSummary | None = None
     status: StatusSummary | None = None
+    # The first option with an effort, for the decision log's Work Effort column.
+    work_effort: str | None = None
+    work_effort_value: Decimal | None = None
+    work_effort_unit: WorkEffortUnit | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -245,6 +258,9 @@ class DecisionOptionCreate(BaseModel):
     pros: str | None = None
     cons: str | None = None
     work_effort: str | None = Field(default=None, max_length=255)
+    work_effort_value: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    work_effort_unit: WorkEffortUnit | None = None
+    implementation_resources: list[str] | None = Field(default=None, max_length=50)
     sort_order: int = 0
 
 
@@ -253,6 +269,9 @@ class DecisionOptionUpdate(BaseModel):
     pros: str | None = None
     cons: str | None = None
     work_effort: str | None = Field(default=None, max_length=255)
+    work_effort_value: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    work_effort_unit: WorkEffortUnit | None = None
+    implementation_resources: list[str] | None = Field(default=None, max_length=50)
     sort_order: int | None = None
 
 
@@ -264,9 +283,17 @@ class DecisionOptionRead(BaseModel):
     pros: str | None
     cons: str | None
     work_effort: str | None
+    work_effort_value: Decimal | None = None
+    work_effort_unit: WorkEffortUnit | None = None
+    implementation_resources: list[str] = []
     sort_order: int
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("implementation_resources", mode="before")
+    @classmethod
+    def none_as_empty(cls, value: object) -> object:
+        return value or []
 
     model_config = ConfigDict(from_attributes=True)

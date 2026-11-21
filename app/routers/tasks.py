@@ -21,6 +21,8 @@ from app.schemas.tasks import (
     TaskImportRead,
     TaskImportRequest,
     TaskMoveRequest,
+    TaskNudgeCreate,
+    TaskNudgeRead,
     TaskPredecessorCreate,
     TaskPredecessorRead,
     TaskRead,
@@ -30,6 +32,7 @@ from app.schemas.tasks import (
 )
 from app.services.auth import get_current_user
 from app.services.task_import import TaskImportService
+from app.services.task_nudges import TaskNudgeService
 from app.services.tasks import TaskService
 
 
@@ -223,6 +226,16 @@ def update_task(
     current_user: User = Depends(get_current_user),
 ) -> TaskRead:
     return TaskService(db).update_task(task_id=task_id, task_in=task_in, current_user=current_user)
+
+
+@router.post("/tasks/{task_id}/nudge", response_model=TaskNudgeRead)
+def nudge_task_assignees(
+    task_id: UUID,
+    nudge_in: TaskNudgeCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    return TaskNudgeService(db).nudge(task_id=task_id, note=nudge_in.note, current_user=current_user)
 
 
 @router.patch("/tasks/{task_id}/board-position", response_model=TaskRead)

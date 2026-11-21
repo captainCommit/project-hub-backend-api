@@ -6,6 +6,7 @@ from sqlalchemy import Select, and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginate_statement, sort_descending
+from app.models.comment import Comment
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
 from app.models.program import Program
@@ -433,6 +434,17 @@ class TaskRepository:
             return {}
         statement = select(Sprint).where(Sprint.id.in_(sprint_ids))
         return {sprint.id: sprint for sprint in self.db.scalars(statement).all()}
+
+    def count_comments(self, task_ids: Iterable[UUID]) -> dict[UUID, int]:
+        task_ids = list(task_ids)
+        if not task_ids:
+            return {}
+        statement = (
+            select(Comment.entity_id, func.count(Comment.id))
+            .where(Comment.entity_type == "TASK", Comment.entity_id.in_(task_ids))
+            .group_by(Comment.entity_id)
+        )
+        return {entity_id: count for entity_id, count in self.db.execute(statement).all()}
 
     def get_users_by_ids(self, user_ids: Iterable[UUID]) -> dict[UUID, User]:
         user_ids = list(user_ids)

@@ -64,6 +64,11 @@ DEFAULT_OPTION_SETS: tuple[dict[str, object], ...] = (
     },
     {
         "entity_type": "ASSUMPTION",
+        "name": "PRIORITY",
+        "values": PRIORITY_VALUES,
+    },
+    {
+        "entity_type": "ASSUMPTION",
         "name": "STATUS",
         "values": ("Draft", "Validated", "Invalidated", "Open", "In Review", "Closed"),
     },

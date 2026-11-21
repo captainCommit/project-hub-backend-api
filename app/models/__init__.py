@@ -1,5 +1,7 @@
 from app.models.access_grant import AccessGrant, GrantRole, ProjectModule
 from app.models.account import Account
+from app.models.pinned_project import PinnedProject
+from app.models.resource_project_allocation import ResourceProjectAllocation
 from app.models.account_holiday import AccountHoliday
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.account_settings import AccountSettings
@@ -55,6 +57,8 @@ from app.models.task_required_skill import TaskRequiredSkill
 from app.models.user import User
 
 __all__ = [
+    "PinnedProject",
+    "ResourceProjectAllocation",
     "CalendarFeed",
     "CalendarSyncEvent",
     "IntegrationConnection",

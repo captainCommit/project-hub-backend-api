@@ -361,6 +361,23 @@ class RaidRepository:
         )
         return list(self.db.scalars(statement).all())
 
+    def first_work_efforts(self, decision_ids: set[UUID]) -> dict[UUID, DecisionOption]:
+        """Each decision's first option (in display order) that has an effort recorded."""
+        if not decision_ids:
+            return {}
+        statement = (
+            select(DecisionOption)
+            .where(
+                DecisionOption.decision_id.in_(decision_ids),
+                or_(DecisionOption.work_effort_value.is_not(None), DecisionOption.work_effort.is_not(None)),
+            )
+            .order_by(DecisionOption.sort_order, DecisionOption.created_at)
+        )
+        first: dict[UUID, DecisionOption] = {}
+        for option in self.db.scalars(statement).all():
+            first.setdefault(option.decision_id, option)
+        return first
+
     def update_decision_option(
         self,
         option: DecisionOption,

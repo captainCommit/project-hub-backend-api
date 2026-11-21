@@ -9,7 +9,7 @@ from tests.test_raid import client, create_work_hierarchy, db_session, set_curre
 
 
 PROJECT_LOG_CASES = (
-    ("dependencies", "dependency_number", "DEP", {"title": "Vendor API", "impact_of_delay": "Launch slips"}),
+    ("dependencies", "dependency_number", "D", {"title": "Vendor API", "impact_of_delay": "Launch slips"}),
     ("change-requests", "change_request_number", "CR", {"title": "Add SSO", "related_record": "DEC-001"}),
     ("requirements", "requirement_number", "REQ", {"title": "Users can export"}),
     ("test-cases", "test_case_number", "TC", {"title": "Export works", "result": "pass"}),

@@ -50,6 +50,8 @@ class HomeProject(BaseModel):
     percent_complete: int
     next_milestone: HomeMilestone | None
     target_end_date: date | None
+    # Added to My Projects by hand, which can be undone; assigned projects can't be removed from here.
+    pinned: bool = False
 
 
 class HomeActivity(BaseModel):
@@ -85,6 +87,11 @@ class HomeRead(BaseModel):
     notifications: list[HomeNotification] = Field(default_factory=list)
     # When the person last chose "Mark all as read"; newer notifications are unread.
     notifications_read_at: datetime | None = None
+
+
+class HomePinResult(BaseModel):
+    project_id: UUID
+    pinned: bool
 
 
 class HomeNotificationsReadResult(BaseModel):

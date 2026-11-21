@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, String, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, String, Text, UniqueConstraint, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -42,6 +42,9 @@ class SupportTicket(Base):
     )
     requester_name: Mapped[str] = mapped_column(String(255), nullable=False)
     requester_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The requester is happy to be called about it, optionally on this number (with country code, e.g. "+1 555 000 0000").
+    phone_call_ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    phone_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

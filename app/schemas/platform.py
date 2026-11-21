@@ -82,6 +82,8 @@ class AdminSupportTicketRead(BaseModel):
     status: str
     requester_name: str
     requester_email: str
+    phone_call_ok: bool = False
+    phone_number: str | None = None
     message_count: int
     # Not resolved or closed, and the customer spoke last.
     needs_reply: bool

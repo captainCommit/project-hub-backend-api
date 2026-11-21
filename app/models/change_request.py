@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import Date, DateTime, ForeignKey, JSON, String, Text, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -45,6 +45,9 @@ class ChangeRequest(Base):
     proposed_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     proposed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     related_record: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The people and teams who will carry out the change, by name.
+    implementation_resources: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    completion_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

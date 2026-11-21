@@ -35,6 +35,11 @@ class Assumption(Base):
     )
     assumption_number: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    priority_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("option_values.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     status_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("option_values.id", ondelete="SET NULL"),
