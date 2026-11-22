@@ -18,3 +18,13 @@ app/migrations/__pycache__
 app/migrations/versions/__pycache__
 *.ps1
 __pycache__/
+
+# Terraform (infra/terraform): state and tfvars hold secrets
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+*.tfvars
+!*.tfvars.example
+crash.log
+infra/bootstrap.env

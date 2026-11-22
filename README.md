@@ -489,6 +489,8 @@ handler = Mangum(app)
 
 Phase 9 deploys this handler to AWS Lambda behind API Gateway HTTP API with the Serverless Framework. See the full deployment guide in [`docs/deployment.md`](docs/deployment.md).
 
+To rebuild everything in another AWS account (database, Cognito, deploy roles, SSM secrets and GitHub variables), see [`infra/README.md`](infra/README.md).
+
 Install the Serverless tooling locally:
 
 ```bash

@@ -1,0 +1,29 @@
+# Copy to terraform.tfvars (git-ignored) and adjust. Everything has a default matching the original account.
+
+region = "ca-central-1"
+stage  = "dev"
+
+github_owner    = "captainCommit"
+github_api_repo = "project-hub-backend-api"
+github_ui_repo  = "project-hub-ui"
+
+# Each repo's OIDC subject prefix. Check with:
+#   gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix
+# Empty output means the classic format; leave the variable unset then.
+# github_api_sub_prefix = "repo:captainCommit/project-hub-backend-api"
+github_ui_sub_prefix = "repo:captainCommit@26741374/project-hub-ui@1413227575"
+
+# Must be unique in the region. The original account holds "projecthub-auth" until its pool is deleted.
+cognito_domain_prefix = "projecthub-auth-2"
+
+# After the first API deploy, add the stack's AppUrl here and apply again (allows sign-in from it).
+app_urls = []
+
+# The address in EMAIL_FROM (bootstrap.env). Confirm the verification email AWS sends.
+ses_email_identities = []
+
+# New accounts get 10 concurrent Lambdas, which the API alone exhausts at light load.
+lambda_concurrency_quota = 1000
+
+# Bring the data across: a snapshot in this account (see infra/README.md "Moving the data").
+# db_snapshot_identifier = "project-hub-db-migration"
