@@ -2,8 +2,10 @@ from app.models.access_grant import AccessGrant, GrantRole, ProjectModule
 from app.models.account import Account
 from app.models.pinned_project import PinnedProject
 from app.models.resource_project_allocation import ResourceProjectAllocation
+from app.models.resource_assignment import ResourceAssignment
 from app.models.account_holiday import AccountHoliday
 from app.models.account_member import AccountMember, AccountMemberRole
+from app.models.account_role import AccountRole
 from app.models.account_settings import AccountSettings
 from app.models.activity_log import ActivityLog
 from app.models.ai import AiAccountSettings, AiConversation, AiMessage, AiPlatformAccess, AiPlatformModel, AiReport, AiRun, AiUsageReport
@@ -24,6 +26,7 @@ from app.models.integration import (
 )
 from app.models.comment_mention import CommentMention
 from app.models.decision import Decision
+from app.models.deleted_record import DeletedRecord
 from app.models.decision_option import DecisionOption
 from app.models.dependency import Dependency
 from app.models.email_suppression import EmailSuppression
@@ -59,6 +62,7 @@ from app.models.user import User
 __all__ = [
     "PinnedProject",
     "ResourceProjectAllocation",
+    "ResourceAssignment",
     "CalendarFeed",
     "CalendarSyncEvent",
     "IntegrationConnection",
@@ -82,6 +86,7 @@ __all__ = [
     "AccountHoliday",
     "AccountMember",
     "AccountMemberRole",
+    "AccountRole",
     "AccountSettings",
     "ActivityLog",
     "Assumption",
@@ -92,6 +97,7 @@ __all__ = [
     "CommentMention",
     "Decision",
     "DecisionOption",
+    "DeletedRecord",
     "Dependency",
     "EmailFrequency",
     "EmailStatus",

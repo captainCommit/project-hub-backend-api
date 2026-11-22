@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.account_member import AccountMember, AccountMemberRole
+from app.models.account_role import AccountRole
 from app.models.user import User
 
 
@@ -17,12 +18,13 @@ class AccountMemberRepository:
         account_id: UUID,
         user_id: UUID,
         role: AccountMemberRole,
+        account_role: AccountRole | None = None,
     ) -> AccountMember:
-        account_member = AccountMember(
-            account_id=account_id,
-            user_id=user_id,
-            role=role.value,
-        )
+        """A new member with `account_role`, or the built-in role standing in for the seat `role`."""
+        from app.services.account_roles import assign_role, role_for_seat  # noqa: PLC0415
+
+        account_member = AccountMember(account_id=account_id, user_id=user_id, role=role.value)
+        assign_role(account_member, account_role or role_for_seat(self.db, account_id, role))
         self.db.add(account_member)
         self.db.flush()
         self.db.refresh(account_member)
@@ -35,8 +37,14 @@ class AccountMemberRepository:
         )
         return self.db.scalar(statement)
 
-    def update_role(self, account_member: AccountMember, *, role: AccountMemberRole) -> AccountMember:
-        account_member.role = role.value
+    def update_role(
+        self, account_member: AccountMember, *, role: AccountMemberRole | None = None, account_role: AccountRole | None = None
+    ) -> AccountMember:
+        """Give the member `account_role`, or the built-in role standing in for the seat `role`."""
+        from app.services.account_roles import assign_role, role_for_seat  # noqa: PLC0415
+
+        assert role is not None or account_role is not None
+        assign_role(account_member, account_role or role_for_seat(self.db, account_member.account_id, role))
         self.db.add(account_member)
         self.db.flush()
         self.db.refresh(account_member)

@@ -49,6 +49,14 @@ class Resource(Base):
         default=True,
         server_default="true",
     )
+    # Shown on Resources (Capacity, Availability, Costs). Every member has a resource so work assigned to them counts,
+    # but they only appear on Resources once someone adds them there (Capacity > Add Resource).
+    listed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
     created_by: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

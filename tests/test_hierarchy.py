@@ -18,7 +18,7 @@ from app.models.option_value import OptionValue
 from app.models.portfolio import Portfolio
 from app.models.user import User
 from app.services.auth import DEV_USER_EMAIL
-from tests.helpers import grant_access
+from tests.helpers import give_role, grant_access
 
 
 @pytest.fixture()
@@ -157,6 +157,13 @@ def test_portfolio_creation_uses_default_portfolio_status(
     assert portfolio["status_id"] == str(active_status_id)
 
 
+def test_creating_with_a_null_status_leaves_it_not_started(client: TestClient) -> None:
+    account = create_account(client)
+    response = client.post(f"/api/v1/accounts/{account['id']}/portfolios", json={"name": "Fresh", "status_id": None})
+    assert response.status_code == 201, response.text
+    assert response.json()["status_id"] is None
+
+
 def test_invalid_status_id_from_wrong_entity_is_rejected(
     client: TestClient,
     db_session: Session,
@@ -275,16 +282,19 @@ def test_managers_run_their_program_but_not_the_portfolio(client: TestClient, db
     assert client.post(f"/api/v1/accounts/{account['id']}/portfolios", json={"name": "Nope"}).status_code == 403
 
 
-def test_member_with_financials_can_change_budget_only(client: TestClient, db_session: Session) -> None:
+def test_changing_the_budget_needs_projects_edit(client: TestClient, db_session: Session) -> None:
     account = create_account(client)
     portfolio = create_portfolio(client, account["id"])
     program = create_program(client, portfolio["id"])
     project = create_project(client, program["id"])
-    set_current_user_role(db_session, account["id"], AccountMemberRole.MEMBER)
-    grant_access(db_session, account_id=account["id"], role="MEMBER", project_id=project["id"], modules=["FINANCIALS"])
+    me = client.get("/api/v1/me").json()["id"]
+    grant_access(db_session, account_id=account["id"], role="MEMBER", project_id=project["id"])
+    give_role(db_session, account_id=account["id"], user_id=me, permissions={"PROJECTS": ["VIEW"]})
 
+    assert client.patch(f"/api/v1/projects/{project['id']}", json={"budget": "5000"}).status_code == 403
+
+    give_role(db_session, account_id=account["id"], user_id=me, permissions={"PROJECTS": ["VIEW", "EDIT"]})
     assert client.patch(f"/api/v1/projects/{project['id']}", json={"budget": "5000"}).status_code == 200
-    assert client.patch(f"/api/v1/projects/{project['id']}", json={"name": "Renamed"}).status_code == 403
 
 
 def test_grants_never_exceed_the_account_role(client: TestClient, db_session: Session) -> None:

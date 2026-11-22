@@ -4,11 +4,13 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PaginationParams, paginated_response, validate_sort
 from app.models.access_grant import ProjectModule
+from app.models.account_settings import AccountSettings
 from app.models.option_value import OptionValue
 from app.models.project import Project
 from app.models.sprint import Sprint
@@ -786,7 +788,16 @@ class TaskService:
             }
             for option in status_options
         ]
-        columns.append(
+        uncategorized = tasks_by_status.get(None, [])
+        settings = self.db.scalar(select(AccountSettings).where(AccountSettings.account_id == account_id))
+        # Deleting the column hides it, but never the tasks: it comes back while any task has no status.
+        if uncategorized or not (settings and settings.hide_uncategorized_column):
+            columns.append(self.uncategorized_column(uncategorized))
+        return {"project_id": project_id, "sprint_id": sprint_id, "columns": columns}
+
+    @staticmethod
+    def uncategorized_column(tasks: list[dict[str, object]]) -> dict[str, object]:
+        return (
             {
                 "id": None,
                 "status_id": None,
@@ -795,10 +806,9 @@ class TaskService:
                 "color": None,
                 "sort_order": None,
                 "is_uncategorized": True,
-                "tasks": tasks_by_status.get(None, []),
+                "tasks": tasks,
             }
         )
-        return {"project_id": project_id, "sprint_id": sprint_id, "columns": columns}
 
     def prepare_task_update_changes(self, *, task: Task, project: Project, changes: dict[str, object]) -> None:
         if "related_records" in changes:
@@ -1167,10 +1177,10 @@ class TaskService:
         return task
 
     def require_project_access(
-        self, project_id: UUID, current_user: User, *, module: ProjectModule | None = None
+        self, project_id: UUID, current_user: User, *, module: ProjectModule | None = None, action: str = "EDIT"
     ) -> None:
         """Sight of the project's tasks, or edit access to `module` in it."""
         project = self.get_project_or_404(project_id)
         access_for(self.db, account_id=project.account_id, user=current_user).require_project(
-            project, module=module, view=ProjectModule.TASKS
+            project, module=module, view=ProjectModule.TASKS, action=action
         )

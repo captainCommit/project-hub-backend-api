@@ -137,6 +137,7 @@ class ResourceRepository:
         resource_id: UUID | None = None,
         project_id: UUID | None = None,
         program_id: UUID | None = None,
+        visible_project_ids: set[UUID] | None = None,
     ) -> list[tuple[ResourceAllocation, Resource, Task, Project, Program]]:
         statement: Select[tuple[ResourceAllocation, Resource, Task, Project, Program]] = (
             select(ResourceAllocation, Resource, Task, Project, Program)
@@ -158,6 +159,8 @@ class ResourceRepository:
             statement = statement.where(Task.project_id == project_id)
         if program_id is not None:
             statement = statement.where(Project.program_id == program_id)
+        if visible_project_ids is not None:
+            statement = statement.where(Task.project_id.in_(visible_project_ids))
         return list(self.db.execute(statement).all())
 
     def list_calendar_time_off(

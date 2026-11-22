@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,8 @@ from app.schemas.account_user import (
 )
 from app.services.access import forget_access
 from app.services.access_grants import AccessGrantService
+from app.models.account_role import AccountRole
+from app.services.account_roles import seat_for
 from app.services.billing import BillingService
 from app.services.cognito import admin_create_user_invite, should_send_cognito_invite
 from app.services.member_resources import ensure_member_resource
@@ -76,13 +78,26 @@ class AccountUserService:
         return self.to_reads(account_id, self.account_users.list_for_account(account_id))
 
     def to_reads(self, account_id: UUID, users: list[User]) -> list[AccountUserRead]:
-        roles = {member.user_id: member.role for member in self.account_members.list_for_account(account_id)}
-        return [
-            AccountUserRead.model_validate(user).model_copy(
-                update={"role": roles.get(user.id), "has_signed_in": user.cognito_sub is not None}
-            )
-            for user in users
-        ]
+        members = {member.user_id: member for member in self.account_members.list_for_account(account_id)}
+        role_names = {role.id: role.name for role in self.db.scalars(select(AccountRole).where(AccountRole.account_id == account_id))}
+        reads = []
+        for user in users:
+            member = members.get(user.id)
+            reads.append(AccountUserRead.model_validate(user).model_copy(update={
+                "role": member.role if member else None,
+                "role_id": member.role_id if member else None,
+                "role_name": role_names.get(member.role_id) if member else None,
+                "has_signed_in": user.cognito_sub is not None,
+            }))
+        return reads
+
+    def account_role_or_400(self, account_id: UUID, role_id: UUID | None) -> AccountRole | None:
+        if role_id is None:
+            return None
+        role = self.db.get(AccountRole, role_id)
+        if role is None or role.account_id != account_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That role isn't one of this account's roles.")
+        return role
 
     def change_account_user_role(
         self,
@@ -102,9 +117,19 @@ class AccountUserService:
             allowed_roles=INVITE_ACCOUNT_ROLES,
         )
         membership, user = self.get_membership_or_404(account_id=account_id, user_id=user_id)
-        if membership.role != role_in.role.value:
-            self.require_another_owner(membership)
-            self.account_members.update_role(membership, role=AccountMemberRole(role_in.role.value))
+        account_role = self.account_role_or_400(account_id, role_in.role_id)
+        if account_role is not None:
+            changed = membership.role_id != account_role.id
+            new_seat = seat_for(account_role).value
+        else:
+            changed = membership.role != role_in.role.value
+            new_seat = role_in.role.value
+        if changed:
+            if new_seat != AccountMemberRole.OWNER.value:
+                self.require_another_owner(membership)
+            self.account_members.update_role(
+                membership, role=None if account_role else AccountMemberRole(role_in.role.value), account_role=account_role
+            )
             if platform_account is not None:
                 record_platform_action(
                     self.db,
@@ -112,7 +137,7 @@ class AccountUserService:
                     action=PlatformAuditAction.ACCOUNT_USER_ROLE_CHANGED,
                     account=platform_account,
                     target=user.email,
-                    details={"role": role_in.role.value},
+                    details={"role": account_role.name if account_role else role_in.role.value},
                 )
             self.db.commit()
             forget_access(self.db)
@@ -339,30 +364,39 @@ class AccountUserService:
         )
 
     def apply_account_user_invite(self, *, account_id: UUID, invite_in: AccountUserInviteCreate) -> AccountUserInviteRead:
+        account_role = self.account_role_or_400(account_id, invite_in.role_id)
+        seat = seat_for(account_role) if account_role else AccountMemberRole(invite_in.role.value)
         user = self.users.get_by_email_normalized(invite_in.email)
         if user is None:
             user = self.users.create(email=invite_in.email, full_name=invite_in.full_name)
         elif user.email != invite_in.email:
             user = self.users.update_email(user, email=invite_in.email)
+        # Fill in what the inviter knows without overwriting what the person set themselves.
+        for field in ("first_name", "last_name", "title", "department"):
+            value = getattr(invite_in, field)
+            if value and not getattr(user, field):
+                setattr(user, field, value)
 
         membership = self.account_members.get_for_user(account_id=account_id, user_id=user.id)
+        role_differs = membership is not None and (
+            membership.role_id != account_role.id if account_role else membership.role != seat.value
+        )
         if membership is None:
             membership = self.account_members.create(
                 account_id=account_id,
                 user_id=user.id,
-                role=AccountMemberRole(invite_in.role.value),
+                role=seat,
+                account_role=account_role,
             )
             invite_status = AccountUserInviteStatus.CREATED
-        elif membership.role != invite_in.role.value and invite_in.update_existing:
+        elif role_differs and invite_in.update_existing:
             if (
                 membership.role == AccountMemberRole.OWNER.value
+                and seat != AccountMemberRole.OWNER
                 and self.account_members.count_owners(account_id) <= 1
             ):
                 raise LastOwnerError
-            membership = self.account_members.update_role(
-                membership,
-                role=AccountMemberRole(invite_in.role.value),
-            )
+            membership = self.account_members.update_role(membership, role=seat, account_role=account_role)
             invite_status = AccountUserInviteStatus.UPDATED
         else:
             invite_status = AccountUserInviteStatus.ALREADY_EXISTS

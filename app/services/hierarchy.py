@@ -49,16 +49,12 @@ class HierarchyService:
         portfolio_in: PortfolioCreate,
         current_user: User,
     ) -> Portfolio:
-        self.require_account_role(
-            account_id=account_id,
-            user_id=current_user.id,
-            allowed_roles=PORTFOLIO_CREATE_ROLES,
-        )
-        access_for(self.db, account_id=account_id, user=current_user).require_writable()
+        access_for(self.db, account_id=account_id, user=current_user).require_area("PORTFOLIOS", "CREATE")
         status_id = self.resolve_status_id(
             account_id=account_id,
             entity_type="PORTFOLIO",
             status_id=portfolio_in.status_id,
+            explicit="status_id" in portfolio_in.model_fields_set,
         )
         portfolio = self.hierarchy.create_portfolio(
             account_id=account_id,
@@ -115,11 +111,12 @@ class HierarchyService:
         current_user: User,
     ) -> Program:
         portfolio = self.get_portfolio_or_404(portfolio_id)
-        access_for(self.db, account_id=portfolio.account_id, user=current_user).require_portfolio(portfolio, manage=True)
+        access_for(self.db, account_id=portfolio.account_id, user=current_user).require_to_create_in(portfolio, "PROGRAMS")
         status_id = self.resolve_status_id(
             account_id=portfolio.account_id,
             entity_type="PROGRAM",
             status_id=program_in.status_id,
+            explicit="status_id" in program_in.model_fields_set,
         )
         program = self.hierarchy.create_program(
             account_id=portfolio.account_id,
@@ -190,11 +187,12 @@ class HierarchyService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Program, portfolio, and account hierarchy is inconsistent.",
             )
-        access_for(self.db, account_id=program.account_id, user=current_user).require_program(program, manage=True)
+        access_for(self.db, account_id=program.account_id, user=current_user).require_to_create_in(program, "PROJECTS")
         status_id = self.resolve_status_id(
             account_id=program.account_id,
             entity_type="PROJECT",
             status_id=project_in.status_id,
+            explicit="status_id" in project_in.model_fields_set,
         )
         project = self.hierarchy.create_project(
             account_id=program.account_id,
@@ -414,9 +412,11 @@ class HierarchyService:
         account_id: UUID,
         entity_type: str,
         status_id: UUID | None,
+        explicit: bool = False,
     ) -> UUID | None:
+        """The status to create with. Left out: the account's default. Sent as null: none, which shows as Not Started."""
         if status_id is None:
-            return self.hierarchy.get_default_status_id(account_id=account_id, entity_type=entity_type)
+            return None if explicit else self.hierarchy.get_default_status_id(account_id=account_id, entity_type=entity_type)
         return self.validate_status_id(account_id=account_id, entity_type=entity_type, status_id=status_id)
 
     def validate_status_id(self, *, account_id: UUID, entity_type: str, status_id: UUID) -> UUID:

@@ -11,7 +11,7 @@ import app.models  # noqa: F401
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.main import app
-from tests.helpers import grant_existing_portfolios
+from tests.helpers import give_role, grant_existing_portfolios
 from app.models.account import Account
 from app.models.account_holiday import AccountHoliday
 from app.models.account_member import AccountMember, AccountMemberRole
@@ -290,9 +290,12 @@ def create_private_resource(db_session: Session, *, slug: str = "private-time-of
     return resource
 
 
-def test_manager_can_create_resource(client: TestClient, db_session: Session) -> None:
+def test_resources_create_right_can_create_resource(client: TestClient, db_session: Session) -> None:
     hierarchy = create_work_hierarchy(client)
-    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MANAGER)
+    set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
+    me = client.get("/api/v1/me").json()
+    give_role(db_session, account_id=hierarchy["account"]["id"], user_id=me["id"], scope="ALL",
+              permissions={"PROJECTS": ["VIEW"], "RESOURCES": ["VIEW", "CREATE"]})
 
     response = client.post(
         f"/api/v1/accounts/{hierarchy['account']['id']}/resources",
@@ -341,7 +344,9 @@ def test_resource_list_returns_active_resources(client: TestClient, db_session: 
     response = client.get(f"/api/v1/accounts/{hierarchy['account']['id']}/resources")
 
     assert response.status_code == 200
-    assert [resource["id"] for resource in response.json()] == [active["id"]]
+    # Members not added to Resources still come back (for people pickers), just not listed.
+    assert [resource["id"] for resource in response.json() if resource["listed"]] == [active["id"]]
+    assert inactive["id"] not in {resource["id"] for resource in response.json()}
 
 
 def test_delete_resource_sets_is_active_false(client: TestClient, db_session: Session) -> None:
@@ -470,7 +475,9 @@ def test_allocation_delete_works(client: TestClient, db_session: Session) -> Non
 
 def test_account_member_can_list_resource_time_off(client: TestClient, db_session: Session) -> None:
     hierarchy = create_work_hierarchy(client)
-    resource = create_resource(client, hierarchy["account"]["id"], "Time Off Resource")
+    resource = create_resource(
+        client, hierarchy["account"]["id"], "Time Off Resource", project_ids=[hierarchy["project"]["id"]]
+    )
     time_off = create_time_off(client, resource["id"], reason="Vacation")
     set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.VIEWER)
 
@@ -936,7 +943,10 @@ def test_calendar_excludes_soft_deleted_tasks(client: TestClient) -> None:
 
 def test_member_can_read_resource_capacity_forecast(client: TestClient, db_session: Session) -> None:
     hierarchy = create_work_hierarchy(client)
-    resource = create_resource(client, hierarchy["account"]["id"], "Forecast Resource", weekly_capacity_hours=40)
+    resource = create_resource(
+        client, hierarchy["account"]["id"], "Forecast Resource", weekly_capacity_hours=40,
+        project_ids=[hierarchy["project"]["id"]],
+    )
     set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.VIEWER)
 
     response = client.get(
@@ -1085,7 +1095,8 @@ def test_resource_capacity_forecast_project_and_program_filters(client: TestClie
 
 def test_member_can_read_account_capacity_forecast(client: TestClient, db_session: Session) -> None:
     hierarchy = create_work_hierarchy(client)
-    create_resource(client, hierarchy["account"]["id"], "Account Forecast Resource")
+    create_resource(client, hierarchy["account"]["id"], "Account Forecast Resource", project_ids=[hierarchy["project"]["id"]])
+    create_resource(client, hierarchy["account"]["id"], "Elsewhere")  # not in anything this viewer sees
     set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.VIEWER)
 
     response = client.get(

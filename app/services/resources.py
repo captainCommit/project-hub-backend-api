@@ -11,10 +11,12 @@ from app.models.access_grant import ProjectModule
 from app.models.account_member import AccountMemberRole
 from app.models.account_settings import DEFAULT_NON_WORKING_WEEKDAYS
 from app.models.option_value import OptionValue
+from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.resource_allocation import ResourceAllocation
+from app.models.resource_assignment import ResourceAssignment
 from app.models.resource_project_allocation import ResourceProjectAllocation
 from app.models.resource_skill import ResourceSkill
 from app.models.resource_time_off import ResourceTimeOff
@@ -38,7 +40,8 @@ from app.schemas.resources import (
     ResourceTimeOffUpdate,
     ResourceUpdate,
 )
-from app.services.access import access_for
+from app.services.access import AccessScope, access_for, forget_access
+from app.services.member_resources import member_resource_name
 from app.services.activity import ActivityLogService
 
 
@@ -84,30 +87,96 @@ class ResourceService:
         self.skills = SkillRepository(db)
         self.tasks = TaskRepository(db)
 
-    def list_resources(self, *, account_id: UUID, current_user: User) -> list[Resource]:
-        self.require_account_member(account_id=account_id, user_id=current_user.id)
-        return self.resources.list_active_resources_for_account(account_id)
+    # Resources > Capacity. Every member has a resource (so their work counts), but only listed ones show there.
+    # What a viewer sees comes from access.listed_resource_ids(); names stay visible to all members for pickers.
 
-    def create_resource(self, *, account_id: UUID, resource_in: ResourceCreate, current_user: User) -> Resource:
-        self.require_account_role(
-            account_id=account_id,
-            user_id=current_user.id,
-            allowed_roles=RESOURCE_WRITE_ROLES,
-        )
-        self.validate_user_belongs_to_account(account_id=account_id, user_id=resource_in.user_id)
-        self.validate_user_not_linked(account_id=account_id, user_id=resource_in.user_id)
-        try:
-            resource = self.resources.create_resource(
-                account_id=account_id,
-                user_id=resource_in.user_id,
-                name=resource_in.name,
-                role=resource_in.role,
-                department=resource_in.department,
-                hourly_rate=resource_in.hourly_rate,
-                non_project_hours=resource_in.non_project_hours,
-                weekly_capacity_hours=resource_in.weekly_capacity_hours,
-                created_by=current_user.id,
+    def list_resources(self, *, account_id: UUID, current_user: User) -> list[dict[str, object]]:
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=account_id, user=current_user)
+        resources = self.resources.list_active_resources_for_account(account_id)
+        return self.resource_reads(scope, resources)
+
+    def resource_reads(self, scope: AccessScope, resources: list[Resource]) -> list[dict[str, object]]:
+        """Resources as this viewer may see them: assignments, rates and the listed flag only within their scope."""
+        listed_ids = scope.listed_resource_ids()
+        visible_resource_ids = {
+            resource.id for resource in resources if listed_ids is None or resource.id in listed_ids
+        }
+        assignments: dict[UUID, list[ResourceAssignment]] = {}
+        if visible_resource_ids:
+            for assignment in self.db.scalars(
+                select(ResourceAssignment).where(ResourceAssignment.resource_id.in_(visible_resource_ids))
+            ):
+                assignments.setdefault(assignment.resource_id, []).append(assignment)
+        projects = scope.visible_project_ids()
+        programs = scope.visible_program_ids()
+        portfolios = scope.visible_portfolio_ids()
+
+        def keep(ids: list[UUID], visible: set[UUID] | None) -> list[UUID]:
+            return ids if visible is None else [i for i in ids if i in visible]
+
+        reads: list[dict[str, object]] = []
+        for resource in resources:
+            visible = resource.id in visible_resource_ids
+            own = assignments.get(resource.id, [])
+            reads.append(
+                {
+                    **{column.key: getattr(resource, column.key) for column in Resource.__table__.columns},
+                    "hourly_rate": resource.hourly_rate if visible else None,
+                    "listed": bool(resource.listed and visible),
+                    "portfolio_ids": keep([a.portfolio_id for a in own if a.portfolio_id], portfolios),
+                    "program_ids": keep([a.program_id for a in own if a.program_id], programs),
+                    "project_ids": keep([a.project_id for a in own if a.project_id], projects),
+                }
             )
+        return reads
+
+    def resource_read(self, scope: AccessScope, resource: Resource) -> dict[str, object]:
+        return self.resource_reads(scope, [resource])[0]
+
+    def require_resource_visible(self, scope: AccessScope, resource: Resource) -> None:
+        """Changing (or looking closely at) a resource: it must be one this user sees on Resources."""
+        listed_ids = scope.listed_resource_ids()
+        if listed_ids is not None and resource.id not in listed_ids:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
+
+    def create_resource(self, *, account_id: UUID, resource_in: ResourceCreate, current_user: User) -> dict[str, object]:
+        self.require_account_member(account_id=account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=account_id, user=current_user)
+        scope.require_area("RESOURCES", "CREATE")
+        self.validate_user_belongs_to_account(account_id=account_id, user_id=resource_in.user_id)
+        user = self.db.get(User, resource_in.user_id) if resource_in.user_id else None
+        existing = (
+            self.db.scalar(select(Resource).where(Resource.account_id == account_id, Resource.user_id == user.id))
+            if user is not None
+            else None
+        )
+        if existing is not None and existing.is_active and existing.listed:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This person is already on Resources.")
+        values: dict[str, object] = {
+            "name": (resource_in.name or "").strip() or (member_resource_name(user) if user else ""),
+            "role": resource_in.role if resource_in.role is not None else (user.title if user else None),
+            "department": resource_in.department if resource_in.department is not None else (user.department if user else None),
+            "hourly_rate": resource_in.hourly_rate if resource_in.hourly_rate is not None else (existing.hourly_rate if existing else None),
+            "non_project_hours": resource_in.non_project_hours,
+            "weekly_capacity_hours": resource_in.weekly_capacity_hours,
+        }
+        targets = self.assignment_targets(
+            scope,
+            account_id=account_id,
+            portfolio_ids=resource_in.portfolio_ids or [],
+            program_ids=resource_in.program_ids or [],
+            project_ids=resource_in.project_ids or [],
+        )
+        try:
+            if existing is not None:
+                # Their member resource, not yet on Resources (or removed earlier): put it back.
+                resource = self.resources.update_resource(existing, {**values, "is_active": True, "listed": True})
+            else:
+                resource = self.resources.create_resource(
+                    account_id=account_id, user_id=resource_in.user_id, created_by=current_user.id, listed=True, **values
+                )
+            self.replace_assignments(scope, resource, targets)
             ActivityLogService(self.db).record(
                 account_id=account_id,
                 entity_type="RESOURCE",
@@ -118,33 +187,48 @@ class ResourceService:
             )
             self.db.commit()
             self.db.refresh(resource)
-            return resource
         except Exception:
             self.db.rollback()
             raise
+        forget_access(self.db)
+        return self.resource_read(access_for(self.db, account_id=account_id, user=current_user), resource)
 
-    def get_resource(self, *, resource_id: UUID, current_user: User) -> Resource:
+    def get_resource(self, *, resource_id: UUID, current_user: User) -> dict[str, object]:
         resource = self.get_resource_or_404(resource_id)
         self.require_account_member(account_id=resource.account_id, user_id=current_user.id)
-        return resource
+        scope = access_for(self.db, account_id=resource.account_id, user=current_user)
+        self.require_resource_visible(scope, resource)
+        return self.resource_read(scope, resource)
 
-    def update_resource(self, *, resource_id: UUID, resource_in: ResourceUpdate, current_user: User) -> Resource:
+    def update_resource(self, *, resource_id: UUID, resource_in: ResourceUpdate, current_user: User) -> dict[str, object]:
         resource = self.get_resource_or_404(resource_id)
-        self.require_account_role(
-            account_id=resource.account_id,
-            user_id=current_user.id,
-            allowed_roles=RESOURCE_WRITE_ROLES,
-        )
+        self.require_account_member(account_id=resource.account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=resource.account_id, user=current_user)
+        scope.require_area("RESOURCES", "EDIT")
+        self.require_resource_visible(scope, resource)
         changes = resource_in.model_dump(exclude_unset=True)
+        assignment_fields = {key: changes.pop(key) for key in ("portfolio_ids", "program_ids", "project_ids") if key in changes}
         if "user_id" in changes:
             self.validate_user_belongs_to_account(account_id=resource.account_id, user_id=changes["user_id"])  # type: ignore[arg-type]
             self.validate_user_not_linked(account_id=resource.account_id, user_id=changes["user_id"], resource_id=resource.id)  # type: ignore[arg-type]
-        if not changes:
-            return resource
+        targets = None
+        if assignment_fields:
+            targets = self.assignment_targets(
+                scope,
+                account_id=resource.account_id,
+                portfolio_ids=assignment_fields.get("portfolio_ids") or [],
+                program_ids=assignment_fields.get("program_ids") or [],
+                project_ids=assignment_fields.get("project_ids") or [],
+            )
+        if not changes and targets is None:
+            return self.resource_read(scope, resource)
 
         old_values = {field: getattr(resource, field) for field in changes}
         try:
-            resource = self.resources.update_resource(resource, changes)
+            if changes:
+                resource = self.resources.update_resource(resource, changes)
+            if targets is not None:
+                self.replace_assignments(scope, resource, targets)
             ActivityLogService(self.db).record(
                 account_id=resource.account_id,
                 entity_type="RESOURCE",
@@ -156,51 +240,123 @@ class ResourceService:
             )
             self.db.commit()
             self.db.refresh(resource)
-            return resource
         except Exception:
             self.db.rollback()
             raise
+        forget_access(self.db)
+        return self.resource_read(access_for(self.db, account_id=resource.account_id, user=current_user), resource)
 
     def delete_resource(self, *, resource_id: UUID, current_user: User) -> None:
+        """Remove from Resources. A member's resource stays (unlisted) so their work still counts; others go."""
         resource = self.get_resource_or_404(resource_id)
-        self.require_account_role(
-            account_id=resource.account_id,
-            user_id=current_user.id,
-            allowed_roles=RESOURCE_WRITE_ROLES,
-        )
-        if not resource.is_active:
+        self.require_account_member(account_id=resource.account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=resource.account_id, user=current_user)
+        scope.require_area("RESOURCES", "DELETE")
+        self.require_resource_visible(scope, resource)
+        if not resource.is_active or not resource.listed:
             return
         try:
             old_values = self.resource_activity_values(resource)
-            resource = self.resources.deactivate_resource(resource)
+            for row in self.db.scalars(select(ResourceAssignment).where(ResourceAssignment.resource_id == resource.id)).all():
+                self.db.delete(row)
+            for row in self.db.scalars(
+                select(ResourceProjectAllocation).where(ResourceProjectAllocation.resource_id == resource.id)
+            ).all():
+                self.db.delete(row)
+            resource.listed = False
+            if resource.user_id is None:
+                resource = self.resources.deactivate_resource(resource)
             ActivityLogService(self.db).record(
                 account_id=resource.account_id,
                 entity_type="RESOURCE",
                 entity_id=resource.id,
                 action="RESOURCE_DEACTIVATED",
                 old_values=old_values,
-                new_values={"is_active": False},
+                new_values={"is_active": resource.is_active, "listed": False},
                 created_by=current_user.id,
             )
             self.db.commit()
         except Exception:
             self.db.rollback()
             raise
+        forget_access(self.db)
+
+    def assignment_targets(
+        self,
+        scope: AccessScope,
+        *,
+        account_id: UUID,
+        portfolio_ids: list[UUID],
+        program_ids: list[UUID],
+        project_ids: list[UUID],
+    ) -> dict[str, set[UUID]]:
+        """Check the portfolios, programs and projects to assign; parents of what's picked are added too."""
+        wanted_projects = set(project_ids)
+        projects = list(self.db.scalars(select(Project).where(Project.id.in_(wanted_projects)))) if wanted_projects else []
+        wanted_programs = set(program_ids) | {project.program_id for project in projects}
+        programs = list(self.db.scalars(select(Program).where(Program.id.in_(wanted_programs)))) if wanted_programs else []
+        wanted_portfolios = set(portfolio_ids) | {program.portfolio_id for program in programs}
+        portfolios = (
+            list(self.db.scalars(select(Portfolio).where(Portfolio.id.in_(wanted_portfolios)))) if wanted_portfolios else []
+        )
+        found = [item for item in [*projects, *programs, *portfolios] if item.account_id == account_id]
+        if len(found) != len(wanted_projects) + len(wanted_programs) + len(wanted_portfolios):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assignments must be in this account.")
+        # People can only be assigned to what the person assigning them can see.
+        for wanted, visible in (
+            (wanted_projects, scope.visible_project_ids()),
+            (wanted_programs, scope.visible_program_ids()),
+            (wanted_portfolios, scope.visible_portfolio_ids()),
+        ):
+            if visible is not None and not wanted <= visible:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project access denied.")
+        return {"portfolio_id": wanted_portfolios, "program_id": wanted_programs, "project_id": wanted_projects}
+
+    def replace_assignments(self, scope: AccessScope, resource: Resource, targets: dict[str, set[UUID]]) -> None:
+        """Set the resource's assignments to `targets`, leaving alone any the person making the change can't see."""
+        visible = {
+            "portfolio_id": scope.visible_portfolio_ids(),
+            "program_id": scope.visible_program_ids(),
+            "project_id": scope.visible_project_ids(),
+        }
+        kept: dict[str, set[UUID]] = {column: set() for column in targets}
+        for row in self.db.scalars(select(ResourceAssignment).where(ResourceAssignment.resource_id == resource.id)).all():
+            column = next(c for c in targets if getattr(row, c) is not None)
+            target = getattr(row, column)
+            seen_by_editor = visible[column] is None or target in visible[column]  # type: ignore[operator]
+            if seen_by_editor and target not in targets[column]:
+                self.db.delete(row)
+            else:
+                kept[column].add(target)
+        for column, ids in targets.items():
+            for target in ids - kept[column]:
+                self.db.add(ResourceAssignment(account_id=resource.account_id, resource_id=resource.id, **{column: target}))
+        self.db.flush()
 
     def list_project_allocation_overrides(self, *, account_id: UUID, current_user: User) -> list[ResourceProjectAllocation]:
         self.require_account_member(account_id=account_id, user_id=current_user.id)
-        return list(
-            self.db.scalars(select(ResourceProjectAllocation).where(ResourceProjectAllocation.account_id == account_id)).all()
-        )
+        scope = access_for(self.db, account_id=account_id, user=current_user)
+        statement = select(ResourceProjectAllocation).where(ResourceProjectAllocation.account_id == account_id)
+        listed_ids = scope.listed_resource_ids()
+        if listed_ids is not None:
+            statement = statement.where(ResourceProjectAllocation.resource_id.in_(listed_ids))
+        project_filter = scope.project_filter(ResourceProjectAllocation.project_id)
+        if project_filter is not None:
+            statement = statement.where(project_filter)
+        return list(self.db.scalars(statement).all())
 
     def set_project_allocation_override(
         self, *, resource_id: UUID, project_id: UUID, weekly_hours: Decimal | None, current_user: User
     ) -> ResourceProjectAllocation | None:
         resource = self.get_resource_or_404(resource_id)
-        self.require_account_role(account_id=resource.account_id, user_id=current_user.id, allowed_roles=RESOURCE_WRITE_ROLES)
+        self.require_account_member(account_id=resource.account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=resource.account_id, user=current_user)
+        scope.require_area("RESOURCES", "EDIT")
+        self.require_resource_visible(scope, resource)
         project = self.db.get(Project, project_id)
         if project is None or project.account_id != resource.account_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+        scope.require_project(project)
         override = self.db.scalar(
             select(ResourceProjectAllocation).where(
                 ResourceProjectAllocation.resource_id == resource_id, ResourceProjectAllocation.project_id == project_id
@@ -224,29 +380,52 @@ class ResourceService:
 
     def reset_project_allocation_overrides(self, *, resource_id: UUID, current_user: User) -> None:
         resource = self.get_resource_or_404(resource_id)
-        self.require_account_role(account_id=resource.account_id, user_id=current_user.id, allowed_roles=RESOURCE_WRITE_ROLES)
-        for override in self.db.scalars(
-            select(ResourceProjectAllocation).where(ResourceProjectAllocation.resource_id == resource_id)
-        ).all():
+        self.require_account_member(account_id=resource.account_id, user_id=current_user.id)
+        scope = access_for(self.db, account_id=resource.account_id, user=current_user)
+        scope.require_area("RESOURCES", "EDIT")
+        self.require_resource_visible(scope, resource)
+        statement = select(ResourceProjectAllocation).where(ResourceProjectAllocation.resource_id == resource_id)
+        # Only the projects this user can see; overrides elsewhere are someone else's to reset.
+        project_filter = scope.project_filter(ResourceProjectAllocation.project_id)
+        if project_filter is not None:
+            statement = statement.where(project_filter)
+        for override in self.db.scalars(statement).all():
             self.db.delete(override)
         self.db.commit()
 
     def list_resource_allocations(self, *, resource_id: UUID, current_user: User) -> list[ResourceAllocation]:
         resource = self.get_resource_or_404(resource_id)
         self.require_account_member(account_id=resource.account_id, user_id=current_user.id)
-        return self.resources.list_allocations_for_resource(resource_id)
+        scope = access_for(self.db, account_id=resource.account_id, user=current_user)
+        self.require_resource_visible(scope, resource)
+        allocations = self.resources.list_allocations_for_resource(resource_id)
+        visible = scope.visible_project_ids(ProjectModule.TASKS)
+        if visible is None or not allocations:
+            return allocations
+        task_projects = dict(
+            self.db.execute(select(Task.id, Task.project_id).where(Task.id.in_({a.task_id for a in allocations}))).all()
+        )
+        return [a for a in allocations if task_projects.get(a.task_id) in visible]
 
     def list_resource_time_off(self, *, resource_id: UUID, current_user: User) -> list[ResourceTimeOff]:
         resource = self.get_resource_or_404(resource_id)
         self.require_account_member(account_id=resource.account_id, user_id=current_user.id)
+        self.require_resource_visible(access_for(self.db, account_id=resource.account_id, user=current_user), resource)
         return self.resources.list_time_off_for_resource(resource_id)
 
     def list_account_time_off(self, *, account_id: UUID, current_user: User) -> list[dict[str, object]]:
         self.require_account_member(account_id=account_id, user_id=current_user.id)
+        listed_ids = access_for(self.db, account_id=account_id, user=current_user).listed_resource_ids()
         return [
             {**time_off.__dict__, "resource_name": resource.name}
             for time_off, resource in self.resources.list_time_off_for_account(account_id)
+            if listed_ids is None or resource.id in listed_ids
         ]
+
+    def only_listed(self, access: AccessScope, resources: list[Resource]) -> list[Resource]:
+        """The resources on Resources that this user may see there."""
+        listed_ids = access.listed_resource_ids()
+        return [r for r in resources if r.listed and (listed_ids is None or r.id in listed_ids)]
 
     def create_time_off(
         self,
@@ -476,7 +655,7 @@ class ResourceService:
         )
         include_empty_resources = resource_id is not None or (project_id is None and program_id is None)
         calendar_resources = (
-            self.resources.list_calendar_resources(account_id=account_id, resource_id=resource_id)
+            self.only_listed(access, self.resources.list_calendar_resources(account_id=account_id, resource_id=resource_id))
             if include_empty_resources
             else []
         )
@@ -586,6 +765,9 @@ class ResourceService:
         self.validate_allocation_date_range(start_date=start_date, end_date=end_date)
         resource = self.get_resource_or_404(resource_id)
         self.require_account_member(account_id=resource.account_id, user_id=current_user.id)
+        access = access_for(self.db, account_id=resource.account_id, user=current_user)
+        self.require_resource_visible(access, resource)
+        access.require_visible_filters(program_id=program_id, project_id=project_id)
         if project_id is not None:
             self.validate_project_belongs_to_account(project_id=project_id, account_id=resource.account_id)
         if program_id is not None:
@@ -599,6 +781,7 @@ class ResourceService:
             resource_id=resource.id,
             project_id=project_id,
             program_id=program_id,
+            visible_project_ids=access.visible_project_ids(ProjectModule.TASKS),
         )
         forecast = forecast_resources[0]
         return {
@@ -629,7 +812,7 @@ class ResourceService:
         if program_id is not None:
             self.validate_program_belongs_to_account(program_id=program_id, account_id=account_id)
 
-        resources = self.resources.list_calendar_resources(account_id=account_id, resource_id=resource_id)
+        resources = self.only_listed(access, self.resources.list_calendar_resources(account_id=account_id, resource_id=resource_id))
         forecast_resources = self.build_capacity_forecast_resources(
             account_id=account_id,
             start_date=start_date,
@@ -638,6 +821,7 @@ class ResourceService:
             resource_id=resource_id,
             project_id=project_id,
             program_id=program_id,
+            visible_project_ids=access.visible_project_ids(ProjectModule.TASKS),
         )
         return {
             "start_date": start_date,
@@ -667,7 +851,7 @@ class ResourceService:
         if program_id is not None:
             self.validate_program_belongs_to_account(program_id=program_id, account_id=account_id)
 
-        resources = self.resources.list_calendar_resources(account_id=account_id, resource_id=resource_id)
+        resources = self.only_listed(access, self.resources.list_calendar_resources(account_id=account_id, resource_id=resource_id))
         forecast_resources = self.build_capacity_forecast_resources(
             account_id=account_id,
             start_date=start_date,
@@ -676,6 +860,7 @@ class ResourceService:
             resource_id=resource_id,
             project_id=project_id,
             program_id=program_id,
+            visible_project_ids=access.visible_project_ids(ProjectModule.TASKS),
         )
         resource_analysis = [self.resource_analysis_summary(forecast_resource) for forecast_resource in forecast_resources]
         overallocated_resources = [entry for entry in resource_analysis if entry["allocated_hours"] > entry["available_hours"]]
@@ -734,7 +919,9 @@ class ResourceService:
         end_date = task.finish_date or task.start_date or start_date
         self.validate_allocation_date_range(start_date=start_date, end_date=end_date)
 
-        resources = self.resources.list_calendar_resources(account_id=task.account_id)
+        # People on Resources (their capacity is set up there).
+        access = access_for(self.db, account_id=task.account_id, user=current_user)
+        resources = self.only_listed(access, self.resources.list_calendar_resources(account_id=task.account_id))
         forecast_resources = self.build_capacity_forecast_resources(
             account_id=task.account_id,
             start_date=start_date,
@@ -772,6 +959,7 @@ class ResourceService:
         resource_id: UUID | None = None,
         project_id: UUID | None = None,
         program_id: UUID | None = None,
+        visible_project_ids: set[UUID] | None = None,
     ) -> list[dict[str, object]]:
         resource_ids = {resource.id for resource in resources}
         week_buckets = self.split_into_week_buckets(start_date=start_date, end_date=end_date)
@@ -799,6 +987,7 @@ class ResourceService:
             resource_id=resource_id,
             project_id=project_id,
             program_id=program_id,
+            visible_project_ids=visible_project_ids,
         ):
             if allocation_resource.id in allocations_by_resource:
                 allocations_by_resource[allocation_resource.id].append(allocation)
@@ -1767,6 +1956,11 @@ class ResourceService:
 
     def require_account_role(self, *, account_id: UUID, user_id: UUID, allowed_roles: set[str]) -> None:
         self.require_account_member(account_id=account_id, user_id=user_id)
+        if allowed_roles is RESOURCE_WRITE_ROLES:
+            # Changing resources and skills is the role's Resources > Edit right (Account > Users & Roles).
+            user = self.db.get(User, user_id)
+            access_for(self.db, account_id=account_id, user=user).require_area("RESOURCES", "EDIT")
+            return
         membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
         if membership is None or membership.role not in allowed_roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")

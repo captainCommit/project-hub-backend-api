@@ -13,7 +13,7 @@ from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.options import OptionSetRepository, OptionValueRepository
 from app.schemas.options import OptionSetCreate, OptionSetUpdate, OptionValueCreate, OptionValueUpdate
-from app.services.option_defaults import DEFAULT_OPTION_SETS
+from app.services.option_defaults import DEFAULT_LABELS, DEFAULT_OPTION_SETS
 
 
 OPTION_WRITE_ROLES = {AccountMemberRole.OWNER.value}
@@ -22,6 +22,13 @@ OPTION_WRITE_ROLES = {AccountMemberRole.OWNER.value}
 def normalize_key(value: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9]+", "_", value.strip()).strip("_")
     return normalized.upper()
+
+
+def with_default_labels(option_set: OptionSet, values: list[OptionValue]) -> list[OptionValue]:
+    defaults = DEFAULT_LABELS.get((option_set.entity_type, option_set.name), {})
+    for option_value in values:
+        option_value.default_label = defaults.get(option_value.value)  # type: ignore[attr-defined]
+    return values
 
 
 class OptionService:
@@ -158,10 +165,10 @@ class OptionService:
         return [
             {
                 **option_set.__dict__,
-                "values": self.option_values.list_for_option_set(
+                "values": with_default_labels(option_set, self.option_values.list_for_option_set(
                     option_set.id,
                     include_inactive=include_inactive,
-                ),
+                )),
             }
             for option_set in option_sets
         ]
@@ -183,10 +190,27 @@ class OptionService:
             )
         else:
             self.require_account_member(account_id=account_id, user_id=current_user.id)
-        return self.option_values.list_for_option_set(
+        return with_default_labels(option_set, self.option_values.list_for_option_set(
             option_set_id,
             include_inactive=include_inactive,
-        )
+        ))
+
+    def reset_labels(self, *, account_id: UUID, current_user: User) -> None:
+        """Settings > Status & Priority Labels > Reset to Defaults: every shipped value gets its first label back
+        and loses its colour; renamed work-status and health labels are cleared. Values the account added stay."""
+        from app.repositories.account_settings import AccountSettingsRepository  # noqa: PLC0415
+
+        self.require_account_role(account_id=account_id, user_id=current_user.id, allowed_roles=OPTION_WRITE_ROLES)
+        for option_set in self.option_sets.list_for_account(account_id):
+            defaults = DEFAULT_LABELS.get((option_set.entity_type, option_set.name), {})
+            for option_value in self.option_values.list_for_option_set(option_set.id, include_inactive=True):
+                if option_value.value in defaults:
+                    option_value.label = defaults[option_value.value]
+                    option_value.color = None
+        settings = AccountSettingsRepository(self.db).get_for_account(account_id)
+        if settings is not None:
+            settings.status_labels = None
+        self.db.commit()
 
     def create_option_value(
         self,

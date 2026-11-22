@@ -300,7 +300,8 @@ def test_existing_user_can_be_added_to_account(client: TestClient, db_session: S
         )
     )
     assert membership is not None
-    assert membership.role == AccountMemberRole.MANAGER.value
+    # A manager seat is a full seat now; what they can do comes from the Project Manager role.
+    assert membership.role == AccountMemberRole.MEMBER.value
 
 
 def test_duplicate_membership_does_not_create_duplicate(client: TestClient, db_session: Session) -> None:

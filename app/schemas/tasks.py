@@ -122,8 +122,10 @@ class TaskImportRow(BaseModel):
     duration_days: str | None = None
     story_points: str | None = None
     percent_complete: str | None = None
-    # Email of an account member.
+    # Who it's assigned to: a resource's or account member's name, or a member's email. Several with ";" or ",".
     assignee: str | None = None
+    # Rows in this file it follows: 1 is the first task row. "2, 5" or with a type and lag, e.g. "3FS+2", "4SS".
+    predecessors: str | None = None
     sprint: str | None = None
     # Name of an earlier row in the file, or of a task already in the project.
     parent: str | None = None

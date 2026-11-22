@@ -3,9 +3,12 @@
 The database removes child rows through ON DELETE CASCADE (programs, projects, tasks, RAID logs, sprints,
 access grants...). Comments, attachments and notifications point at records by entity type and id with no
 foreign key, so they are removed here. The activity log is kept as the audit trail, plus a DELETED entry.
-Files already uploaded to S3 for deleted attachments are left in the bucket.
+Files already uploaded to S3 for deleted attachments are left in the bucket, so a restore can bring them back.
+
+Before anything is removed, a copy of all of it goes to Recently deleted (services/recycle_bin.py).
 """
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -18,6 +21,7 @@ from app.models.change_request import ChangeRequest
 from app.models.comment import Comment
 from app.models.decision import Decision
 from app.models.decision_option import DecisionOption
+from app.models.deleted_record import DeletedRecord
 from app.models.dependency import Dependency
 from app.models.issue import Issue
 from app.models.notification import Notification
@@ -32,20 +36,22 @@ from app.models.test_case import TestCase
 from app.models.user import User
 from app.repositories.activity import ActivityLogRepository
 from app.services.access import access_for
+from app.services.recycle_bin import purge_expired, take_snapshot
 
 PROJECT_RECORD_MODELS = (Task, Risk, Issue, Assumption, Decision, Dependency, ChangeRequest, Requirement, TestCase, Sprint)
+TABLES = {"PORTFOLIO": "portfolios", "PROGRAM": "programs", "PROJECT": "projects"}
 
 
 class HierarchyDeleteService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def delete_project(self, *, project_id: UUID, current_user: User) -> None:
+    def delete_project(self, *, project_id: UUID, current_user: User) -> DeletedRecord:
         project = self.db.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project, manage=True)
-        self.remove(
+        access_for(self.db, account_id=project.account_id, user=current_user).require_project(project, manage=True, action="DELETE")
+        return self.remove(
             account_id=project.account_id,
             entity_type="PROJECT",
             item=project,
@@ -54,13 +60,13 @@ class HierarchyDeleteService:
             current_user=current_user,
         )
 
-    def delete_program(self, *, program_id: UUID, current_user: User) -> None:
+    def delete_program(self, *, program_id: UUID, current_user: User) -> DeletedRecord:
         program = self.db.get(Program, program_id)
         if program is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found.")
-        access_for(self.db, account_id=program.account_id, user=current_user).require_program(program, manage=True)
+        access_for(self.db, account_id=program.account_id, user=current_user).require_program(program, manage=True, action="DELETE")
         project_ids = list(self.db.scalars(select(Project.id).where(Project.program_id == program.id)).all())
-        self.remove(
+        return self.remove(
             account_id=program.account_id,
             entity_type="PROGRAM",
             item=program,
@@ -69,14 +75,14 @@ class HierarchyDeleteService:
             current_user=current_user,
         )
 
-    def delete_portfolio(self, *, portfolio_id: UUID, current_user: User) -> None:
+    def delete_portfolio(self, *, portfolio_id: UUID, current_user: User) -> DeletedRecord:
         portfolio = self.db.get(Portfolio, portfolio_id)
         if portfolio is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found.")
-        access_for(self.db, account_id=portfolio.account_id, user=current_user).require_portfolio(portfolio, manage=True)
+        access_for(self.db, account_id=portfolio.account_id, user=current_user).require_portfolio(portfolio, manage=True, action="DELETE")
         program_ids = list(self.db.scalars(select(Program.id).where(Program.portfolio_id == portfolio.id)).all())
         project_ids = list(self.db.scalars(select(Project.id).where(Project.portfolio_id == portfolio.id)).all())
-        self.remove(
+        return self.remove(
             account_id=portfolio.account_id,
             entity_type="PORTFOLIO",
             item=portfolio,
@@ -94,7 +100,22 @@ class HierarchyDeleteService:
         project_ids: list[UUID],
         extra_ids: list[UUID],
         current_user: User,
-    ) -> None:
+    ) -> DeletedRecord:
+        purge_expired(self.db, account_id=account_id)
+        kept = DeletedRecord(
+            account_id=account_id,
+            entity_type=entity_type,
+            entity_id=item.id,
+            name=item.name,
+            description=item.description,
+            location=self.location(item),
+            project_count=len(project_ids),
+            snapshot=take_snapshot(self.db, account_id=account_id, root_table=TABLES[entity_type], root_id=item.id),
+            deleted_by=current_user.id,
+            deleted_at=datetime.now(UTC),
+        )
+        self.db.add(kept)
+
         record_ids = {item.id, *project_ids, *extra_ids}
         if project_ids:
             for model in PROJECT_RECORD_MODELS:
@@ -126,3 +147,11 @@ class HierarchyDeleteService:
         )
         self.db.delete(item)
         self.db.commit()
+        return kept
+
+    def location(self, item: Portfolio | Program | Project) -> str | None:
+        """Where the item lived: "Portfolio" for a program, "Portfolio / Program" for a project."""
+        portfolio = self.db.get(Portfolio, item.portfolio_id) if not isinstance(item, Portfolio) else None
+        program = self.db.get(Program, item.program_id) if isinstance(item, Project) else None
+        names = [p.name for p in (portfolio, program) if p is not None]
+        return " / ".join(names) or None

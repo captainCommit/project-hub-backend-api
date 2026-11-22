@@ -8,6 +8,8 @@ from app.core.database import get_db
 from app.models.ai import AiConversation, AiRun
 from app.models.user import User
 from app.schemas.ai import (
+    AiAnswerFeedback,
+    AiDraftConfirm,
     AiConversationCreate,
     AiConversationDetail,
     AiConversationRead,
@@ -197,6 +199,36 @@ def ask_ai(
         AssistantRunner(service.db, service.settings).fail(run, "FAILED", "The assistant couldn't start. Try again.")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="The assistant couldn't start. Try again.") from exc
     return service.present(service.get(conversation_id=conversation_id, current_user=current_user))
+
+
+@router.post(
+    "/ai/drafts/{draft_id}/create",
+    summary="Create the risk, issue or task Compass drafted (with the person's edits)",
+)
+def create_from_ai_draft(
+    draft_id: UUID,
+    changes: AiDraftConfirm,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    from app.services.ai.actions import confirm_draft
+
+    return confirm_draft(db, message_id=draft_id, user=current_user, changes=changes.model_dump(exclude_none=True, mode="json"))
+
+
+@router.put(
+    "/ai/answers/{answer_id}/feedback",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Thumbs up or down on one of your answers",
+)
+def set_ai_answer_feedback(
+    answer_id: UUID,
+    feedback: AiAnswerFeedback,
+    service: ConversationService = Depends(conversation_service),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    service.set_feedback(run_id=answer_id, current_user=current_user, value=feedback.value)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # Written reports ----------------------------------------------------------------------------------------

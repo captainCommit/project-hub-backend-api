@@ -89,3 +89,58 @@ def grant_existing_portfolios(db_session: "Session", account_id: "str | UUID", r
                 )
             )
     db_session.commit()
+
+
+def give_role(
+    db_session: "Session",
+    *,
+    account_id: object,
+    user_id: object,
+    permissions: dict[str, list[str]],
+    scope: str = "ASSIGNED",
+    name: str | None = None,
+):
+    """Give a member a custom account role with these rights ({area: [actions]})."""
+    from uuid import UUID, uuid4
+
+    from sqlalchemy import select
+
+    from app.models.account_member import AccountMember
+    from app.models.account_role import AccountRole
+    from app.services.account_roles import assign_role, clean_permissions
+
+    account_id = UUID(str(account_id))
+    role = AccountRole(
+        account_id=account_id,
+        name=name or f"Role {uuid4().hex[:6]}",
+        permissions=clean_permissions(permissions),
+        scope=scope,
+    )
+    db_session.add(role)
+    db_session.flush()
+    member = db_session.scalar(
+        select(AccountMember).where(AccountMember.account_id == account_id, AccountMember.user_id == UUID(str(user_id)))
+    )
+    assign_role(member, role)
+    db_session.commit()
+    return role
+
+
+# The old per-grant module toggles, as role rights: each module's area is viewable (and editable for `modules`).
+MODULE_AREAS_FOR_TESTS = {
+    "TASKS": "PROJECTS", "FINANCIALS": "PROJECTS", "SPRINTS": "SPRINTS", "RISKS": "RAID", "ISSUES": "RAID",
+    "ASSUMPTIONS": "RAID", "DEPENDENCIES": "RAID", "DECISIONS": "GOVERNANCE", "CHANGE_REQUESTS": "GOVERNANCE",
+    "REQUIREMENTS": "REQUIREMENTS", "TESTING": "TESTING",
+}
+
+
+def permissions_from_modules(modules: list[str], view_modules: list[str] | None) -> dict[str, list[str]]:
+    rights: dict[str, set[str]] = {
+        "PORTFOLIOS": {"VIEW"}, "PROGRAMS": {"VIEW"}, "PROJECTS": {"VIEW"}, "RESOURCES": {"VIEW"}, "REPORTING": {"VIEW"},
+    }
+    seen = list(MODULE_AREAS_FOR_TESTS) if view_modules is None else list(view_modules) + list(modules)
+    for module in seen:
+        rights.setdefault(MODULE_AREAS_FOR_TESTS[module], set()).add("VIEW")
+    for module in modules:
+        rights[MODULE_AREAS_FOR_TESTS[module]] |= {"CREATE", "EDIT"}
+    return {area: sorted(actions) for area, actions in rights.items()}

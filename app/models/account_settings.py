@@ -55,11 +55,25 @@ class AccountSettings(Base):
         default=False,
         server_default=text("false"),
     )
+    # Board view: the Uncategorized column (tasks with no status) was deleted. It still shows while a task has no status.
+    hide_uncategorized_column: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     non_working_weekdays: Mapped[list[str]] = mapped_column(
         JSON().with_variant(JSONB, "postgresql"),
         nullable=False,
         default=default_non_working_weekdays,
         server_default=text("'[\"SATURDAY\", \"SUNDAY\"]'"),
+    )
+    # Renamed labels and colours for statuses the app works out itself rather than storing as options:
+    # {"WORK_STATUS": {"not_started": {"label": "Planned", "color": "#64748B"}}, "HEALTH": {"red": {...}}}.
+    # Missing keys use the app's defaults.
+    status_labels: Mapped[dict[str, dict[str, dict[str, str]]] | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

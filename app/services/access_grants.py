@@ -23,7 +23,7 @@ from app.schemas.access import (
     PermissionRead,
 )
 from app.schemas.billing import BillingState
-from app.services.access import ROLE_RANK, AccessScope, Permission, access_for, forget_access
+from app.services.access import AccessScope, Permission, access_for, forget_access
 from app.services.billing import BillingService
 
 
@@ -100,6 +100,8 @@ class AccessGrantService:
         return MyAccessRead(
             account_role=scope.account_role,
             is_owner=scope.is_owner,
+            rights={area: sorted(actions) for area, actions in scope.rights.items()},
+            scope_all=scope.is_owner or scope.scope_all,
             billing=BillingState(**BillingService.state(self.db.get(AccountBilling, account_id))),
             portfolios={p.id: read(scope.for_portfolio(p)) for p in visible(Portfolio, scope.visible_portfolio_ids())},
             programs={p.id: read(scope.for_program(p)) for p in visible(Program, scope.visible_program_ids())},
@@ -216,7 +218,7 @@ class AccessGrantService:
             scope.require_project(record, manage=True)
 
     def require_seat_allows(self, *, account_id: UUID, user_id: UUID, role: GrantRole) -> None:
-        """A grant never goes above the person's account role, so a viewer seat stays read-only."""
+        """Grants only say where someone is assigned; what they can do there comes from their account role."""
         membership = self.db.scalar(
             select(AccountMember).where(AccountMember.account_id == account_id, AccountMember.user_id == user_id)
         )
@@ -224,12 +226,6 @@ class AccessGrantService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is not a member of this account.")
         if membership.role == AccountMemberRole.OWNER.value:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=OWNERS_NEED_NO_GRANTS)
-        if ROLE_RANK[role.value] > ROLE_RANK[membership.role]:
-            seat = membership.role.lower()
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"A {seat} seat can't be given the {role.value.lower()} role. Change their account role first.",
-            )
 
     # Helpers
 

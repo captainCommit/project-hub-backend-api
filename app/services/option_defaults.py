@@ -24,7 +24,7 @@ DEFAULT_OPTION_SETS: tuple[dict[str, object], ...] = (
     {
         "entity_type": "TASK",
         "name": "TYPE",
-        "values": ("Work Package", "Milestone", "Activity"),
+        "values": ("Work Package", "Milestone", "Activity", "Phase", "Deliverable"),
     },
     {
         "entity_type": "TASK",
@@ -113,3 +113,21 @@ DEFAULT_OPTION_SETS: tuple[dict[str, object], ...] = (
         "values": PRIORITY_VALUES,
     },
 )
+
+
+def default_labels() -> dict[tuple[str, str], dict[str, str]]:
+    """(entity type, set name) -> {value key: the label the account started with}."""
+    import re
+
+    def key(label: str) -> str:
+        return re.sub(r"[^A-Za-z0-9]+", "_", label.strip()).strip("_").upper()
+
+    return {
+        (str(definition["entity_type"]), str(definition["name"])): {
+            key(str(label)): str(label) for label in definition["values"]  # type: ignore[union-attr]
+        }
+        for definition in DEFAULT_OPTION_SETS
+    }
+
+
+DEFAULT_LABELS = default_labels()

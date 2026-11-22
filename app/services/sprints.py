@@ -54,7 +54,7 @@ class SprintService:
 
     def create_sprint(self, *, project_id: UUID, sprint_in: SprintCreate, current_user: User) -> dict[str, object]:
         project = self.get_project_or_404(project_id)
-        self.require_project_access(project.id, current_user, module=ProjectModule.SPRINTS)
+        self.require_project_access(project.id, current_user, module=ProjectModule.SPRINTS, action="CREATE")
         status_id = self.resolve_status_id(account_id=project.account_id, status_id=sprint_in.status_id)
         sprint = self.sprints.create(
             account_id=project.account_id,
@@ -196,10 +196,10 @@ class SprintService:
         return sprint
 
     def require_project_access(
-        self, project_id: UUID, current_user: User, *, module: ProjectModule | None = None
+        self, project_id: UUID, current_user: User, *, module: ProjectModule | None = None, action: str = "EDIT"
     ) -> None:
         """Sight of the project's sprints, or edit access to `module` in it."""
         project = self.get_project_or_404(project_id)
         access_for(self.db, account_id=project.account_id, user=current_user).require_project(
-            project, module=module, view=ProjectModule.SPRINTS
+            project, module=module, view=ProjectModule.SPRINTS, action=action
         )

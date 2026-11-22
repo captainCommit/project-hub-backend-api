@@ -16,6 +16,7 @@ from app.core.request_context import REQUEST_ID_HEADER, generate_request_id, res
 from app.routers.access import router as access_router
 from app.routers.accounts import router as accounts_router
 from app.routers.account_settings import router as account_settings_router
+from app.routers.account_roles import router as account_roles_router
 from app.routers.account_users import router as account_users_router
 from app.routers.activity import router as activity_router
 from app.routers.admin import router as admin_router
@@ -36,6 +37,7 @@ from app.routers.notifications import router as notifications_router
 from app.routers.options import router as options_router
 from app.routers.project_logs import router as project_logs_router
 from app.routers.raid import router as raid_router
+from app.routers.recently_deleted import router as recently_deleted_router
 from app.routers.resources import router as resources_router
 from app.routers.search import router as search_router
 from app.routers.skills import router as skills_router
@@ -147,11 +149,13 @@ app.include_router(accounts_router)
 app.include_router(admin_router)
 app.include_router(account_settings_router)
 app.include_router(account_users_router)
+app.include_router(account_roles_router)
 app.include_router(access_router)
 app.include_router(billing_router)
 app.include_router(options_router)
 app.include_router(dashboard_router)
 app.include_router(hierarchy_router)
+app.include_router(recently_deleted_router)
 app.include_router(integrations_router)
 app.include_router(tasks_router)
 app.include_router(raid_router)

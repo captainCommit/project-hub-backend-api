@@ -55,6 +55,8 @@ class OptionValueRead(BaseModel):
     sort_order: int
     is_active: bool
     is_default: bool
+    # The label this value started with, for values the app ships with (None for values the account added).
+    default_label: str | None = None
     created_at: datetime
     updated_at: datetime
 

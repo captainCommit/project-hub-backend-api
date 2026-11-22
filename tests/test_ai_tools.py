@@ -144,6 +144,6 @@ def test_large_results_are_shortened(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_every_tool_has_an_object_schema() -> None:
-    assert len({spec.name for spec in TOOL_SPECS}) == len(TOOL_SPECS) == 8
+    assert len({spec.name for spec in TOOL_SPECS}) == len(TOOL_SPECS) == 9
     for spec in TOOL_SPECS:
         assert spec.parameters["type"] == "object" and spec.description

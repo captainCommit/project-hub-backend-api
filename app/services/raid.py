@@ -49,6 +49,10 @@ def normalize_option_key(value: str) -> str:
 
 
 
+# Statuses that sign something off, and the records where setting one needs the Approve right.
+APPROVAL_STATUSES = {"APPROVED", "VALIDATED", "IMPLEMENTED", "PASSED", "PASS"}
+APPROVAL_KINDS = {"decision", "change_request", "requirement", "test_case"}
+
 RAID_CONFIGS: dict[str, dict[str, Any]] = {
     "risk": {
         "module": ProjectModule.RISKS,
@@ -622,7 +626,7 @@ class RaidService:
         config = RAID_CONFIGS[kind]
         project = self.get_project_or_404(project_id)
         access_for(self.db, account_id=project.account_id, user=current_user).require_project(
-            project, module=config["module"]
+            project, module=config["module"], action="CREATE"
         )
 
         values = item_in.model_dump()
@@ -637,6 +641,7 @@ class RaidService:
         if entered_by_field and values.get(str(entered_by_field)) is None:
             values[str(entered_by_field)] = current_user.id
 
+        self.require_approval_right(kind=kind, config=config, item=project, status_id=values.get("status_id"), current_user=current_user)
         values.update(
             {
                 "account_id": project.account_id,
@@ -694,6 +699,8 @@ class RaidService:
         self.validate_references(config=config, project_id=item.project_id, values=changes)
         if kind == "decision" and "title" in changes:
             changes["decision_text"] = changes["title"]
+        if "status_id" in changes and changes["status_id"] != item.status_id:
+            self.require_approval_right(kind=kind, config=config, item=item, status_id=changes["status_id"], current_user=current_user)
         self.unlink_replaced_owner(item, changes)
         old_values = {field: getattr(item, field) for field in changes}
         item = self.raid.update_item(item, changes)
@@ -732,7 +739,7 @@ class RaidService:
     def delete_item(self, *, kind: str, item_id: UUID, current_user: User) -> None:
         config = RAID_CONFIGS[kind]
         item = self.get_item_or_404(kind=kind, item_id=item_id)
-        self.require_item_access(item, current_user, module=config["module"])
+        self.require_item_access(item, current_user, module=config["module"], action="DELETE")
         ActivityLogService(self.db).record(
             account_id=item.account_id,
             entity_type=config["entity_type"],
@@ -939,6 +946,20 @@ class RaidService:
             "color": option_value.color,
         }
 
+    def require_approval_right(self, *, kind: str, config: dict, item: Any, status_id: object, current_user: User) -> None:
+        """Approval statuses (Approved, Validated, Implemented, Passed) on decisions, change requests, requirements and
+        tests need the role's Approve right in that area."""
+        if kind not in APPROVAL_KINDS or status_id is None:
+            return
+        status_value = self.raid.get_option_values_by_ids([status_id]).get(status_id)
+        if status_value is None or status_value.value not in APPROVAL_STATUSES:
+            return
+        project_id = item.id if isinstance(item, Project) else item.project_id
+        program_id = None if isinstance(item, Project) else getattr(item, "program_id", None)
+        access_for(self.db, account_id=item.account_id, user=current_user).require_item(
+            project_id=project_id, program_id=program_id, module=config["module"], action="APPROVE"
+        )
+
     def decision_changed_to_approved(self, *, old_status_id: object, decision: Decision) -> bool:
         if old_status_id == decision.status_id or decision.status_id is None:
             return False
@@ -977,13 +998,15 @@ class RaidService:
         *,
         module: ProjectModule | None = None,
         view: ProjectModule | None = None,
+        action: str = "EDIT",
     ) -> None:
-        """Sight of `view` (or of `module`) in the item's project or program, plus edit access to `module`."""
+        """Sight of `view` (or of `module`) in the item's project or program, plus `action` rights on `module`."""
         access_for(self.db, account_id=item.account_id, user=current_user).require_item(
             project_id=item.project_id,
             program_id=getattr(item, "program_id", None),
             module=module,
             view=view or module,
+            action=action,
         )
 
     def require_decision_access(

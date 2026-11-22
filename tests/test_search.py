@@ -12,7 +12,7 @@ import app.models  # noqa: F401
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.main import app
-from tests.helpers import grant_access, grant_existing_portfolios
+from tests.helpers import give_role, grant_access, grant_existing_portfolios
 from app.models.account import Account
 from app.models.account_member import AccountMember, AccountMemberRole
 from app.models.portfolio import Portfolio
@@ -328,9 +328,10 @@ def test_search_leaves_out_modules_a_grant_hides(client: TestClient, db_session:
     client.post(f"/api/v1/projects/{project_id}/risks", json={"title": "Gadget risk"})
     set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
     grant_existing_portfolios(db_session, hierarchy["account"]["id"], "OWNER")  # clear the broad grants
-    grant_access(
-        db_session, account_id=hierarchy["account"]["id"], role="VIEWER", project_id=project_id, view_modules=["RISKS"]
-    )
+    grant_access(db_session, account_id=hierarchy["account"]["id"], role="VIEWER", project_id=project_id)
+    # A role that can see RAID but not project tasks.
+    give_role(db_session, account_id=hierarchy["account"]["id"], user_id=client.get("/api/v1/me").json()["id"],
+              permissions={"RAID": ["VIEW"]})
 
     results = client.get("/api/v1/search", params={"q": "Gadget", "entity_types": "TASK,RISK"}).json()["results"]
 
@@ -356,13 +357,12 @@ def test_search_finds_project_log_records(client: TestClient, db_session: Sessio
     assert {r["entity_type"]: r["id"] for r in results} == created
     assert {r["project_id"] for r in results} == {project_id}
 
-    # A grant that only shows requirements hides the other three.
+    # A role that only sees requirements hides the other three.
     set_current_user_role(db_session, hierarchy["account"]["id"], AccountMemberRole.MEMBER)
     grant_existing_portfolios(db_session, hierarchy["account"]["id"], "OWNER")  # clear the broad grants
-    grant_access(
-        db_session, account_id=hierarchy["account"]["id"], role="VIEWER", project_id=project_id,
-        view_modules=["REQUIREMENTS"],
-    )
+    grant_access(db_session, account_id=hierarchy["account"]["id"], role="VIEWER", project_id=project_id)
+    give_role(db_session, account_id=hierarchy["account"]["id"], user_id=client.get("/api/v1/me").json()["id"],
+              permissions={"PROJECTS": ["VIEW"], "REQUIREMENTS": ["VIEW"]})
 
     results = client.get("/api/v1/search", params={"q": "Sprocket"}).json()["results"]
 

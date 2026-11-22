@@ -27,6 +27,7 @@ class AccountSettingsRepository:
             date_format=DEFAULT_DATE_FORMAT,
             default_landing_page=DEFAULT_LANDING_PAGE,
             hide_delivery_section=False,
+            hide_uncategorized_column=False,
             non_working_weekdays=default_non_working_weekdays(),
         )
         self.db.add(settings)

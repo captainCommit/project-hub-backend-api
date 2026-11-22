@@ -11,6 +11,7 @@ from app.models.skill import Skill
 from app.models.task import Task
 from app.models.task_required_skill import TaskRequiredSkill
 from app.models.user import User
+from app.services.access import access_for
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
 from app.repositories.resources import ResourceRepository
@@ -329,6 +330,11 @@ class SkillService:
 
     def require_account_role(self, *, account_id: UUID, user_id: UUID, allowed_roles: set[str]) -> None:
         self.require_account_member(account_id=account_id, user_id=user_id)
+        if allowed_roles is SKILL_WRITE_ROLES:
+            # Changing resources and skills is the role's Resources > Edit right (Account > Users & Roles).
+            user = self.db.get(User, user_id)
+            access_for(self.db, account_id=account_id, user=user).require_area("RESOURCES", "EDIT")
+            return
         membership = self.account_members.get_for_user(account_id=account_id, user_id=user_id)
         if membership is None or membership.role not in allowed_roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")

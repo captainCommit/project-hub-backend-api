@@ -170,6 +170,11 @@ class AiMessage(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    # On a draft tool result (the assistant proposed creating a risk, issue or task): what happened when the person
+    # reviewed it, e.g. {"status": "CREATED", "id": ..., "number": "RISK-12", "link": ...}. Never sent to the model.
+    outcome: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # On the last assistant message of a run: the person's thumbs up ("up") or down ("down") on the answer.
+    feedback: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), server_default=func.now()
     )

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -21,10 +21,12 @@ from app.schemas.hierarchy import (
     ProjectUpdate,
 )
 from app.schemas.project_overview import ProjectOverviewRead
+from app.schemas.recently_deleted import DeletedItemRead
 from app.services.auth import get_current_user
 from app.services.hierarchy import HierarchyService
 from app.services.hierarchy_delete import HierarchyDeleteService
 from app.services.project_overview import ProjectOverviewService
+from app.services.recently_deleted import RecentlyDeletedService
 
 
 router = APIRouter(prefix="/api/v1", tags=["hierarchy"])
@@ -82,16 +84,16 @@ def update_portfolio(
 
 @router.delete(
     "/portfolios/{portfolio_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete this portfolio and everything under it",
+    response_model=DeletedItemRead,
+    summary="Delete this portfolio and everything under it (kept in Recently deleted for 30 days)",
 )
 def delete_portfolio(
     portfolio_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Response:
-    HierarchyDeleteService(db).delete_portfolio(portfolio_id=portfolio_id, current_user=current_user)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+) -> DeletedItemRead:
+    record = HierarchyDeleteService(db).delete_portfolio(portfolio_id=portfolio_id, current_user=current_user)
+    return RecentlyDeletedService(db).read_one(record, current_user)
 
 
 @router.get("/portfolios/{portfolio_id}/programs", response_model=list[ProgramRead])
@@ -146,16 +148,16 @@ def update_program(
 
 @router.delete(
     "/programs/{program_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete this program and everything under it",
+    response_model=DeletedItemRead,
+    summary="Delete this program and everything under it (kept in Recently deleted for 30 days)",
 )
 def delete_program(
     program_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Response:
-    HierarchyDeleteService(db).delete_program(program_id=program_id, current_user=current_user)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+) -> DeletedItemRead:
+    record = HierarchyDeleteService(db).delete_program(program_id=program_id, current_user=current_user)
+    return RecentlyDeletedService(db).read_one(record, current_user)
 
 
 @router.get("/programs/{program_id}/projects", response_model=list[ProjectRead])
@@ -219,16 +221,16 @@ def update_project(
 
 @router.delete(
     "/projects/{project_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete this project and everything under it",
+    response_model=DeletedItemRead,
+    summary="Delete this project and everything under it (kept in Recently deleted for 30 days)",
 )
 def delete_project(
     project_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Response:
-    HierarchyDeleteService(db).delete_project(project_id=project_id, current_user=current_user)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+) -> DeletedItemRead:
+    record = HierarchyDeleteService(db).delete_project(project_id=project_id, current_user=current_user)
+    return RecentlyDeletedService(db).read_one(record, current_user)
 
 
 @router.get("/accounts/{account_id}/sidebar", response_model=AccountSidebarRead)

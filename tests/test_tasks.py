@@ -1062,6 +1062,27 @@ def test_project_board_returns_columns_tasks_and_uncategorized(client: TestClien
     assert [task["name"] for task in uncategorized_column["tasks"]] == ["No Status"]
 
 
+def test_deleted_uncategorized_column_hides_until_a_task_has_no_status(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+
+    def has_uncategorized() -> bool:
+        return any(column["is_uncategorized"] for column in client.get(f"/api/v1/projects/{project_id}/board").json()["columns"])
+
+    assert has_uncategorized()
+    deleted = client.patch(f"/api/v1/accounts/{account_id}/settings", json={"hide_uncategorized_column": True})
+    assert deleted.status_code == 200 and deleted.json()["hide_uncategorized_column"] is True
+    assert not has_uncategorized()
+
+    # A task without a status brings it back, so the task is never hidden.
+    task = create_task(client, project_id, "No Status")
+    record = db_session.get(Task, UUID(task["id"]))
+    record.status_id = None
+    db_session.commit()
+    assert has_uncategorized()
+
+
 def test_sprint_board_returns_only_sprint_tasks(client: TestClient) -> None:
     hierarchy = create_work_hierarchy(client)
     project_id = hierarchy["project"]["id"]
@@ -1373,6 +1394,65 @@ def test_import_reports_every_bad_row_and_creates_nothing(client: TestClient) ->
     assert 'Parent "Nowhere"' in body["errors"][2]["message"]
     assert "stranger@example.com" in body["errors"][2]["message"]
     assert client.get(f"/api/v1/projects/{project_id}/tasks").json() == []
+
+
+def create_resource(client: TestClient, account_id: str, name: str) -> dict:
+    response = client.post(f"/api/v1/accounts/{account_id}/resources", json={"name": name})
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_import_assigns_people_by_name_from_resources(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    account_id = hierarchy["account"]["id"]
+    project_id = hierarchy["project"]["id"]
+    create_resource(client, account_id, "Tara Perera")
+    create_resource(client, account_id, "Grace Kim")
+    create_resource(client, account_id, "Grace  kim ")  # the same name twice: ambiguous
+
+    response = import_tasks(client, project_id, [
+        {"name": "Initiation & Planning", "assignee": "tara perera"},
+        {"name": "Kickoff", "assignee": "Grace Kim"},
+        {"name": "Review", "assignee": "Dev User; Tara Perera"},
+    ], dry_run=True)
+    errors = response.json()["errors"]
+    assert [e["row"] for e in errors] == [2]
+    assert "More than one person" in errors[0]["message"]
+
+    response = import_tasks(client, project_id, [
+        {"name": "Initiation & Planning", "assignee": "tara perera"},
+        {"name": "Review", "assignee": "Dev User; Tara Perera"},
+    ])
+    assert response.json()["created"] == 2, response.text
+    tasks = {t["name"]: t for t in client.get(f"/api/v1/projects/{project_id}/tasks").json()}
+    assert [a["resource_name"] for a in tasks["Initiation & Planning"]["assignments"]] == ["Tara Perera"]
+    review = tasks["Review"]["assignments"]
+    assert len(review) == 2 and any(a["user_id"] for a in review)
+
+    missing = import_tasks(client, project_id, [{"name": "X", "assignee": "Mei Lin Chen"}]).json()["errors"][0]["message"]
+    assert 'No one called "Mei Lin Chen"' in missing and "Resources" in missing
+
+
+def test_import_links_predecessors_by_row_number(client: TestClient, db_session: Session) -> None:
+    hierarchy = create_work_hierarchy(client)
+    project_id = hierarchy["project"]["id"]
+
+    bad = import_tasks(client, project_id, [{"name": "A", "predecessors": "1"}, {"name": "B", "predecessors": "9, x"}]).json()
+    assert [e["row"] for e in bad["errors"]] == [1, 2]
+    assert "own predecessor" in bad["errors"][0]["message"]
+
+    response = import_tasks(client, project_id, [
+        {"name": "Plan"},
+        {"name": "Build", "predecessors": "1"},
+        {"name": "Test", "predecessors": "2FS+2, 1SS"},
+    ])
+    assert response.json()["created"] == 3, response.text
+    names = {t.id: t.name for t in db_session.scalars(select(Task))}
+    links = sorted(
+        (names[p.task_id], names[p.predecessor_task_id], p.dependency_type, p.lag_days)
+        for p in db_session.scalars(select(TaskPredecessor))
+    )
+    assert links == [("Build", "Plan", "FS", 0), ("Test", "Build", "FS", 2), ("Test", "Plan", "SS", 0)]
 
 
 def test_import_dry_run_checks_without_creating(client: TestClient) -> None:

@@ -1,6 +1,11 @@
-"""Creating many tasks from spreadsheet rows, all or nothing."""
+"""Creating many tasks from spreadsheet rows, all or nothing.
 
-from dataclasses import dataclass
+People in "Assigned To" are matched to Resources and account members by name (or a member's email), so a file
+exported from another tool works as long as the people were added to Resources first.
+"""
+
+import re
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
@@ -13,8 +18,10 @@ from app.models.account_member import AccountMember
 from app.models.option_set import OptionSet
 from app.models.option_value import OptionValue
 from app.models.project import Project
+from app.models.resource import Resource
 from app.models.sprint import Sprint
 from app.models.task import Task
+from app.models.task_predecessor import TaskPredecessor
 from app.models.user import User
 from app.schemas.tasks import TaskImportError, TaskImportRead, TaskImportRequest, TaskImportRow
 from app.services.activity import ActivityLogService
@@ -43,11 +50,21 @@ class ParsedRow:
     duration_days: Decimal | None
     story_points: int | None
     percent_complete: Decimal
-    assignee_id: UUID | None
+    # (user id, resource name): a login, or a resource without one.
+    assignees: list[tuple[UUID | None, str | None]]
     sprint_id: UUID | None
     # Either an earlier row's index or an existing task's id.
     parent_row: int | None
     parent_task_id: UUID | None
+    # (row index in the file, dependency type, lag days)
+    predecessors: list[tuple[int, str, int]] = field(default_factory=list)
+
+
+PREDECESSOR = re.compile(r"^(\d+)\s*(FS|SS|FF|SF)?\s*(?:([+-])\s*(\d+)\s*d?)?$", re.IGNORECASE)
+
+
+def _person_key(value: str) -> str:
+    return " ".join(value.split()).lower()
 
 
 def _text(value: str | None) -> str | None:
@@ -71,14 +88,7 @@ class TaskImportService:
             s.name.strip().lower(): s.id
             for s in self.db.scalars(select(Sprint).where(Sprint.project_id == project.id))
         }
-        members = {
-            email.lower(): user_id
-            for user_id, email in self.db.execute(
-                select(User.id, User.email)
-                .join(AccountMember, AccountMember.user_id == User.id)
-                .where(AccountMember.account_id == project.account_id)
-            )
-        }
+        members = self.people_lookup(project.account_id)
         existing: dict[str, UUID] = {}
         for task in self.tasks.tasks.list_tasks_for_project(project.id):
             existing.setdefault(task.name.strip().lower(), task.id)
@@ -88,7 +98,7 @@ class TaskImportService:
         earlier_rows: dict[str, int] = {}
         for index, row in enumerate(import_in.rows):
             problems: list[str] = []
-            result = self.parse_row(index, row, options, sprints, members, existing, earlier_rows, problems)
+            result = self.parse_row(index, row, options, sprints, members, existing, earlier_rows, problems, len(import_in.rows))
             if problems:
                 errors.append(TaskImportError(row=index + 1, message="; ".join(problems)))
             elif result is not None:
@@ -107,10 +117,11 @@ class TaskImportService:
         row: TaskImportRow,
         options: dict[str, Options],
         sprints: dict[str, UUID],
-        members: dict[str, UUID],
+        members: dict[str, set[tuple[UUID | None, str | None]]],
         existing: dict[str, UUID],
         earlier_rows: dict[str, int],
         problems: list[str],
+        row_count: int = 0,
     ) -> ParsedRow | None:
         name = _text(row.name)
         if name is None:
@@ -170,12 +181,36 @@ class TaskImportService:
         if percent_complete is not None and not Decimal(0) <= percent_complete <= Decimal(100):
             problems.append("% complete must be between 0 and 100")
 
-        assignee_id = None
-        assignee = _text(row.assignee)
-        if assignee is not None:
-            assignee_id = members.get(assignee.lower())
-            if assignee_id is None:
-                problems.append(f'No account member with the email "{assignee}"')
+        assignees: list[tuple[UUID | None, str | None]] = []
+        for person in re.split(r"[;,]", row.assignee or ""):
+            person = person.strip()
+            if not person:
+                continue
+            matches = members.get(_person_key(person), set())
+            if not matches:
+                problems.append(f'No one called "{person}" in Resources or the account (add them in Resources first)')
+            elif len(matches) > 1:
+                problems.append(f'More than one person is called "{person}"; use their email instead')
+            elif next(iter(matches)) not in assignees:
+                assignees.append(next(iter(matches)))
+
+        predecessors: list[tuple[int, str, int]] = []
+        for token in re.split(r"[;,]", row.predecessors or ""):
+            token = token.strip()
+            if not token:
+                continue
+            match = PREDECESSOR.match(token)
+            if match is None:
+                problems.append(f'Predecessor "{token}" should be a row number, like 3 or 3FS+2')
+                continue
+            number = int(match.group(1))
+            if not 1 <= number <= row_count:
+                problems.append(f"Predecessor {number} isn't a row in this file (1 is the first task row)")
+            elif number - 1 == index:
+                problems.append("A task can't be its own predecessor")
+            else:
+                lag = int(match.group(4) or 0) * (-1 if match.group(3) == "-" else 1)
+                predecessors.append((number - 1, (match.group(2) or "FS").upper(), lag))
 
         sprint_id = None
         sprint = _text(row.sprint)
@@ -207,10 +242,11 @@ class TaskImportService:
             duration_days=duration_days,
             story_points=story_points,
             percent_complete=percent_complete if percent_complete is not None else Decimal(0),
-            assignee_id=assignee_id,
+            assignees=assignees,
             sprint_id=sprint_id,
             parent_row=parent_row,
             parent_task_id=parent_task_id,
+            predecessors=predecessors,
         )
 
     def create_all(self, project: Project, rows: list[ParsedRow], current_user: User) -> None:
@@ -249,9 +285,9 @@ class TaskImportService:
                     sort_order=sort_order,
                     created_by=current_user.id,
                 )
-                if row.assignee_id is not None:
+                for user_id, resource_name in row.assignees:
                     repository.create_assignment(
-                        account_id=project.account_id, task_id=task.id, user_id=row.assignee_id, resource_name=None
+                        account_id=project.account_id, task_id=task.id, user_id=user_id, resource_name=resource_name
                     )
                 activity.record(
                     account_id=task.account_id,
@@ -262,10 +298,45 @@ class TaskImportService:
                     created_by=current_user.id,
                 )
                 created[row.index] = task
+            # Links last, so a row can follow one further down the file.
+            for row in rows:
+                for other, dependency_type, lag in row.predecessors:
+                    if other in created:
+                        self.db.add(
+                            TaskPredecessor(
+                                account_id=project.account_id,
+                                task_id=created[row.index].id,
+                                predecessor_task_id=created[other].id,
+                                dependency_type=dependency_type,
+                                lag_days=lag,
+                            )
+                        )
             self.db.commit()
         except Exception:
             self.db.rollback()
             raise
+
+    def people_lookup(self, account_id: UUID) -> dict[str, set[tuple[UUID | None, str | None]]]:
+        """Who a name or email in "Assigned To" can mean: {key: {(user id, resource name)}}.
+
+        Resources (Resources > Capacity) and account members, by name; members also by email. A resource linked to a
+        login is that login. More than one match for a key means the name is ambiguous.
+        """
+        people: dict[str, set[tuple[UUID | None, str | None]]] = {}
+        for user_id, email, full_name in self.db.execute(
+            select(User.id, User.email, User.full_name)
+            .join(AccountMember, AccountMember.user_id == User.id)
+            .where(AccountMember.account_id == account_id)
+        ):
+            people.setdefault(email.lower(), set()).add((user_id, None))
+            if full_name and full_name.strip():
+                people.setdefault(_person_key(full_name), set()).add((user_id, None))
+        for user_id, name in self.db.execute(
+            select(Resource.user_id, Resource.name).where(Resource.account_id == account_id, Resource.is_active.is_(True))
+        ):
+            if name and name.strip():
+                people.setdefault(_person_key(name), set()).add((user_id, None) if user_id else (None, " ".join(name.split())))
+        return people
 
     def option_lookup(self, account_id: UUID, option_name: str) -> Options:
         values = self.db.scalars(

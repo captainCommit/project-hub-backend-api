@@ -1,13 +1,13 @@
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import String, and_, bindparam, case, cast, func, literal, null, or_, select, true, union_all
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import String, and_, bindparam, case, cast, false, func, literal, null, or_, select, union_all
+from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.account import Account
-from app.models.access_grant import AccessGrant, GrantRole, ProjectModule
-from app.models.account_member import AccountMember, AccountMemberRole
+from app.models.access_grant import ProjectModule
+from app.models.account_member import AccountMember
 from app.models.assumption import Assumption
 from app.models.change_request import ChangeRequest
 from app.models.decision import Decision
@@ -24,6 +24,7 @@ from app.models.sprint import Sprint
 from app.models.task import Task
 from app.models.test_case import TestCase
 from app.models.user import User
+from app.services.access import access_for
 
 
 SUPPORTED_ENTITY_TYPES: tuple[str, ...] = (
@@ -46,74 +47,44 @@ SUPPORTED_ENTITY_TYPES: tuple[str, ...] = (
 SEARCH_SIMILARITY_THRESHOLD = 0.1
 
 
-# Search spans every account the user belongs to, so visibility is expressed in SQL: owners see the
-# whole account, everyone else what their access grants cover (see app.services.access).
-def is_account_owner() -> ColumnElement[bool]:
-    return AccountMember.role == AccountMemberRole.OWNER.value
+# Search spans every account the user belongs to. What they can see in each comes from their access scope there
+# (app.services.access): everything in the account, or the projects, programs and portfolios it lists.
+class Visibility:
+    def __init__(self, db: Session, user: User) -> None:
+        account_ids = db.scalars(select(AccountMember.account_id).where(AccountMember.user_id == user.id)).all()
+        self.scopes = [access_for(db, account_id=account_id, user=user) for account_id in account_ids]
 
+    def _within(self, column: ColumnElement[object], model: type, ids_of) -> ColumnElement[bool]:  # type: ignore[no-untyped-def]
+        conditions: list[ColumnElement[bool]] = []
+        listed: set[UUID] = set()
+        for scope in self.scopes:
+            ids = ids_of(scope)
+            if ids is None:
+                conditions.append(column.in_(select(model.id).where(model.account_id == scope.account_id)))
+            else:
+                listed |= ids
+        if listed:
+            conditions.append(column.in_(listed))
+        return or_(*conditions) if conditions else false()
 
-def held_by_user() -> ColumnElement[bool]:
-    return AccessGrant.user_id == bindparam("user_id")
+    def project(self, project_id: ColumnElement[object], module: ProjectModule | None = None) -> ColumnElement[bool]:
+        """Projects the user can see; with a module, only where that module is visible too."""
+        return self._within(project_id, Project, lambda scope: scope.visible_project_ids(module))
 
+    def program(self, program_id: ColumnElement[object]) -> ColumnElement[bool]:
+        return self._within(program_id, Program, lambda scope: scope.visible_program_ids())
 
-def grant_shows(module: ProjectModule) -> ColumnElement[bool]:
-    """A grant shows a module when it's a manager grant, has no module limit, or lists the module."""
-    return or_(
-        AccessGrant.role == GrantRole.MANAGER.value,
-        # "No limit" is SQL NULL on older rows and JSON null on rows saved since.
-        AccessGrant.view_modules.is_(None),
-        cast(AccessGrant.view_modules, String) == "null",
-        cast(AccessGrant.view_modules, String).like(f'%"{module.value}"%'),
-    )
+    def portfolio(self, portfolio_id: ColumnElement[object]) -> ColumnElement[bool]:
+        return self._within(portfolio_id, Portfolio, lambda scope: scope.visible_portfolio_ids())
 
+    def resource(self, resource_id: ColumnElement[object]) -> ColumnElement[bool]:
+        """People the user may see on Resources (see AccessScope.listed_resource_ids)."""
+        return self._within(resource_id, Resource, lambda scope: scope.listed_resource_ids())
 
-def visible_project(project_id: ColumnElement[object], module: ProjectModule | None = None) -> ColumnElement[bool]:
-    """Projects the user can see; with a module, only those where a grant also shows that module."""
-    project = aliased(Project)
-    granted_projects = select(project.id).join(
-        AccessGrant,
-        and_(
-            held_by_user(),
-            grant_shows(module) if module is not None else true(),
-            or_(
-                AccessGrant.project_id == project.id,
-                AccessGrant.program_id == project.program_id,
-                AccessGrant.portfolio_id == project.portfolio_id,
-            ),
-        ),
-    )
-    return or_(is_account_owner(), project_id.in_(granted_projects))
-
-
-def visible_program(program_id: ColumnElement[object]) -> ColumnElement[bool]:
-    program = aliased(Program)
-    project = aliased(Project)
-    program_wide = select(program.id).join(
-        AccessGrant,
-        and_(held_by_user(), or_(AccessGrant.program_id == program.id, AccessGrant.portfolio_id == program.portfolio_id)),
-    )
-    parents_of_projects = select(project.program_id).join(
-        AccessGrant, and_(held_by_user(), AccessGrant.project_id == project.id)
-    )
-    return or_(is_account_owner(), program_id.in_(program_wide), program_id.in_(parents_of_projects))
-
-
-def visible_portfolio(portfolio_id: ColumnElement[object]) -> ColumnElement[bool]:
-    program = aliased(Program)
-    project = aliased(Project)
-    direct = select(AccessGrant.portfolio_id).where(held_by_user(), AccessGrant.portfolio_id.is_not(None))
-    via_programs = select(program.portfolio_id).join(
-        AccessGrant, and_(held_by_user(), AccessGrant.program_id == program.id)
-    )
-    via_projects = select(project.portfolio_id).join(
-        AccessGrant, and_(held_by_user(), AccessGrant.project_id == project.id)
-    )
-    return or_(
-        is_account_owner(),
-        portfolio_id.in_(direct),
-        portfolio_id.in_(via_programs),
-        portfolio_id.in_(via_projects),
-    )
+    def resources_area(self, account_id: ColumnElement[object]) -> ColumnElement[bool]:
+        """Accounts where the user's role can view Resources (skills live there)."""
+        ids = [scope.account_id for scope in self.scopes if scope.allows("RESOURCES", "VIEW")]
+        return account_id.in_(ids) if ids else false()
 
 
 class SearchService:
@@ -138,7 +109,7 @@ class SearchService:
         requested_entity_types = self.parse_entity_types(entity_types)
         selected_statements = [
             statement
-            for entity_type, statement in self.search_statements(current_user.id).items()
+            for entity_type, statement in self.search_statements(current_user).items()
             if entity_type in requested_entity_types
         ]
         if not selected_statements:
@@ -204,8 +175,9 @@ class SearchService:
             )
         return requested_entity_types
 
-    def search_statements(self, user_id: UUID) -> dict[str, object]:
+    def search_statements(self, current_user: User) -> dict[str, object]:
         user_id_param = bindparam("user_id")
+        vis = Visibility(self.db, current_user)
         return {
             "PORTFOLIO": self.entity_statement(
                 entity_type="PORTFOLIO",
@@ -224,7 +196,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_portfolio(Portfolio.id),),
+                filters=(vis.portfolio(Portfolio.id),),
             ),
             "PROGRAM": self.entity_statement(
                 entity_type="PROGRAM",
@@ -243,7 +215,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_program(Program.id),),
+                filters=(vis.program(Program.id),),
             ),
             "PROJECT": self.entity_statement(
                 entity_type="PROJECT",
@@ -263,7 +235,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Project.id),),
+                filters=(vis.project(Project.id),),
             ),
             "TASK": self.entity_statement(
                 entity_type="TASK",
@@ -283,7 +255,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(Task.is_deleted.is_(False), visible_project(Task.project_id, ProjectModule.TASKS)),
+                filters=(Task.is_deleted.is_(False), vis.project(Task.project_id, ProjectModule.TASKS)),
             ),
             "RISK": self.entity_statement(
                 entity_type="RISK",
@@ -303,7 +275,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Risk.project_id, ProjectModule.RISKS),),
+                filters=(vis.project(Risk.project_id, ProjectModule.RISKS),),
             ),
             "ISSUE": self.entity_statement(
                 entity_type="ISSUE",
@@ -323,7 +295,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Issue.project_id, ProjectModule.ISSUES),),
+                filters=(vis.project(Issue.project_id, ProjectModule.ISSUES),),
             ),
             "ASSUMPTION": self.entity_statement(
                 entity_type="ASSUMPTION",
@@ -343,7 +315,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Assumption.project_id, ProjectModule.ASSUMPTIONS),),
+                filters=(vis.project(Assumption.project_id, ProjectModule.ASSUMPTIONS),),
             ),
             "DECISION": self.entity_statement(
                 entity_type="DECISION",
@@ -363,7 +335,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Decision.project_id, ProjectModule.DECISIONS),),
+                filters=(vis.project(Decision.project_id, ProjectModule.DECISIONS),),
             ),
             "DEPENDENCY": self.entity_statement(
                 entity_type="DEPENDENCY",
@@ -383,7 +355,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Dependency.project_id, ProjectModule.DEPENDENCIES),),
+                filters=(vis.project(Dependency.project_id, ProjectModule.DEPENDENCIES),),
             ),
             "CHANGE_REQUEST": self.entity_statement(
                 entity_type="CHANGE_REQUEST",
@@ -403,7 +375,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(ChangeRequest.project_id, ProjectModule.CHANGE_REQUESTS),),
+                filters=(vis.project(ChangeRequest.project_id, ProjectModule.CHANGE_REQUESTS),),
             ),
             "REQUIREMENT": self.entity_statement(
                 entity_type="REQUIREMENT",
@@ -423,7 +395,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Requirement.project_id, ProjectModule.REQUIREMENTS),),
+                filters=(vis.project(Requirement.project_id, ProjectModule.REQUIREMENTS),),
             ),
             "TEST_CASE": self.entity_statement(
                 entity_type="TEST_CASE",
@@ -443,7 +415,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(TestCase.project_id, ProjectModule.TESTING),),
+                filters=(vis.project(TestCase.project_id, ProjectModule.TESTING),),
             ),
             "SPRINT": self.entity_statement(
                 entity_type="SPRINT",
@@ -464,7 +436,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(visible_project(Sprint.project_id, ProjectModule.SPRINTS),),
+                filters=(vis.project(Sprint.project_id, ProjectModule.SPRINTS),),
             ),
             "RESOURCE": self.entity_statement(
                 entity_type="RESOURCE",
@@ -484,7 +456,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(Resource.is_active.is_(True),),
+                filters=(Resource.is_active.is_(True), Resource.listed.is_(True), vis.resource(Resource.id)),
             ),
             "SKILL": self.entity_statement(
                 entity_type="SKILL",
@@ -504,7 +476,7 @@ class SearchService:
                         ),
                     ),
                 ),
-                filters=(Skill.is_active.is_(True),),
+                filters=(Skill.is_active.is_(True), vis.resources_area(Skill.account_id)),
             ),
         }
 

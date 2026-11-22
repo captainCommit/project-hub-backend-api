@@ -19,6 +19,7 @@ from app.models.user import User
 from app.routers.ai import get_ai_resolver, get_ai_transport
 from app.services.auth import get_current_user
 from tests.helpers import grant_access
+from tests.helpers import give_role, permissions_from_modules
 from tests.test_search import sqlite_similarity
 
 PUBLIC_RESOLVER = lambda host: ["93.184.216.34"]  # noqa: E731
@@ -136,6 +137,9 @@ def add_member(
         view_modules=view_modules,
         email=email,
     )
+    if role != AccountMemberRole.VIEWER:
+        give_role(db_session, account_id=hierarchy["account"]["id"], user_id=user.id,
+                  permissions=permissions_from_modules(modules, view_modules))
     return user
 
 

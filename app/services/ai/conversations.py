@@ -5,6 +5,7 @@ question stores it, creates a QUEUED run and returns at once; the AI worker answ
 and the chat polls the conversation until the run is finished.
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -18,6 +19,7 @@ from app.models.ai import AiAccountSettings, AiConversation, AiMessage, AiReport
 from app.models.user import User
 from app.services.ai.feature import NOT_ENABLED_MESSAGE, AiFeatureService
 from app.services.access import access_for
+from app.services.ai.actions import DRAFT_TOOL, draft_from_tool_result
 from app.services.ai.account_settings import AiSettingsService
 from app.services.ai.tools import progress_label
 
@@ -56,6 +58,18 @@ def require_under_hourly_limit(db: Session, settings: Settings, *, current_user:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"You've asked the assistant for {asked} answers or reports in the last hour, the most allowed. Try again a little later.",
         )
+
+
+FOLLOW_UPS = re.compile(r"\n*\s*\**follow[- ]?ups?\**\s*:\s*([^\n]+?)\s*$", re.IGNORECASE)
+
+
+def split_follow_ups(answer: str) -> tuple[str, list[str]]:
+    """Take the "Follow-ups: a | b | c" line off the end of an answer; the chat shows them as buttons."""
+    match = FOLLOW_UPS.search(answer)
+    if match is None:
+        return answer, []
+    questions = [q.strip(" -*\"") for q in match.group(1).split("|")]
+    return answer[: match.start()].rstrip(), [q for q in questions if q][:3]
 
 
 class ConversationService:
@@ -162,6 +176,21 @@ class ConversationService:
         self.db.commit()
         return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
+    def set_feedback(self, *, run_id: UUID, current_user: User, value: str | None) -> None:
+        """Thumbs up or down on an answer (kept on its final message), only by the person who asked."""
+        run = self.db.get(AiRun, run_id)
+        if run is None or run.user_id != current_user.id or run.conversation_id is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Answer not found.")
+        answer = self.db.scalars(
+            select(AiMessage)
+            .where(AiMessage.run_id == run.id, AiMessage.role == "assistant")
+            .order_by(AiMessage.position.desc())
+        ).first()
+        if answer is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Answer not found.")
+        answer.feedback = value
+        self.db.commit()
+
     # What the chat shows
 
     def present(self, conversation: AiConversation) -> dict[str, Any]:
@@ -186,13 +215,20 @@ class ConversationService:
             run = runs.get(row.run_id) if row.run_id else None
             if run is None:
                 continue
-            steps, answer = [], ""
+            steps, answer, actions, feedback = [], "", [], None
             for part in by_run.get(run.id, []):
                 if part.role == "assistant":
                     for call in part.content.get("tool_calls") or []:
                         steps.append(progress_label(call.get("name", ""), call.get("arguments") or {}).rstrip("…"))
                     if not part.content.get("tool_calls"):
                         answer = part.content.get("content") or ""
+                        feedback = part.feedback
+                elif part.role == "tool" and part.content.get("name") == DRAFT_TOOL:
+                    # A drafted risk, issue or task: shown as a review card the person creates from.
+                    draft = draft_from_tool_result(part.content.get("content"))
+                    if draft is not None:
+                        actions.append({"id": str(part.id), "draft": draft, "outcome": part.outcome})
+            answer, follow_ups = split_follow_ups(answer)
             if run.is_active:
                 active = run
             messages.append(
@@ -203,6 +239,9 @@ class ConversationService:
                     "progress": run.progress if run.is_active else None,
                     "steps": steps,
                     "content": answer,
+                    "follow_ups": follow_ups,
+                    "actions": actions,
+                    "feedback": feedback,
                     "error": run.error if run.status == AiRunStatus.FAILED.value else None,
                     "created_at": run.finished_at or run.created_at,
                 }

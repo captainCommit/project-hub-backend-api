@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -141,3 +141,16 @@ def deactivate_option_value(
         option_value_id=option_value_id,
         current_user=current_user,
     )
+
+@router.post(
+    "/accounts/{account_id}/status-labels/reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Put every status, type and priority label (and health label) back to the default (owners)",
+)
+def reset_status_labels(
+    account_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    OptionService(db).reset_labels(account_id=account_id, current_user=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -17,6 +17,7 @@ from app.models.access_grant import AccessGrant, ProjectModule
 from app.models.account_member import AccountMember
 from app.models.user import User
 from app.services.auth import get_current_user
+from tests.helpers import give_role
 
 
 @pytest.fixture()
@@ -95,12 +96,13 @@ def grant(client: TestClient, account_id: str, user: User, role: str, **scope_an
     )
 
 
-def test_member_edits_only_the_modules_they_were_given(
+def test_role_rights_decide_what_an_assigned_member_can_change(
     client: TestClient, db_session: Session, world: dict, act_as: Callable
 ) -> None:
     member = add_member(db_session, world["account"]["id"], "m@acme.example", "MEMBER")
-    response = grant(client, world["account"]["id"], member, "MEMBER", project_id=world["project"]["id"], modules=["TASKS"])
-    assert response.status_code == 201
+    give_role(db_session, account_id=world["account"]["id"], user_id=member.id,
+              permissions={"PROJECTS": ["VIEW", "EDIT"], "RAID": ["VIEW"]})
+    assert grant(client, world["account"]["id"], member, "MEMBER", project_id=world["project"]["id"]).status_code == 201
     risk = client.post(f"/api/v1/projects/{world['project']['id']}/risks", json={"title": "Owner risk"}).json()
 
     act_as(member)
@@ -111,22 +113,19 @@ def test_member_edits_only_the_modules_they_were_given(
     assert created_risk.status_code == 403
     assert created_risk.json()["message"] == "Insufficient project permission."
     assert client.patch(f"/api/v1/risks/{risk['id']}", json={"title": "Edited"}).status_code == 403
-    # Comments follow the module of what they are on.
+    # Comments follow the area of what they are on.
     assert client.post(f"/api/v1/entities/RISK/{risk['id']}/comments", json={"body": "hi"}).status_code == 403
+    # Not assigned to the other project.
     assert client.get(f"/api/v1/projects/{world['other_project']['id']}").status_code == 403
 
 
-def test_grants_are_capped_by_the_seat(client: TestClient, db_session: Session, world: dict) -> None:
+def test_grants_are_assignments_and_owners_need_none(client: TestClient, db_session: Session, world: dict) -> None:
     viewer = add_member(db_session, world["account"]["id"], "v@acme.example", "VIEWER")
     owner = db_session.scalar(select(User).where(User.email == "dev@example.com"))
 
-    too_high = grant(client, world["account"]["id"], viewer, "MEMBER", project_id=world["project"]["id"], modules=["TASKS"])
-    for_owner = grant(client, world["account"]["id"], owner, "VIEWER", project_id=world["project"]["id"])
-
-    assert too_high.status_code == 400
-    assert too_high.json()["message"] == "A viewer seat can't be given the member role. Change their account role first."
-    assert for_owner.status_code == 400
-    assert grant(client, world["account"]["id"], viewer, "VIEWER", project_id=world["project"]["id"]).status_code == 201
+    # The grant's role no longer matters: what a viewer can do comes from the Viewer role.
+    assert grant(client, world["account"]["id"], viewer, "MEMBER", project_id=world["project"]["id"]).status_code == 201
+    assert grant(client, world["account"]["id"], owner, "VIEWER", project_id=world["project"]["id"]).status_code == 400
 
 
 def test_managers_grant_within_what_they_manage(
@@ -183,8 +182,9 @@ def test_my_access_reports_effective_permissions(
     client: TestClient, db_session: Session, world: dict, act_as: Callable
 ) -> None:
     member = add_member(db_session, world["account"]["id"], "m@acme.example", "MEMBER")
+    give_role(db_session, account_id=world["account"]["id"], user_id=member.id,
+              permissions={"PORTFOLIOS": ["VIEW"], "PROGRAMS": ["VIEW"], "PROJECTS": ["VIEW"], "TESTING": ["VIEW", "EDIT"]})
     grant(client, world["account"]["id"], member, "VIEWER", program_id=world["program"]["id"])
-    grant(client, world["account"]["id"], member, "MEMBER", project_id=world["project"]["id"], modules=["TESTING"])
 
     act_as(member)
     access = client.get(f"/api/v1/accounts/{world['account']['id']}/my-access").json()
@@ -195,10 +195,10 @@ def test_my_access_reports_effective_permissions(
             "role": "MEMBER",
             "can_manage": False,
             "editable_modules": ["TESTING"],
-            "visible_modules": [module.value for module in ProjectModule],
+            "visible_modules": ["TASKS", "TESTING", "FINANCIALS"],
         }
     }
-    assert access["programs"][world["program"]["id"]]["role"] == "VIEWER"
+    assert access["programs"][world["program"]["id"]]["role"] == "MEMBER"
     assert world["other_program"]["id"] not in access["programs"]
     assert access["portfolios"] == {world["portfolio"]["id"]: None}
 
@@ -230,53 +230,138 @@ def test_invite_rejects_starting_access_outside_the_account(client: TestClient, 
     assert response.status_code == 404
 
 
-def test_member_sees_only_the_modules_they_were_given(
+def test_areas_a_role_cannot_view_are_hidden(
     client: TestClient, db_session: Session, world: dict, act_as: Callable
 ) -> None:
     project_id = world["project"]["id"]
     member = add_member(db_session, world["account"]["id"], "seer@acme.example", "MEMBER")
-    response = grant(
-        client, world["account"]["id"], member, "MEMBER",
-        project_id=project_id, modules=["RISKS"], view_modules=["ISSUES"],
-    )
-    assert response.status_code == 201
-    # Editing implies seeing, so RISKS joins the visible list.
-    assert response.json()["view_modules"] == ["RISKS", "ISSUES"]
+    give_role(db_session, account_id=world["account"]["id"], user_id=member.id,
+              permissions={"PROJECTS": ["VIEW"], "RAID": ["VIEW", "EDIT"]})
+    grant(client, world["account"]["id"], member, "MEMBER", project_id=project_id)
     risk = client.post(f"/api/v1/projects/{project_id}/risks", json={"title": "Findable risk"}).json()
-    assumption = client.post(f"/api/v1/projects/{project_id}/assumptions", json={"description": "Hidden assumption"}).json()
-    client.post(f"/api/v1/projects/{project_id}/tasks", json={"name": "Hidden task"})
+    decision = client.post(f"/api/v1/projects/{project_id}/decisions", json={"title": "Hidden decision"}).json()
 
     act_as(member)
     account_id = world["account"]["id"]
     assert client.get(f"/api/v1/projects/{project_id}/risks").status_code == 200
-    assert client.get(f"/api/v1/projects/{project_id}/issues").status_code == 200
-    assert client.get(f"/api/v1/projects/{project_id}/assumptions").status_code == 403
-    assert client.get(f"/api/v1/assumptions/{assumption['id']}").status_code == 403
-    assert client.get(f"/api/v1/projects/{project_id}/tasks").status_code == 403
-    assert client.get(f"/api/v1/accounts/{account_id}/assumptions").json() == []
+    assert client.get(f"/api/v1/projects/{project_id}/decisions").status_code == 403
+    assert client.get(f"/api/v1/decisions/{decision['id']}").status_code == 403
+    assert client.get(f"/api/v1/accounts/{account_id}/decisions").json() == []
     assert [r["id"] for r in client.get(f"/api/v1/accounts/{account_id}/risks").json()] == [risk["id"]]
-    assert client.post(f"/api/v1/projects/{project_id}/issues", json={"title": "Seen, not editable"}).status_code == 403
-
-    overview = client.get(f"/api/v1/projects/{project_id}/overview").json()
-    assert overview["stats"]["open_assumptions"] == 0
+    # View and Edit, but no Create.
+    assert client.post(f"/api/v1/projects/{project_id}/issues", json={"title": "Not allowed"}).status_code == 403
+    assert client.patch(f"/api/v1/risks/{risk['id']}", json={"title": "Allowed"}).status_code == 200
 
     access = client.get(f"/api/v1/accounts/{account_id}/my-access").json()
-    assert access["projects"][project_id]["visible_modules"] == ["RISKS", "ISSUES"]
-    assert access["projects"][project_id]["editable_modules"] == ["RISKS"]
+    assert access["projects"][project_id]["visible_modules"] == ["TASKS", "RISKS", "ISSUES", "ASSUMPTIONS", "DEPENDENCIES", "FINANCIALS"]
+    assert access["projects"][project_id]["editable_modules"] == ["RISKS", "ISSUES", "ASSUMPTIONS", "DEPENDENCIES"]
 
 
 
-def test_grants_combine_what_each_one_shows(
+def test_all_projects_scope_needs_no_assignment(
     client: TestClient, db_session: Session, world: dict, act_as: Callable
 ) -> None:
-    project_id = world["project"]["id"]
-    member = add_member(db_session, world["account"]["id"], "both@acme.example", "MEMBER")
-    grant(client, world["account"]["id"], member, "VIEWER", program_id=world["program"]["id"], view_modules=["TASKS"])
-    grant(client, world["account"]["id"], member, "VIEWER", project_id=project_id, view_modules=["RISKS"])
+    member = add_member(db_session, world["account"]["id"], "all@acme.example", "MEMBER")
+    give_role(db_session, account_id=world["account"]["id"], user_id=member.id, scope="ALL",
+              permissions={"PORTFOLIOS": ["VIEW"], "PROGRAMS": ["VIEW"], "PROJECTS": ["VIEW"]})
 
     act_as(member)
-    access = client.get(f"/api/v1/accounts/{world['account']['id']}/my-access").json()
-    assert access["projects"][project_id]["visible_modules"] == ["TASKS", "RISKS"]
+    assert client.get(f"/api/v1/projects/{world['project']['id']}").status_code == 200
+    assert client.get(f"/api/v1/projects/{world['other_project']['id']}").status_code == 200
+    assert len(client.get(f"/api/v1/accounts/{world['account']['id']}/portfolios").json()) == 1
+
+
+def test_a_resource_allocation_assigns_the_project(
+    client: TestClient, db_session: Session, world: dict, act_as: Callable
+) -> None:
+    member = add_member(db_session, world["account"]["id"], "alloc@acme.example", "VIEWER")
+    resource = client.post(
+        f"/api/v1/accounts/{world['account']['id']}/resources", json={"name": "Alloc", "user_id": str(member.id)}
+    ).json()
+    project_id = world["project"]["id"]
+
+    act_as(member)
+    assert client.get(f"/api/v1/projects/{project_id}").status_code == 403
+    act_as(None)
+    allocated = client.put(f"/api/v1/resources/{resource['id']}/project-allocations/{project_id}", json={"weekly_hours": 10})
+    assert allocated.status_code in (200, 204), allocated.text
+
+    act_as(member)
+    assert client.get(f"/api/v1/projects/{project_id}").status_code == 200
+    assert client.get(f"/api/v1/projects/{world['other_project']['id']}").status_code == 403
+
+
+def test_creating_and_deleting_need_their_own_rights(
+    client: TestClient, db_session: Session, world: dict, act_as: Callable
+) -> None:
+    member = add_member(db_session, world["account"]["id"], "pm@acme.example", "MEMBER")
+    give_role(db_session, account_id=world["account"]["id"], user_id=member.id,
+              permissions={"PROGRAMS": ["VIEW"], "PROJECTS": ["VIEW", "EDIT"], "RAID": ["VIEW", "CREATE", "EDIT"]})
+    grant(client, world["account"]["id"], member, "MEMBER", program_id=world["program"]["id"])
+    risk = client.post(f"/api/v1/projects/{world['project']['id']}/risks", json={"title": "Keep"}).json()
+
+    act_as(member)
+    assert client.post(f"/api/v1/programs/{world['program']['id']}/projects", json={"name": "New"}).status_code == 403
+    assert client.delete(f"/api/v1/projects/{world['project']['id']}").status_code == 403
+    assert client.post(f"/api/v1/projects/{world['project']['id']}/risks", json={"title": "Mine"}).status_code == 201
+    assert client.delete(f"/api/v1/risks/{risk['id']}").status_code == 403
+    assert client.patch(f"/api/v1/projects/{world['project']['id']}", json={"name": "Renamed"}).status_code == 200
+
+
+def test_approving_needs_the_approve_right(
+    client: TestClient, db_session: Session, world: dict, act_as: Callable
+) -> None:
+    member = add_member(db_session, world["account"]["id"], "gov@acme.example", "MEMBER")
+    role = give_role(db_session, account_id=world["account"]["id"], user_id=member.id,
+                     permissions={"PROJECTS": ["VIEW"], "GOVERNANCE": ["VIEW", "CREATE", "EDIT"]})
+    grant(client, world["account"]["id"], member, "MEMBER", project_id=world["project"]["id"])
+    decision = client.post(f"/api/v1/projects/{world['project']['id']}/decisions", json={"title": "Pick a vendor"}).json()
+
+    act_as(member)
+    approve = client.patch(f"/api/v1/decisions/{decision['id']}", json={"status": "APPROVED"})
+    assert approve.status_code == 403
+    assert client.patch(f"/api/v1/decisions/{decision['id']}", json={"status": "IN_REVIEW"}).status_code == 200
+
+    role.permissions = {**role.permissions, "GOVERNANCE": ["VIEW", "CREATE", "EDIT", "APPROVE"]}
+    db_session.commit()
+    assert client.patch(f"/api/v1/decisions/{decision['id']}", json={"status": "APPROVED"}).status_code == 200
+
+
+def test_owners_manage_roles_and_seats_follow_the_rights(client: TestClient, db_session: Session, world: dict) -> None:
+    account_id = world["account"]["id"]
+    roles = client.get(f"/api/v1/accounts/{account_id}/roles").json()
+    assert [r["name"] for r in roles] == [
+        "Owner", "Portfolio Manager", "Program Manager", "Project Manager", "Contributor", "Viewer",
+    ]
+    assert {r["name"]: r["seat"] for r in roles}["Viewer"] == "VIEWER"
+
+    analyst = client.post(
+        f"/api/v1/accounts/{account_id}/roles",
+        json={"name": "Analyst", "permissions": {"REPORTING": ["VIEW"]}, "scope": "ALL"},
+    ).json()
+    assert analyst["seat"] == "VIEWER"
+    invited = client.post(
+        f"/api/v1/accounts/{account_id}/users/invite",
+        json={"email": "ana@acme.example", "first_name": "Ana", "last_name": "Lyst", "title": "Analyst",
+              "department": "Finance", "role_id": analyst["id"]},
+    )
+    assert invited.status_code == 200, invited.text
+    member = db_session.scalar(select(AccountMember).where(AccountMember.user_id == UUID(invited.json()["user_id"])))
+    assert (member.role, str(member.role_id)) == ("VIEWER", analyst["id"])
+    listed = {u["email"]: u for u in client.get(f"/api/v1/accounts/{account_id}/users").json()}
+    assert listed["ana@acme.example"]["role_name"] == "Analyst"
+    assert (listed["ana@acme.example"]["full_name"], listed["ana@acme.example"]["department"]) == ("Ana Lyst", "Finance")
+
+    # Giving the role an edit right makes it a full seat for everyone holding it.
+    updated = client.patch(f"/api/v1/account-roles/{analyst['id']}", json={"permissions": {"REPORTING": ["VIEW"], "RAID": ["EDIT"]}})
+    assert updated.json()["seat"] == "MEMBER"
+    assert updated.json()["permissions"]["RAID"] == ["VIEW", "EDIT"]
+    db_session.expire_all()
+    assert db_session.get(AccountMember, member.id).role == "MEMBER"
+
+    assert client.delete(f"/api/v1/account-roles/{analyst['id']}").status_code == 409
+    owner_role = next(r for r in roles if r["key"] == "OWNER")
+    assert client.patch(f"/api/v1/account-roles/{owner_role['id']}", json={"scope": "ASSIGNED"}).status_code == 400
 
 
 def test_grant_update_can_clear_the_module_limit(client: TestClient, db_session: Session, world: dict) -> None:

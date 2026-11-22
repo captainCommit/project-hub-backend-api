@@ -9,13 +9,26 @@ from app.schemas.hierarchy import StatusSummary
 
 
 class ResourceCreate(BaseModel):
+    """Add someone to Resources. With a user_id, their name, job title and department come from their profile
+    (Account > Users & Roles) unless given here."""
+
     user_id: UUID | None = None
-    name: str = Field(min_length=1, max_length=255)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
     role: str | None = Field(default=None, max_length=255)
     department: str | None = Field(default=None, max_length=255)
     hourly_rate: Decimal | None = Field(default=None, ge=0)
     non_project_hours: Decimal = Field(default=Decimal("0"), ge=0)
     weekly_capacity_hours: Decimal = Field(default=Decimal("40"), gt=0)
+    # Where they work. Each program must sit in one of the portfolios, each project in one of the programs.
+    portfolio_ids: list[UUID] | None = None
+    program_ids: list[UUID] | None = None
+    project_ids: list[UUID] | None = None
+
+    @model_validator(mode="after")
+    def validate_name(self) -> "ResourceCreate":
+        if self.user_id is None and not (self.name or "").strip():
+            raise ValueError("Pick a user or give the resource a name.")
+        return self
 
 
 class ResourceUpdate(BaseModel):
@@ -27,6 +40,10 @@ class ResourceUpdate(BaseModel):
     non_project_hours: Decimal | None = Field(default=None, ge=0)
     weekly_capacity_hours: Decimal | None = Field(default=None, gt=0)
     is_active: bool | None = None
+    # Replace the assignments (all three are checked together; leave all out to keep them).
+    portfolio_ids: list[UUID] | None = None
+    program_ids: list[UUID] | None = None
+    project_ids: list[UUID] | None = None
 
 
 class ResourceRead(BaseModel):
@@ -40,6 +57,12 @@ class ResourceRead(BaseModel):
     non_project_hours: Decimal = Decimal("0")
     weekly_capacity_hours: Decimal
     is_active: bool
+    # On the Resources pages for this viewer: added to Resources, and within what the viewer may see there.
+    listed: bool = True
+    # Assignments the viewer can see.
+    portfolio_ids: list[UUID] = Field(default_factory=list)
+    program_ids: list[UUID] = Field(default_factory=list)
+    project_ids: list[UUID] = Field(default_factory=list)
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime

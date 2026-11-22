@@ -92,6 +92,10 @@ class MyAccessRead(BaseModel):
 
     account_role: str
     is_owner: bool
+    # The account role's rights per area (Account > Users & Roles), e.g. {"RESOURCES": ["VIEW", "EDIT"]}.
+    rights: dict[str, list[str]] = {}
+    # True when the role reaches every project (scope ALL) rather than only assigned ones.
+    scope_all: bool = False
     billing: BillingState
     portfolios: dict[UUID, PermissionRead | None]
     programs: dict[UUID, PermissionRead | None]

@@ -1,4 +1,4 @@
-"""The read-only tools the assistant can call.
+"""The tools the assistant can call: lookups, plus drafting a record for the person to create (see actions.py).
 
 Each tool calls the same service method as the matching API endpoint, as the person asking, and serialises
 the result through that endpoint's response model. So a tool can never see more than the person could in the
@@ -160,6 +160,19 @@ def task_link(project_id: object, task_id: object) -> str:
     return f"/projects/{project_id}/sheet?task={task_id}"
 
 
+# RAID items open their own detail panel on the RAID page (the same links as notification emails).
+RAID_TABS = {"RISK": "risks", "ISSUE": "issues", "ASSUMPTION": "assumptions", "DEPENDENCY": "dependencies"}
+
+
+def record_link(entity_type: str, record_id: object) -> str:
+    """Where one risk, issue, assumption, dependency or decision opens in the app."""
+    if entity_type in RAID_TABS:
+        return f"/RiskLog?tab={RAID_TABS[entity_type]}&id={record_id}"
+    if entity_type == "DECISION":
+        return f"/DecisionLog?id={record_id}"
+    return LIST_PAGES.get(entity_type, "/")
+
+
 def matches_status(row: dict[str, Any], wanted: str | None) -> bool:
     if not wanted:
         return True
@@ -221,7 +234,7 @@ def search(ctx: ToolContext, args: dict[str, Any]) -> Any:
         elif result["entity_type"] == "PROJECT":
             row["link"] = f"/projects/{record.id}/sheet"
         elif result["entity_type"] in LIST_PAGES:
-            row["link"] = LIST_PAGES[result["entity_type"]]
+            row["link"] = record_link(result["entity_type"], record.id)
         rows.append(row)
     return capped(rows)
 
@@ -249,7 +262,17 @@ def account_dashboard(ctx: ToolContext, args: dict[str, Any]) -> Any:
     data = AccountDashboardService(ctx.db).get_account_dashboard(
         account_id=ctx.account_id, current_user=ctx.user, **filters
     )
-    return slim(dump(AccountDashboardRead, data))
+    result = dump(AccountDashboardRead, data)
+    # Links so the answer can point at each project, risk, issue and task it mentions.
+    for project in result.get("projects_at_risk") or []:
+        project["link"] = f"/projects/{project['id']}/sheet"
+    for key, entity_type in (("top_risks", "RISK"), ("top_issues", "ISSUE")):
+        for item in result.get(key) or []:
+            item["link"] = record_link(entity_type, item["id"])
+    for task in result.get("overdue_tasks") or []:
+        if task.get("project_id"):
+            task["link"] = task_link(task["project_id"], task["id"])
+    return slim(result)
 
 
 def list_tasks(ctx: ToolContext, args: dict[str, Any]) -> Any:
@@ -296,7 +319,7 @@ def list_raid_items(ctx: ToolContext, args: dict[str, Any]) -> Any:
             row["project"] = item["project"].get("name")
         if isinstance(item.get("program"), dict):
             row["program"] = item["program"].get("name")
-        row["link"] = LIST_PAGES[entity_type]
+        row["link"] = record_link(entity_type, item["id"])
         rows.append(row)
     return {"kind": kind, **capped(rows)}
 
@@ -329,10 +352,27 @@ def get_item(ctx: ToolContext, args: dict[str, Any]) -> Any:
         for c in dump(list[CommentRead], comments)[-RECENT_COMMENTS:]
     ]
     row = slim(item)
-    row["link"] = task_link(item["project_id"], item["id"]) if kind == "task" else LIST_PAGES[entity_type]
+    row["link"] = task_link(item["project_id"], item["id"]) if kind == "task" else record_link(entity_type, item["id"])
     if recent:
         row["recent_comments"] = slim(recent)
     return row
+
+
+def draft_record(ctx: ToolContext, args: dict[str, Any]) -> Any:
+    """Check and shape a risk, issue or task for the person to review; nothing is created here."""
+    from app.services.ai.actions import DraftError, build_draft
+
+    try:
+        draft = build_draft(ctx.db, account_id=ctx.account_id, user=ctx.user, fields=args, need_project=False)
+    except DraftError as exc:
+        raise ToolInputError(str(exc)) from exc
+    note = (
+        "The person now sees this as a review card with Edit and Create buttons. It is NOT created until they press "
+        "Create, so never say it was created. Briefly say what you drafted and ask them to review it."
+    )
+    if not draft.get("project_id"):
+        note += " No project is set: ask which project it belongs to (the card also lets them pick one)."
+    return {"draft": draft, "note": note}
 
 
 def _object(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -436,6 +476,34 @@ TOOLS: list[Tool] = [
         lambda args: f"Reading the {str(args.get('kind') or 'item')}…",
     ),
 ]
+TOOLS.append(
+    Tool(
+        ToolSpec(
+            "draft_record",
+            "Draft a new risk, issue or task for the person to review and create. Use it when they ask you to add, "
+            "create, raise or log one. It creates nothing: they see a review card and press Create themselves. "
+            "Fill in what they told you (for a risk, split it into cause and effect); leave out what you don't know. "
+            "Find the project id with search or list_projects; leave it out if it's unclear which project.",
+            _object(
+                {
+                    "kind": {"type": "string", "enum": ["risk", "issue", "task"]},
+                    "project_id": ID,
+                    "title": {"type": "string", "description": "Short title (a task's name)."},
+                    "cause": {"type": "string", "description": "Risks only: what might happen (If…)."},
+                    "effect": {"type": "string", "description": "Risks only: the consequence (Then…)."},
+                    "description": {"type": "string", "description": "Issues and tasks: details."},
+                    "priority": {"type": "string", "description": "Critical, High, Medium or Low (default Medium)."},
+                    "status": {"type": "string", "description": "Leave out for the usual starting status (Open, or Not Started for tasks)."},
+                    "assigned_to_name": {"type": "string", "description": "Risks and issues: who owns it, if they said."},
+                    "target_date": {"type": "string", "description": "Target or due date, YYYY-MM-DD."},
+                },
+                ["kind", "title"],
+            ),
+        ),
+        draft_record,
+        lambda args: f"Drafting the {str(args.get('kind') or 'record')}…",
+    )
+)
 TOOLS_BY_NAME = {tool.spec.name: tool for tool in TOOLS}
 TOOL_SPECS = [tool.spec for tool in TOOLS]
 

@@ -224,6 +224,8 @@ class ReportService:
 
     def require_scope(self, *, account_id: UUID, current_user: User, scope_type: str, scope_id: UUID) -> Project | Program | Portfolio:
         scope = access_for(self.db, account_id=account_id, user=current_user)
+        # Reports are the Reporting area of the role grid (Account > Users & Roles).
+        scope.require_area("REPORTING", "VIEW")
         model = SCOPE_MODELS.get(scope_type)
         record = self.db.get(model, scope_id) if model is not None else None
         if record is None or record.account_id != account_id:

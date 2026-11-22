@@ -1,6 +1,6 @@
 """Every account member is also a resource, so work assigned to them counts as theirs.
 
-When someone joins an account they get a resource linked to their login. If the account already has an
+When someone joins an account they get a resource linked to their login, not yet listed on Resources. If the account already has an
 unlinked resource with the same name (for example one added before they were invited), that one is
 linked instead of creating a duplicate.
 """
@@ -39,7 +39,26 @@ def ensure_member_resource(db: Session, *, account_id: UUID, user: User) -> Reso
         db.flush()
         return same_name
 
-    resource = Resource(account_id=account_id, user_id=user.id, name=name)
+    resource = Resource(
+        account_id=account_id,
+        user_id=user.id,
+        name=name,
+        role=user.title,
+        department=user.department,
+        # Not on Resources until someone adds them (Capacity > Add Resource).
+        listed=False,
+    )
     db.add(resource)
     db.flush()
     return resource
+
+
+def sync_member_resources(db: Session, user: User, *, changed: set[str]) -> None:
+    """Keep the job title and department on a person's resources in step with their profile."""
+    fields = {"title": "role", "department": "department"}
+    if not changed & set(fields):
+        return
+    for resource in db.scalars(select(Resource).where(Resource.user_id == user.id)).all():
+        for user_field, resource_field in fields.items():
+            if user_field in changed:
+                setattr(resource, resource_field, getattr(user, user_field))

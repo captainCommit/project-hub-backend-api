@@ -11,6 +11,7 @@ from app.schemas.attachments import AttachmentPresignedUploadCreate
 from app.schemas.user import UserPhotoUploadRead, UserProfileUpdate, UserRead
 from app.services import attachments as attachment_service
 from app.services.auth import get_current_user
+from app.services.member_resources import sync_member_resources
 
 
 router = APIRouter(prefix="/api/v1", tags=["me"])
@@ -58,6 +59,7 @@ def update_me(
     for field, value in changes.items():
         setattr(current_user, field, value)
     db.add(current_user)
+    sync_member_resources(db, current_user, changed=set(changes))
     db.commit()
     db.refresh(current_user)
     return serialize_user(current_user, settings)

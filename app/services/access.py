@@ -1,16 +1,16 @@
 """Who can see and change what inside an account.
 
-Owners can do everything. Everyone else works through access grants: a MANAGER, MEMBER or VIEWER
-role on a portfolio, program or project, which covers everything beneath it. Where several grants
-apply, the strongest role wins, and a MEMBER may edit the union of the modules their grants allow.
-A grant never lifts anyone above their account role, so a viewer seat stays read-only.
+Each member holds an account role (Account > Users & Roles): rights per area (Portfolios, Programs, Projects,
+Requirements, Testing, Sprints, RAID, Governance, Resources, Reporting) for View / Create / Edit / Delete / Approve,
+and a scope. A role scoped to ALL reaches every project in the account; an ASSIGNED role reaches the projects the
+person is assigned to: an access grant on the project, its program or its portfolio, or a resource allocation to
+the project (Resources > Capacity). Owners can do everything.
 
-Members and viewers can also be limited to some modules: a grant's view_modules lists the parts of a
-project they may see (None means all of them). Several grants see the union of what each allows.
+Access grants are only the record of assignments now; their role and module columns are no longer read.
 """
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.core.request_context import get_request_id
 from app.models.access_grant import ALL_MODULES, AccessGrant, ProjectModule
 from app.models.account_member import AccountMemberRole
+from app.models.account_role import SCOPE_ALL, AccountRole
 from app.models.assumption import Assumption
 from app.models.billing import AccountBilling
 from app.models.change_request import ChangeRequest
@@ -33,13 +34,19 @@ from app.models.portfolio import Portfolio
 from app.models.program import Program
 from app.models.project import Project
 from app.models.requirement import Requirement
+from app.models.resource import Resource
+from app.models.resource_allocation import ResourceAllocation
+from app.models.resource_assignment import ResourceAssignment
+from app.models.resource_project_allocation import ResourceProjectAllocation
 from app.models.risk import Risk
 from app.models.sprint import Sprint
 from app.models.task import Task
+from app.models.task_assignment import TaskAssignment
 from app.models.test_case import TestCase
 from app.models.user import User
 from app.repositories.account_members import AccountMemberRepository
 from app.repositories.accounts import AccountRepository
+from app.services.role_defaults import DEFAULT_ROLES_BY_KEY
 
 
 ROLE_RANK = {
@@ -91,30 +98,90 @@ ENTITY_MODULES = {
 }
 
 
+# The area of the role grid that governs each project module.
+MODULE_AREAS = {
+    ProjectModule.TASKS.value: "PROJECTS",
+    ProjectModule.FINANCIALS.value: "PROJECTS",
+    ProjectModule.SPRINTS.value: "SPRINTS",
+    ProjectModule.RISKS.value: "RAID",
+    ProjectModule.ISSUES.value: "RAID",
+    ProjectModule.ASSUMPTIONS.value: "RAID",
+    ProjectModule.DEPENDENCIES.value: "RAID",
+    ProjectModule.DECISIONS.value: "GOVERNANCE",
+    ProjectModule.CHANGE_REQUESTS.value: "GOVERNANCE",
+    ProjectModule.REQUIREMENTS.value: "REQUIREMENTS",
+    ProjectModule.TESTING.value: "TESTING",
+}
+# The area that governs changing (or deleting) a portfolio, program or project itself.
+LEVEL_AREAS = {"PORTFOLIO": "PORTFOLIOS", "PROGRAM": "PROGRAMS", "PROJECT": "PROJECTS"}
+
+# Members without a role_id (older data) get the built-in role closest to their seat.
+LEGACY_ROLE_KEYS = {
+    AccountMemberRole.OWNER.value: "OWNER",
+    AccountMemberRole.MANAGER.value: "PROJECT_MANAGER",
+    AccountMemberRole.MEMBER.value: "CONTRIBUTOR",
+    AccountMemberRole.VIEWER.value: "VIEWER",
+}
+
+
+def seat_of(role: AccountRole) -> str:
+    """The seat a role costs: OWNER, VIEWER for view-only roles, MEMBER otherwise (see account_roles.seat_for)."""
+    if role.key == "OWNER":
+        return AccountMemberRole.OWNER.value
+    can_change = any(action != "VIEW" for actions in (role.permissions or {}).values() for action in actions)
+    return AccountMemberRole.MEMBER.value if can_change else AccountMemberRole.VIEWER.value
+
+
 def _module_value(module: ProjectModule | str) -> str:
     return module.value if isinstance(module, ProjectModule) else module
 
 
+def area_of(module: ProjectModule | str) -> str:
+    return MODULE_AREAS[_module_value(module)]
+
+
+Rights = dict[str, frozenset[str]]
+
+
+def rights_of(permissions: dict[str, list[str]] | None) -> Rights:
+    return {area: frozenset(actions) for area, actions in (permissions or {}).items()}
+
+
 @dataclass(frozen=True)
 class Permission:
-    role: str
-    # Modules a MEMBER may edit.
-    modules: frozenset[str]
-    # Modules that are visible at all.
-    visible: frozenset[str] = frozenset(ALL_MODULES)
+    """What one person may do on one portfolio, program or project (`level`), from their account role."""
+
+    rights: Rights = field(default_factory=dict)
+    level: str = "PROJECT"
+    owner: bool = False
+
+    def allows(self, area: str, action: str = "VIEW") -> bool:
+        return self.owner or action in self.rights.get(area, frozenset())
 
     @property
     def can_manage(self) -> bool:
-        return self.role in (AccountMemberRole.OWNER.value, AccountMemberRole.MANAGER.value)
+        """May change the portfolio, program or project itself (its details, who is assigned to it)."""
+        return self.allows(LEVEL_AREAS[self.level], "EDIT")
+
+    @property
+    def can_contribute(self) -> bool:
+        """Has any right beyond viewing (comments and attachments need this)."""
+        return self.owner or any(actions - {"VIEW"} for actions in self.rights.values())
+
+    @property
+    def role(self) -> str:
+        """A one-word summary for older screens: OWNER, MANAGER, MEMBER or VIEWER."""
+        if self.owner:
+            return AccountMemberRole.OWNER.value
+        if self.can_manage:
+            return AccountMemberRole.MANAGER.value
+        return AccountMemberRole.MEMBER.value if self.can_contribute else AccountMemberRole.VIEWER.value
 
     def can_view(self, module: ProjectModule | str) -> bool:
-        return self.can_manage or _module_value(module) in self.visible
+        return self.allows(area_of(module), "VIEW")
 
-    def can_edit(self, module: ProjectModule | str) -> bool:
-        if self.can_manage:
-            return True
-        value = _module_value(module)
-        return self.role == AccountMemberRole.MEMBER.value and value in self.modules and value in self.visible
+    def can_edit(self, module: ProjectModule | str, action: str = "EDIT") -> bool:
+        return self.allows(area_of(module), action)
 
     @property
     def editable_modules(self) -> list[str]:
@@ -125,7 +192,7 @@ class Permission:
         return [module for module in ALL_MODULES if self.can_view(module)]
 
 
-OWNER_PERMISSION = Permission(AccountMemberRole.OWNER.value, frozenset(ALL_MODULES))
+OWNER_PERMISSION = Permission(owner=True)
 
 
 class AccessScope:
@@ -141,7 +208,23 @@ class AccessScope:
         self.account_id = account_id
         self.user = user
         self.account_role = membership.role
-        self.is_owner = membership.role == AccountMemberRole.OWNER.value
+        role = db.get(AccountRole, membership.role_id) if membership.role_id else None
+        if role is None or role.account_id != account_id or seat_of(role) != membership.role:
+            # No role, or one that no longer matches the seat (the seat was changed on its own): the seat decides.
+            legacy_key = LEGACY_ROLE_KEYS.get(membership.role, "VIEWER")
+            role = db.scalars(
+                select(AccountRole).where(AccountRole.account_id == account_id, AccountRole.key == legacy_key)
+            ).first()
+        self.role = role
+        self.is_owner = membership.role == AccountMemberRole.OWNER.value or (role is not None and role.key == "OWNER")
+        if role is not None:
+            self.rights = rights_of(role.permissions)
+            self.scope_all = role.scope == SCOPE_ALL
+        else:
+            # An account whose roles were never seeded: use the built-in definition.
+            default = DEFAULT_ROLES_BY_KEY[LEGACY_ROLE_KEYS.get(membership.role, "VIEWER")]
+            self.rights = rights_of(default["permissions"])  # type: ignore[arg-type]
+            self.scope_all = default["scope"] == SCOPE_ALL
         billing = db.get(AccountBilling, account_id)
         self.read_only = bool(billing and billing.is_read_only)
 
@@ -151,57 +234,86 @@ class AccessScope:
         self.portfolio_grants = {g.portfolio_id: g for g in grants if g.portfolio_id is not None}
         self.program_grants = {g.program_id: g for g in grants if g.program_id is not None}
         self.project_grants = {g.project_id: g for g in grants if g.project_id is not None}
+        self._allocated_project_ids: set[UUID] | None = None
+        self._listed_resource_ids: set[UUID] | None = None
         self._visible_project_ids: set[UUID] | None = None
         self._program_scope_ids: set[UUID] | None = None
-        self._module_project_ids: dict[str, set[UUID]] = {}
-        self._module_program_ids: dict[str, set[UUID]] = {}
+
+    # Rights that don't depend on a project
+
+    def allows(self, area: str, action: str = "VIEW") -> bool:
+        return self.is_owner or action in self.rights.get(area, frozenset())
+
+    def require_area(self, area: str, action: str = "VIEW") -> None:
+        """Account-wide rights, e.g. editing resources or creating a portfolio."""
+        if not self.allows(area, action):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient account role.")
+        if action != "VIEW":
+            self.require_writable()
+
+    def permission(self, level: str) -> Permission:
+        return OWNER_PERMISSION if self.is_owner else Permission(rights=self.rights, level=level)
+
+    # Assignments
+
+    def allocated_project_ids(self) -> set[UUID]:
+        """Projects the user's resource is assigned or allocated to.
+
+        Assigned on Resources > Capacity (Add Resource, or a weekly-hours override), or allocated on one of the
+        project's tasks.
+        """
+        if self._allocated_project_ids is None:
+            resource_ids = select(Resource.id).where(Resource.account_id == self.account_id, Resource.user_id == self.user.id)
+            assigned = select(ResourceAssignment.project_id).where(
+                ResourceAssignment.resource_id.in_(resource_ids), ResourceAssignment.project_id.is_not(None)
+            )
+            weekly = select(ResourceProjectAllocation.project_id).where(ResourceProjectAllocation.resource_id.in_(resource_ids))
+            on_tasks = (
+                select(Task.project_id)
+                .join(ResourceAllocation, ResourceAllocation.task_id == Task.id)
+                .where(ResourceAllocation.resource_id.in_(resource_ids))
+            )
+            self._allocated_project_ids = (
+                set(self.db.scalars(assigned).all())
+                | set(self.db.scalars(weekly).all())
+                | set(self.db.scalars(on_tasks).all())
+            )
+        return self._allocated_project_ids
+
+    def is_assigned(self, portfolio_id: UUID, program_id: UUID, project_id: UUID) -> bool:
+        return (
+            portfolio_id in self.portfolio_grants
+            or program_id in self.program_grants
+            or project_id in self.project_grants
+            or project_id in self.allocated_project_ids()
+        )
 
     # Permissions on one item
 
-    def combine(self, grants: list[AccessGrant | None]) -> Permission | None:
-        applicable = [grant for grant in grants if grant is not None]
-        if not applicable:
-            return None
-        best = max(ROLE_RANK[grant.role] for grant in applicable)
-        role = RANK_ROLE[min(best, ROLE_RANK[self.account_role])]
-        if best == ROLE_RANK[AccountMemberRole.MANAGER.value]:
-            # A manager grant held by someone whose seat was since lowered keeps every module it covered.
-            return Permission(role, frozenset(ALL_MODULES))
-        modules = frozenset(
-            module
-            for grant in applicable
-            if grant.role == AccountMemberRole.MEMBER.value
-            for module in (grant.modules or [])
-        )
-        visible: set[str] = set()
-        for grant in applicable:
-            visible.update(ALL_MODULES if grant.view_modules is None else grant.view_modules)
-        return Permission(role, modules, frozenset(visible))
-
     def for_project(self, project: Project) -> Permission | None:
-        if self.is_owner:
-            return OWNER_PERMISSION
         return self.project_permission(project.portfolio_id, project.program_id, project.id)
 
     def project_permission(self, portfolio_id: UUID, program_id: UUID, project_id: UUID) -> Permission | None:
-        return self.combine(
-            [
-                self.portfolio_grants.get(portfolio_id),
-                self.program_grants.get(program_id),
-                self.project_grants.get(project_id),
-            ]
-        )
-
-    def for_program(self, program: Program) -> Permission | None:
-        """Program-wide permission: from grants on the program or its portfolio, not on one of its projects."""
         if self.is_owner:
             return OWNER_PERMISSION
-        return self.combine([self.portfolio_grants.get(program.portfolio_id), self.program_grants.get(program.id)])
+        if self.scope_all or self.is_assigned(portfolio_id, program_id, project_id):
+            return self.permission("PROJECT")
+        return None
+
+    def for_program(self, program: Program) -> Permission | None:
+        """Program-wide permission: assigned to the program or its portfolio, not just to one of its projects."""
+        if self.is_owner:
+            return OWNER_PERMISSION
+        if self.scope_all or program.portfolio_id in self.portfolio_grants or program.id in self.program_grants:
+            return self.permission("PROGRAM")
+        return None
 
     def for_portfolio(self, portfolio: Portfolio) -> Permission | None:
         if self.is_owner:
             return OWNER_PERMISSION
-        return self.combine([self.portfolio_grants.get(portfolio.id)])
+        if self.scope_all or portfolio.id in self.portfolio_grants:
+            return self.permission("PORTFOLIO")
+        return None
 
     # Checks that raise
 
@@ -212,13 +324,16 @@ class AccessScope:
         module: ProjectModule | None,
         manage: bool,
         view: ProjectModule | None = None,
+        action: str = "EDIT",
     ) -> Permission:
-        """module: edit rights on it; view: just seeing it; neither: seeing the item itself."""
+        """module: `action` on that module; view: just seeing it; manage: `action` on the item itself; neither: seeing it."""
         if permission is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=PROJECT_ACCESS_DENIED)
         if view is not None and not permission.can_view(view):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=MODULE_HIDDEN)
-        if (manage and not permission.can_manage) or (module is not None and not permission.can_edit(module)):
+        if (manage and not permission.allows(LEVEL_AREAS[permission.level], action)) or (
+            module is not None and not permission.can_edit(module, action)
+        ):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=INSUFFICIENT_PROJECT_PERMISSION)
         if manage or module is not None:
             self.require_writable()
@@ -236,9 +351,10 @@ class AccessScope:
         module: ProjectModule | None = None,
         manage: bool = False,
         view: ProjectModule | None = None,
+        action: str = "EDIT",
     ) -> Permission:
-        """View access by default; edit access to `module`, sight of `view`, or manager access with manage=True."""
-        return self.require(self.for_project(project), module=module, manage=manage, view=view)
+        """View access by default; `action` on `module`, sight of `view`, or `action` on the project with manage=True."""
+        return self.require(self.for_project(project), module=module, manage=manage, view=view, action=action)
 
     def require_program(
         self,
@@ -247,11 +363,20 @@ class AccessScope:
         module: ProjectModule | None = None,
         manage: bool = False,
         view: ProjectModule | None = None,
+        action: str = "EDIT",
     ) -> Permission:
-        return self.require(self.for_program(program), module=module, manage=manage, view=view)
+        return self.require(self.for_program(program), module=module, manage=manage, view=view, action=action)
 
-    def require_portfolio(self, portfolio: Portfolio, *, manage: bool = False) -> Permission:
-        return self.require(self.for_portfolio(portfolio), module=None, manage=manage)
+    def require_portfolio(self, portfolio: Portfolio, *, manage: bool = False, action: str = "EDIT") -> Permission:
+        return self.require(self.for_portfolio(portfolio), module=None, manage=manage, action=action)
+
+    def require_to_create_in(self, parent: Portfolio | Program, area: str) -> Permission:
+        """Creating a program in a portfolio, or a project in a program: reach the parent and hold `area` CREATE."""
+        permission = self.require_portfolio(parent) if isinstance(parent, Portfolio) else self.require_program(parent)
+        if not permission.allows(area, "CREATE"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=INSUFFICIENT_PROJECT_PERMISSION)
+        self.require_writable()
+        return permission
 
     def require_item(
         self,
@@ -261,6 +386,7 @@ class AccessScope:
         module: ProjectModule | None = None,
         manage: bool = False,
         view: ProjectModule | None = None,
+        action: str = "EDIT",
     ) -> Permission:
         """For records that hang off a project, or off a program when they have no project."""
         if self.is_owner:
@@ -271,17 +397,17 @@ class AccessScope:
             project = self.db.get(Project, project_id)
             if project is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-            return self.require_project(project, module=module, manage=manage, view=view)
+            return self.require_project(project, module=module, manage=manage, view=view, action=action)
         program = self.db.get(Program, program_id) if program_id is not None else None
         if program is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=PROJECT_ACCESS_DENIED)
-        return self.require_program(program, module=module, manage=manage, view=view)
+        return self.require_program(program, module=module, manage=manage, view=view, action=action)
 
     def require_entity(self, entity_type: str, record: Any, *, contribute: bool = False) -> Permission | None:
         """Access to any record that comments, attachments and activity hang off.
 
         contribute=False needs view access; True needs edit access to the record's module
-        (or, on a portfolio, program or project itself, any role above viewer).
+        (or, on a portfolio, program or project itself, any right beyond viewing).
         """
         if self.is_owner:
             if contribute:
@@ -304,7 +430,7 @@ class AccessScope:
                 else self.for_project(record)
             )
             permission = self.require(permission, module=None, manage=False)
-            if permission.role == AccountMemberRole.VIEWER.value:
+            if not permission.can_contribute:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=INSUFFICIENT_PROJECT_PERMISSION)
             self.require_writable()
             return permission
@@ -327,70 +453,44 @@ class AccessScope:
             view=module,
         )
 
-    # What is visible, for list queries. None means everything in the account (owners).
+    # What is visible, for list queries. None means everything in the account (owners, and roles scoped to ALL).
+    # A role's rights are the same on every project it reaches, so a module is visible everywhere or nowhere.
+
+    def can_see_module(self, module: ProjectModule | None) -> bool:
+        return module is None or self.allows(area_of(module), "VIEW")
 
     def visible_project_ids(self, module: ProjectModule | None = None) -> set[UUID] | None:
         """Projects the user can see; with a module, only those where that module is visible too."""
         if self.is_owner:
             return None
-        if module is not None:
-            return self.module_project_ids(module)
+        if not self.can_see_module(module):
+            return set()
+        if self.scope_all:
+            return None
         if self._visible_project_ids is None:
-            self._visible_project_ids = set(
-                self.db.scalars(
-                    select(Project.id).where(
-                        Project.account_id == self.account_id,
-                        or_(
-                            Project.portfolio_id.in_(self.portfolio_grants),
-                            Project.program_id.in_(self.program_grants),
-                            Project.id.in_(self.project_grants),
-                        ),
-                    )
-                ).all()
+            assigned = select(Project.id).where(
+                Project.account_id == self.account_id,
+                or_(
+                    Project.portfolio_id.in_(self.portfolio_grants),
+                    Project.program_id.in_(self.program_grants),
+                    Project.id.in_(self.project_grants),
+                    Project.id.in_(self.allocated_project_ids()),
+                ),
             )
+            self._visible_project_ids = set(self.db.scalars(assigned).all())
         return self._visible_project_ids
 
-    def module_project_ids(self, module: ProjectModule) -> set[UUID]:
-        key = _module_value(module)
-        if key not in self._module_project_ids:
-            rows = self.db.execute(
-                select(Project.id, Project.portfolio_id, Project.program_id).where(
-                    Project.id.in_(self.visible_project_ids() or set())
-                )
-            ).all()
-            self._module_project_ids[key] = {
-                project_id
-                for project_id, portfolio_id, program_id in rows
-                if (permission := self.project_permission(portfolio_id, program_id, project_id)) is not None
-                and permission.can_view(key)
-            }
-        return self._module_project_ids[key]
-
     def program_scope_ids(self, module: ProjectModule | None = None) -> set[UUID] | None:
-        """Programs this user holds a program-wide grant over (directly or through the portfolio).
+        """Programs the user is assigned to program-wide (directly or through the portfolio).
 
-        With a module, only programs where that module is visible.
+        With a module, only when that module is visible.
         """
         if self.is_owner:
             return None
-        if module is not None:
-            key = _module_value(module)
-            if key not in self._module_program_ids:
-                rows = self.db.execute(
-                    select(Program.id, Program.portfolio_id).where(Program.id.in_(self.program_scope_ids() or set()))
-                ).all()
-                self._module_program_ids[key] = {
-                    program_id
-                    for program_id, portfolio_id in rows
-                    if (
-                        permission := self.combine(
-                            [self.portfolio_grants.get(portfolio_id), self.program_grants.get(program_id)]
-                        )
-                    )
-                    is not None
-                    and permission.can_view(key)
-                }
-            return self._module_program_ids[key]
+        if not self.can_see_module(module):
+            return set()
+        if self.scope_all:
+            return None
         if self._program_scope_ids is None:
             self._program_scope_ids = set(
                 self.db.scalars(
@@ -403,15 +503,15 @@ class AccessScope:
         return self._program_scope_ids
 
     def visible_program_ids(self) -> set[UUID] | None:
-        """Programs shown in navigation: program-wide grants, plus the parents of visible projects."""
-        if self.is_owner:
+        """Programs shown in navigation: program-wide assignments, plus the parents of visible projects."""
+        if self.is_owner or self.scope_all:
             return None
         project_ids = self.visible_project_ids() or set()
         parents = set(self.db.scalars(select(Project.program_id).where(Project.id.in_(project_ids))).all())
         return (self.program_scope_ids() or set()) | parents
 
     def visible_portfolio_ids(self) -> set[UUID] | None:
-        if self.is_owner:
+        if self.is_owner or self.scope_all:
             return None
         program_ids = self.visible_program_ids() or set()
         parents = set(self.db.scalars(select(Program.portfolio_id).where(Program.id.in_(program_ids))).all())
@@ -491,6 +591,72 @@ class AccessScope:
             return True
 
         return [entry for entry in entries if can_view(entry)]
+
+    def listed_resource_ids(self) -> set[UUID] | None:
+        """Resources this user may see on the Resources pages (capacity, availability, costs).
+
+        None means every listed resource: owners, and roles scoped to ALL with Resources > View. Without that right,
+        none. Otherwise themselves plus the people working in what they can see: assigned to one of their projects,
+        programs or portfolios, or with hours or tasks on one of their projects.
+        """
+        if self.is_owner:
+            return None
+        if not self.allows("RESOURCES", "VIEW"):
+            return set()
+        if self.scope_all:
+            return None
+        if self._listed_resource_ids is None:
+            project_ids = self.visible_project_ids() or set()
+            task_project_ids = self.visible_project_ids(ProjectModule.TASKS) or set()
+            program_ids = self.program_scope_ids() or set()
+            portfolio_ids = set(self.portfolio_grants)
+            ids: set[UUID] = set(
+                self.db.scalars(
+                    select(Resource.id).where(Resource.account_id == self.account_id, Resource.user_id == self.user.id)
+                ).all()
+            )
+            ids |= set(
+                self.db.scalars(
+                    select(ResourceAssignment.resource_id).where(
+                        ResourceAssignment.account_id == self.account_id,
+                        or_(
+                            ResourceAssignment.project_id.in_(project_ids) if project_ids else false(),
+                            ResourceAssignment.program_id.in_(program_ids) if program_ids else false(),
+                            ResourceAssignment.portfolio_id.in_(portfolio_ids) if portfolio_ids else false(),
+                        ),
+                    )
+                ).all()
+            )
+            if project_ids:
+                ids |= set(
+                    self.db.scalars(
+                        select(ResourceProjectAllocation.resource_id).where(ResourceProjectAllocation.project_id.in_(project_ids))
+                    ).all()
+                )
+            if task_project_ids:
+                ids |= set(
+                    self.db.scalars(
+                        select(ResourceAllocation.resource_id)
+                        .join(Task, Task.id == ResourceAllocation.task_id)
+                        .where(Task.project_id.in_(task_project_ids))
+                    ).all()
+                )
+                # Task assignees are recorded by login or by name; match them to resources either way.
+                assignees = self.db.execute(
+                    select(TaskAssignment.user_id, TaskAssignment.resource_name)
+                    .join(Task, Task.id == TaskAssignment.task_id)
+                    .where(Task.project_id.in_(task_project_ids))
+                ).all()
+                user_ids = {user_id for user_id, _ in assignees if user_id is not None}
+                names = {" ".join(name.split()).lower() for _, name in assignees if name}
+                if user_ids or names:
+                    for resource_id, user_id, name in self.db.execute(
+                        select(Resource.id, Resource.user_id, Resource.name).where(Resource.account_id == self.account_id)
+                    ).all():
+                        if user_id in user_ids or " ".join((name or "").split()).lower() in names:
+                            ids.add(resource_id)
+            self._listed_resource_ids = ids
+        return self._listed_resource_ids
 
     def keep_visible(self, items: list, visible_ids: set[UUID] | None) -> list:
         return items if visible_ids is None else [item for item in items if item.id in visible_ids]

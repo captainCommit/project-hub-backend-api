@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -102,6 +102,43 @@ class AiChatMessageRead(BaseModel):
     # The lookups it made, e.g. "Looking up tasks".
     steps: list[str] = []
     error: str | None = None
+    # Questions the answer suggests asking next (shown as buttons).
+    follow_ups: list[str] = []
+    # Risks, issues or tasks the answer drafted, for the person to review and create.
+    actions: list["AiDraftAction"] = []
+    # The person's thumbs up ("up") or down ("down").
+    feedback: Literal["up", "down"] | None = None
+
+
+class AiDraftAction(BaseModel):
+    id: str
+    # {kind, project_id, project, program, title, cause, effect, description, priority, priority_label, status,
+    #  status_label, assigned_to_name, target_date}
+    draft: dict[str, Any]
+    # Set once created: {status: "CREATED", kind, id, number, title, link, project}.
+    outcome: dict[str, Any] | None = None
+
+
+class AiDraftConfirm(BaseModel):
+    """The review card's edits; anything left out keeps the drafted value."""
+
+    project_id: UUID | None = None
+    title: str | None = Field(default=None, max_length=255)
+    cause: str | None = None
+    effect: str | None = None
+    description: str | None = None
+    priority: str | None = Field(default=None, max_length=100)
+    status: str | None = Field(default=None, max_length=100)
+    assigned_to_name: str | None = Field(default=None, max_length=255)
+    target_date: date | None = None
+
+
+AiChatMessageRead.model_rebuild()
+
+
+class AiAnswerFeedback(BaseModel):
+    # null clears it.
+    value: Literal["up", "down"] | None = None
 
 
 class AiConversationDetail(AiConversationRead):

@@ -298,3 +298,54 @@ def test_option_set_delete_is_not_defined(client: TestClient, db_session: Sessio
     response = client.delete(f"/api/v1/option-sets/{option_set.id}")
 
     assert response.status_code == 501
+
+def test_renamed_labels_show_their_default_and_reset_brings_it_back(client: TestClient, db_session: Session) -> None:
+    account = create_account(client)
+    option_set = get_task_status_option_set(db_session, account["id"])
+    values = client.get(f"/api/v1/option-sets/{option_set.id}/values").json()
+    in_progress = next(v for v in values if v["value"] == "IN_PROGRESS")
+    assert in_progress["default_label"] == "In Progress"
+
+    renamed = client.patch(f"/api/v1/option-values/{in_progress['id']}", json={"label": "Doing", "color": "#2563EB"})
+    assert renamed.status_code == 200 and renamed.json()["label"] == "Doing"
+    settings = client.patch(
+        f"/api/v1/accounts/{account['id']}/settings",
+        json={"status_labels": {"HEALTH": {"red": {"label": "Critical", "color": "#DC2626"}}}},
+    )
+    assert settings.status_code == 200, settings.text
+    assert settings.json()["status_labels"]["HEALTH"]["red"]["label"] == "Critical"
+    custom = client.post(f"/api/v1/option-sets/{option_set.id}/values", json={"label": "Waiting"}).json()
+    assert custom["default_label"] is None if "default_label" in custom else True
+
+    assert client.post(f"/api/v1/accounts/{account['id']}/status-labels/reset").status_code == 204
+
+    db_session.expire_all()
+    values = {v["value"]: v for v in client.get(f"/api/v1/option-sets/{option_set.id}/values").json()}
+    assert values["IN_PROGRESS"]["label"] == "In Progress" and values["IN_PROGRESS"]["color"] is None
+    assert values["WAITING"]["label"] == "Waiting"
+    assert client.get(f"/api/v1/accounts/{account['id']}/settings").json()["status_labels"] == {}
+
+
+def test_test_results_can_be_renamed(client: TestClient) -> None:
+    account = create_account(client)
+    response = client.patch(
+        f"/api/v1/accounts/{account['id']}/settings",
+        json={"status_labels": {"TEST_RESULT": {"not_executed": {"label": "Not Run", "color": "#64748B"}}}},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status_labels"]["TEST_RESULT"]["not_executed"]["label"] == "Not Run"
+
+
+def test_unknown_status_label_keys_are_refused(client: TestClient) -> None:
+    account = create_account(client)
+    response = client.patch(
+        f"/api/v1/accounts/{account['id']}/settings",
+        json={"status_labels": {"HEALTH": {"purple": {"label": "Odd"}}}},
+    )
+    assert response.status_code == 422
+
+
+def test_viewer_cannot_reset_labels(client: TestClient, db_session: Session) -> None:
+    account = create_account(client)
+    set_current_user_role(db_session, account["id"], AccountMemberRole.MEMBER)
+    assert client.post(f"/api/v1/accounts/{account['id']}/status-labels/reset").status_code == 403
